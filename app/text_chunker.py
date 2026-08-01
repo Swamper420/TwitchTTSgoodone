@@ -10,6 +10,7 @@ class TTSChunk:
     total_chunks: int = 1
 
 
+from app.config import config
 from app.text_normalizer import normalize_text
 
 def sanitize_text(text: str) -> str:
@@ -65,8 +66,10 @@ def parse_voice_tags(text: str) -> List[Tuple[Optional[str], str]]:
     return segments
 
 
-def split_text_into_chunks(text: str, max_chars: int = 100) -> List[str]:
+def split_text_into_chunks(text: str, max_chars: Optional[int] = None) -> List[str]:
     """Split text into chunks by sentence boundaries, clauses, and word boundaries."""
+    if max_chars is None:
+        max_chars = config.max_chunk_chars
     sanitized = sanitize_text(text)
     if not sanitized:
         return []
@@ -121,8 +124,10 @@ def split_text_into_chunks(text: str, max_chars: int = 100) -> List[str]:
     return chunks
 
 
-def ensure_min_length(text: str, min_length: int = 10) -> str:
+def ensure_min_length(text: str, min_length: Optional[int] = None) -> str:
     """Ensure text is at least min_length characters long by padding with trailing dots."""
+    if min_length is None:
+        min_length = config.min_chunk_chars
     if not text:
         return "." * min_length
     if len(text) < min_length:
@@ -131,14 +136,19 @@ def ensure_min_length(text: str, min_length: int = 10) -> str:
     return text
 
 
-def process_message_to_chunks(text: str, max_chars: int = 100) -> List[TTSChunk]:
+def process_message_to_chunks(text: str, max_chars: Optional[int] = None, min_chars: Optional[int] = None) -> List[TTSChunk]:
     """
     Full message processing pipeline:
     1. Parse [voice] tags
     2. Sanitize and chunk each voice segment
-    3. Ensure minimum 10 characters per chunk
+    3. Ensure minimum characters per chunk
     4. Return TTSChunk objects with index tracking
     """
+    if max_chars is None:
+        max_chars = config.max_chunk_chars
+    if min_chars is None:
+        min_chars = config.min_chunk_chars
+
     voice_segments = parse_voice_tags(text)
     all_chunks: List[TTSChunk] = []
     
@@ -146,7 +156,7 @@ def process_message_to_chunks(text: str, max_chars: int = 100) -> List[TTSChunk]
     for voice, seg_text in voice_segments:
         sub_chunks = split_text_into_chunks(seg_text, max_chars=max_chars)
         for sub in sub_chunks:
-            padded_sub = ensure_min_length(sub, min_length=10)
+            padded_sub = ensure_min_length(sub, min_length=min_chars)
             temp_chunks.append((voice, padded_sub))
             
     total = len(temp_chunks)
@@ -161,3 +171,4 @@ def process_message_to_chunks(text: str, max_chars: int = 100) -> List[TTSChunk]
         )
         
     return all_chunks
+

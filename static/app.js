@@ -31,8 +31,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const apiUrlInput = document.getElementById('apiUrlInput');
     const defaultVoiceInput = document.getElementById('defaultVoiceInput');
+    const defaultModelInput = document.getElementById('defaultModelInput');
     const formatSelect = document.getElementById('formatSelect');
     const maxChunkInput = document.getElementById('maxChunkInput');
+    const minChunkInput = document.getElementById('minChunkInput');
+    const userTemplateInput = document.getElementById('userTemplateInput');
+    const voicePresetsInput = document.getElementById('voicePresetsInput');
     const saveSettingsBtn = document.getElementById('saveSettingsBtn');
 
     const chatFeed = document.getElementById('chatFeed');
@@ -445,11 +449,30 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (data.config) {
-            apiUrlInput.value = data.config.tts_api_url || '';
-            defaultVoiceInput.value = data.config.tts_voice || '';
-            formatSelect.value = data.config.tts_format || 'wav';
-            maxChunkInput.value = data.config.max_chunk_chars || 100;
+            if (apiUrlInput) apiUrlInput.value = data.config.tts_api_url || '';
+            if (defaultVoiceInput) defaultVoiceInput.value = data.config.tts_voice || '';
+            if (defaultModelInput) defaultModelInput.value = data.config.tts_model || '';
+            if (formatSelect) formatSelect.value = data.config.tts_format || 'wav';
+            if (maxChunkInput) maxChunkInput.value = data.config.max_chunk_chars || 50;
+            if (minChunkInput) minChunkInput.value = data.config.min_chunk_chars || 10;
+            if (userTemplateInput) userTemplateInput.value = data.config.user_template || '';
+            if (voicePresetsInput) voicePresetsInput.value = data.config.voice_presets || '';
+
+            renderVoiceChips(data.config.voice_presets);
         }
+    }
+
+    function renderVoiceChips(voicePresetsStr) {
+        if (!voiceChips || !voicePresetsStr) return;
+        const voices = voicePresetsStr.split(',').map(v => v.trim()).filter(v => v.length > 0);
+        voiceChips.innerHTML = '';
+        voices.forEach(voice => {
+            const chip = document.createElement('span');
+            chip.className = 'chip';
+            chip.setAttribute('data-voice', voice);
+            chip.textContent = `+ [${voice}]`;
+            voiceChips.appendChild(chip);
+        });
     }
 
     // Connect / Disconnect Twitch Channel
@@ -515,14 +538,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    tts_api_url: apiUrlInput.value.trim(),
-                    tts_voice: defaultVoiceInput.value.trim(),
-                    tts_format: formatSelect.value,
-                    max_chunk_chars: parseInt(maxChunkInput.value, 10) || 100
+                    tts_api_url: apiUrlInput ? apiUrlInput.value.trim() : '',
+                    tts_voice: defaultVoiceInput ? defaultVoiceInput.value.trim() : '',
+                    tts_model: defaultModelInput ? defaultModelInput.value.trim() : '',
+                    tts_format: formatSelect ? formatSelect.value : 'wav',
+                    max_chunk_chars: maxChunkInput ? (parseInt(maxChunkInput.value, 10) || 50) : 50,
+                    min_chunk_chars: minChunkInput ? (parseInt(minChunkInput.value, 10) || 10) : 10,
+                    user_template: userTemplateInput ? userTemplateInput.value.trim() : '',
+                    voice_presets: voicePresetsInput ? voicePresetsInput.value.trim() : ''
                 })
             });
             if (res.ok) {
-                showToast('Settings saved successfully!', 'success');
+                showToast('Settings saved persistently!', 'success');
+                fetchStatus();
+            } else {
+                showToast('Failed to save settings', 'error');
             }
         } catch (e) {
             console.error('Failed to save settings:', e);

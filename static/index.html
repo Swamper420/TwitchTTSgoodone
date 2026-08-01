@@ -163,26 +163,48 @@
                     <div class="form-row">
                         <div class="form-group full-width">
                             <label for="apiUrlInput">Local TTS API Endpoint</label>
-                            <input type="text" id="apiUrlInput" value="http://localhost:8080/api/tts" />
+                            <input type="text" id="apiUrlInput" placeholder="http://192.168.1.3:6969/api/tts" />
                         </div>
                     </div>
 
                     <div class="form-row">
                         <div class="form-group">
                             <label for="defaultVoiceInput">Default Voice</label>
-                            <input type="text" id="defaultVoiceInput" placeholder="CHATTERBOX_DEFAULT_VOICE" />
+                            <input type="text" id="defaultVoiceInput" placeholder="e.g. mieto, alice" />
+                        </div>
+                        <div class="form-group">
+                            <label for="defaultModelInput">Default Model</label>
+                            <input type="text" id="defaultModelInput" placeholder="Model name (optional)" />
                         </div>
                         <div class="form-group">
                             <label for="formatSelect">Audio Format</label>
                             <select id="formatSelect">
-                                <option value="wav" selected>WAV (.wav)</option>
+                                <option value="wav">WAV (.wav)</option>
                                 <option value="ogg">Ogg Opus (.ogg)</option>
                                 <option value="json">JSON Base64</option>
                             </select>
                         </div>
+                    </div>
+
+                    <div class="form-row">
                         <div class="form-group">
                             <label for="maxChunkInput">Max Chunk Chars</label>
-                            <input type="number" id="maxChunkInput" value="100" min="20" max="500" />
+                            <input type="number" id="maxChunkInput" min="20" max="500" placeholder="50" />
+                        </div>
+                        <div class="form-group">
+                            <label for="minChunkInput">Min Chunk Chars</label>
+                            <input type="number" id="minChunkInput" min="1" max="100" placeholder="10" />
+                        </div>
+                        <div class="form-group">
+                            <label for="userTemplateInput">Message Format Template</label>
+                            <input type="text" id="userTemplateInput" placeholder="{user} sanoo: {text}" />
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group full-width">
+                            <label for="voicePresetsInput">Voice Presets (comma-separated for chips)</label>
+                            <input type="text" id="voicePresetsInput" placeholder="mieto, alice, bob, charlie, dave" />
                         </div>
                     </div>
 

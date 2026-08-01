@@ -12,27 +12,37 @@ from app.server import run_server
 
 def main():
     parser = argparse.ArgumentParser(description="Twitch TTS Bot with Local TTS API")
-    parser.add_argument("--channel", "-c", type=str, default="", help="Twitch channel to join on startup")
-    parser.add_argument("--port", "-p", type=int, default=5000, help="Web server port (default 5000)")
-    parser.add_argument("--tts-url", type=str, default="http://localhost:8080/api/tts", help="Local TTS API endpoint")
-    parser.add_argument("--voice", type=str, default="", help="Default voice override")
-    parser.add_argument("--model", type=str, default="", help="Default model override")
-    parser.add_argument("--max-chunk", type=int, default=100, help="Max chunk size in characters")
+    parser.add_argument("--channel", "-c", type=str, default=None, help="Twitch channel to join on startup")
+    parser.add_argument("--port", "-p", type=int, default=None, help="Web server port")
+    parser.add_argument("--tts-url", type=str, default=None, help="Local TTS API endpoint")
+    parser.add_argument("--voice", type=str, default=None, help="Default voice override")
+    parser.add_argument("--model", type=str, default=None, help="Default model override")
+    parser.add_argument("--max-chunk", type=int, default=None, help="Max chunk size in characters")
 
     args = parser.parse_args()
 
-    if args.channel:
+    cli_updated = False
+    if args.channel is not None:
         config.twitch_channel = args.channel
-    if args.port:
+        cli_updated = True
+    if args.port is not None:
         config.server_port = args.port
-    if args.tts_url:
+        cli_updated = True
+    if args.tts_url is not None:
         config.tts_api_url = args.tts_url
-    if args.voice:
+        cli_updated = True
+    if args.voice is not None:
         config.tts_voice = args.voice
-    if args.model:
+        cli_updated = True
+    if args.model is not None:
         config.tts_model = args.model
-    if args.max_chunk:
+        cli_updated = True
+    if args.max_chunk is not None:
         config.max_chunk_chars = args.max_chunk
+        cli_updated = True
+
+    if cli_updated:
+        config.save()
 
     logging.basicConfig(
         level=logging.INFO,

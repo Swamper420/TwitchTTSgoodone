@@ -29,7 +29,7 @@ class TTSClient:
         model: Optional[str] = None,
         audio_format: Optional[str] = None,
         method: str = "POST",
-        timeout: float = 15.0,
+        timeout: float = 45.0,
         max_retries: int = 3
     ) -> Tuple[bytes, str]:
         """
@@ -40,11 +40,12 @@ class TTSClient:
         model_to_use = model or config.tts_model
         format_to_use = audio_format or config.tts_format or "wav"
         
-        # Ensure text is at least 10 characters long to avoid API blocking short requests
-        if text and len(text) < 10:
-            text = text + "." * (10 - len(text))
+        # Ensure text meets minimum character threshold to avoid API blocking short requests
+        min_chars = config.min_chunk_chars
+        if text and len(text) < min_chars:
+            text = text + "." * (min_chars - len(text))
         elif not text:
-            text = ".........."
+            text = "." * min_chars
         
         # Check Cache
         cache_key = self._compute_cache_key(text, voice_to_use, model_to_use, format_to_use)

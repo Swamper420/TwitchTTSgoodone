@@ -51,8 +51,18 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
     3. Request local TTS API for each chunk.
     4. Save audio to memory store and notify frontend player via SSE.
     """
-    text_to_speak = f"{user} sanoo: {raw_text}" if user else raw_text
-    chunks = process_message_to_chunks(text_to_speak, max_chars=config.max_chunk_chars)
+    if user:
+        if "{user}" in config.user_template and "{text}" in config.user_template:
+            try:
+                text_to_speak = config.user_template.format(user=user, text=raw_text)
+            except Exception:
+                text_to_speak = f"{user} sanoo: {raw_text}"
+        else:
+            text_to_speak = f"{user} {config.user_template} {raw_text}"
+    else:
+        text_to_speak = raw_text
+
+    chunks = process_message_to_chunks(text_to_speak, max_chars=config.max_chunk_chars, min_chars=config.min_chunk_chars)
     if not chunks:
         return
 
@@ -153,7 +163,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             try:
                 while True:
                     try:
-                        msg = client_q.get(timeout=15.0)
+                        msg = client_q.get(timeout=450)
                         self.wfile.write(msg.encode("utf-8"))
                         self.wfile.flush()
                     except queue.Empty:
@@ -278,6 +288,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": "Channel name is required"})
                 return
             config.twitch_channel = channel
+            config.save()
             if twitch_bot:
                 twitch_bot.set_channel(channel)
             broadcast_event("status", self._get_status_dict())
@@ -305,19 +316,25 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             return
 
         # Route: Save Config/Settings
-        if path == "/api/settings":
             if "tts_api_url" in body:
-                config.tts_api_url = body["tts_api_url"]
+                config.tts_api_url = str(body["tts_api_url"]).strip()
                 tts_client.base_url = config.tts_api_url.rstrip('/')
             if "tts_voice" in body:
-                config.tts_voice = body["tts_voice"]
+                config.tts_voice = str(body["tts_voice"]).strip()
             if "tts_model" in body:
-                config.tts_model = body["tts_model"]
+                config.tts_model = str(body["tts_model"]).strip()
             if "tts_format" in body:
-                config.tts_format = body["tts_format"]
+                config.tts_format = str(body["tts_format"]).strip()
             if "max_chunk_chars" in body:
                 config.max_chunk_chars = int(body["max_chunk_chars"])
+            if "min_chunk_chars" in body:
+                config.min_chunk_chars = int(body["min_chunk_chars"])
+            if "user_template" in body:
+                config.user_template = str(body["user_template"]).strip()
+            if "voice_presets" in body:
+                config.voice_presets = str(body["voice_presets"]).strip()
             
+            config.save()
             broadcast_event("status", self._get_status_dict())
             self._send_json(200, {"success": True, "config": self._get_config_dict()})
             return
@@ -332,13 +349,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         }
 
     def _get_config_dict(self) -> dict:
-        return {
-            "tts_api_url": config.tts_api_url,
-            "tts_voice": config.tts_voice or "",
-            "tts_model": config.tts_model or "",
-            "tts_format": config.tts_format,
-            "max_chunk_chars": config.max_chunk_chars
-        }
+        return config.to_dict()
 
     def _send_json(self, code: int, data: dict):
         body = json.dumps(data).encode("utf-8")
