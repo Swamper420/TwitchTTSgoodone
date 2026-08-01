@@ -132,17 +132,19 @@ class TwitchListener:
         info = twitch_token_validator.validate_token(oauth_token)
         with self._lock:
             self.auth_info = info
-            if info.get("valid"):
-                token_login = info.get("login", "")
-                if token_login:
-                    self.bot_username = token_login
-                    logger.info(f"Auto-detected Twitch bot username '@{self.bot_username}' from OAuth token.")
-            elif bot_username:
-                self.bot_username = bot_username.strip()
+            explicit_user = bot_username.strip() if bot_username else ""
+            if explicit_user:
+                self.bot_username = explicit_user
+                logger.info(f"Using configured Twitch bot username '@{self.bot_username}' from environment/settings.")
+            elif info.get("valid") and info.get("login"):
+                self.bot_username = info["login"]
+                logger.info(f"Auto-detected Twitch bot username '@{self.bot_username}' from OAuth token.")
+            else:
+                self.bot_username = ""
 
             if not info.get("valid"):
                 err_msg = info.get("error", "Unknown validation error")
-                logger.warning(f"Twitch OAuth token API validation note ({err_msg}). IRC auth will attempt directly.")
+                logger.warning(f"Twitch OAuth token API validation note ({err_msg}). IRC auth will attempt directly as '@{self.bot_username}'.")
         return info
 
     def set_credentials(self, bot_username: str, oauth_token: str):

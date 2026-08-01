@@ -73,6 +73,21 @@ class TestTwitchListener(unittest.TestCase):
         self.assertTrue(listener.send_chat("Hello chat"))
         self.assertEqual(listener._send_queue.qsize(), 1)
 
+    @patch("app.twitch_listener.twitch_token_validator.validate_token")
+    def test_explicit_bot_username_preserved_over_token_login(self, mock_validate):
+        # Even if token validation returns a channel owner login (e.g. 'm_e_s_t_a_a_j_a'),
+        # explicit bot_username ('Telebotti') from .env/config MUST be preserved!
+        mock_validate.return_value = {
+            "valid": True,
+            "login": "m_e_s_t_a_a_j_a",
+            "user_id": "999888",
+            "scopes": ["chat:read", "chat:edit"],
+            "error": None
+        }
+
+        listener = TwitchListener(on_message=lambda u, m: None, bot_username="Telebotti", oauth_token="oauth:token123")
+        self.assertEqual(listener.bot_username, "Telebotti")
+
 
 if __name__ == "__main__":
     unittest.main()

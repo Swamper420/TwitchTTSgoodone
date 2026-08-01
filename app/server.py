@@ -229,7 +229,30 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
     def _send_cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Token")
+
+    def _get_request_auth_token(self) -> str:
+        token = self.headers.get("X-Admin-Token")
+        if not token:
+            token = self.headers.get("Authorization", "")
+        if not token:
+            parsed = urllib.parse.urlparse(self.path)
+            query = urllib.parse.parse_qs(parsed.query)
+            if "token" in query:
+                token = query["token"][0]
+            elif "admin_token" in query:
+                token = query["admin_token"][0]
+        return token.strip() if token else ""
+
+    def _check_auth(self) -> bool:
+        token = self._get_request_auth_token()
+        if not dashboard_auth_manager.verify_session(token):
+            self._send_json(401, {
+                "error": "Unauthorized: Admin authentication required",
+                "auth_required": dashboard_auth_manager.is_auth_required()
+            })
+            return False
+        return True
 
     def do_OPTIONS(self):
         self.send_response(204)

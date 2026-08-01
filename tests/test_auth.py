@@ -97,6 +97,48 @@ class TestAuthModule(unittest.TestCase):
         self.assertEqual(masked["admin_password"], "••••••••")
         self.assertTrue(masked["has_admin_password"])
 
+    def test_tts_request_handler_auth_token_extraction(self):
+        from app.server import TTSRequestHandler
+        
+        handler = MagicMock(spec=TTSRequestHandler)
+        handler.headers = {"X-Admin-Token": "test_token_123"}
+        handler.path = "/api/connect"
+        token = TTSRequestHandler._get_request_auth_token(handler)
+        self.assertEqual(token, "test_token_123")
+
+        handler.headers = {"Authorization": "Bearer bearer_token_456"}
+        handler.path = "/api/connect"
+        token = TTSRequestHandler._get_request_auth_token(handler)
+        self.assertEqual(token, "Bearer bearer_token_456")
+
+        handler.headers = {}
+        handler.path = "/api/connect?token=query_tok_789"
+        token = TTSRequestHandler._get_request_auth_token(handler)
+        self.assertEqual(token, "query_tok_789")
+
+    def test_tts_request_handler_check_auth(self):
+        from app.server import TTSRequestHandler
+        from app.auth import dashboard_auth_manager
+        
+        handler = MagicMock(spec=TTSRequestHandler)
+        handler.headers = {}
+        handler.path = "/api/connect"
+        
+        # When no admin password set
+        with patch.object(dashboard_auth_manager, 'admin_password', ""):
+            handler._get_request_auth_token = MagicMock(return_value="")
+            self.assertTrue(TTSRequestHandler._check_auth(handler))
+
+        # When admin password is set but invalid/no token provided
+        with patch.object(dashboard_auth_manager, 'admin_password', "secret123"):
+            handler._get_request_auth_token = MagicMock(return_value="")
+            self.assertFalse(TTSRequestHandler._check_auth(handler))
+            handler._send_json.assert_called_with(401, {
+                "error": "Unauthorized: Admin authentication required",
+                "auth_required": True
+            })
+
 
 if __name__ == "__main__":
     unittest.main()
+
