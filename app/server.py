@@ -46,15 +46,17 @@ def broadcast_event(event_type: str, payload: dict):
 def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str] = None, override_model: Optional[str] = None):
     """
     Process incoming chat or test message:
-    1. Parse into chunks (with per-chunk voice tags if present).
-    2. Request local TTS API for each chunk.
-    3. Save audio to memory store and notify frontend player via SSE.
+    1. Prepend "<user> sanoo: " to the text.
+    2. Parse into chunks (with per-chunk voice tags if present).
+    3. Request local TTS API for each chunk.
+    4. Save audio to memory store and notify frontend player via SSE.
     """
-    chunks = process_message_to_chunks(raw_text, max_chars=config.max_chunk_chars)
+    text_to_speak = f"{user} sanoo: {raw_text}" if user else raw_text
+    chunks = process_message_to_chunks(text_to_speak, max_chars=config.max_chunk_chars)
     if not chunks:
         return
 
-    logger.info(f"Processing text from '{user}': '{raw_text[:40]}' -> {len(chunks)} chunks")
+    logger.info(f"Processing text from '{user}': '{text_to_speak[:40]}' -> {len(chunks)} chunks")
 
     for chunk in chunks:
         # Determine voice override: per-chunk tag takes priority over override_voice over default config

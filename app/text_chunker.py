@@ -121,12 +121,23 @@ def split_text_into_chunks(text: str, max_chars: int = 100) -> List[str]:
     return chunks
 
 
+def ensure_min_length(text: str, min_length: int = 10) -> str:
+    """Ensure text is at least min_length characters long by padding with trailing dots."""
+    if not text:
+        return "." * min_length
+    if len(text) < min_length:
+        needed = min_length - len(text)
+        return text + "." * needed
+    return text
+
+
 def process_message_to_chunks(text: str, max_chars: int = 100) -> List[TTSChunk]:
     """
     Full message processing pipeline:
     1. Parse [voice] tags
     2. Sanitize and chunk each voice segment
-    3. Return TTSChunk objects with index tracking
+    3. Ensure minimum 10 characters per chunk
+    4. Return TTSChunk objects with index tracking
     """
     voice_segments = parse_voice_tags(text)
     all_chunks: List[TTSChunk] = []
@@ -135,7 +146,8 @@ def process_message_to_chunks(text: str, max_chars: int = 100) -> List[TTSChunk]
     for voice, seg_text in voice_segments:
         sub_chunks = split_text_into_chunks(seg_text, max_chars=max_chars)
         for sub in sub_chunks:
-            temp_chunks.append((voice, sub))
+            padded_sub = ensure_min_length(sub, min_length=10)
+            temp_chunks.append((voice, padded_sub))
             
     total = len(temp_chunks)
     for idx, (voice, chunk_text_val) in enumerate(temp_chunks):
