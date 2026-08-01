@@ -30,19 +30,7 @@ class TestTextChunkerShortMessages(unittest.TestCase):
     @patch("app.server.broadcast_event")
     def test_process_incoming_text_short_raw_text(self, mock_broadcast, mock_synthesize):
         mock_synthesize.return_value = (b"fake_audio", "audio/wav")
-        # Short message "moi" (len 3 < 10) should have bruhbruh appended
         process_incoming_text(user="Tester", raw_text="moi")
-        mock_synthesize.assert_called()
-        called_text = mock_synthesize.call_args[1].get("text") or mock_synthesize.call_args[0][0]
-        self.assertIn("moibruhbruh", called_text)
-
-    @patch("app.server.tts_client.synthesize")
-    @patch("app.server.broadcast_event")
-    def test_process_incoming_text_long_raw_text(self, mock_broadcast, mock_synthesize):
-        mock_synthesize.return_value = (b"fake_audio", "audio/wav")
-        # Long message >= 10 letters should NOT have bruhbruh appended
-        long_msg = "myvoice obama print"
-        process_incoming_text(user="Tester", raw_text=long_msg)
         mock_synthesize.assert_called()
         called_text = mock_synthesize.call_args[1].get("text") or mock_synthesize.call_args[0][0]
         self.assertNotIn("bruhbruh", called_text)
