@@ -6,6 +6,25 @@ from typing import Optional, Dict, Any
 
 logger = logging.getLogger("Config")
 
+ENV_KEYS = {
+    "tts_api_url": "TTS_API_URL",
+    "tts_model": "TTS_MODEL",
+    "tts_voice": "TTS_VOICE",
+    "tts_format": "TTS_FORMAT",
+    "max_chunk_chars": "MAX_CHUNK_CHARS",
+    "min_chunk_chars": "MIN_CHUNK_CHARS",
+    "server_host": "SERVER_HOST",
+    "server_port": "SERVER_PORT",
+    "twitch_channel": "TWITCH_CHANNEL",
+    "user_template": "USER_TEMPLATE",
+    "voice_presets": "VOICE_PRESETS",
+    "twitch_bot_username": "TWITCH_BOT_USERNAME",
+    "twitch_oauth_token": "TWITCH_OAUTH_TOKEN",
+    "enable_chat_responses": "ENABLE_CHAT_RESPONSES",
+    "enable_periodic_info": "ENABLE_PERIODIC_INFO",
+    "periodic_info_interval": "PERIODIC_INFO_INTERVAL",
+}
+
 def load_dotenv(filepaths=(".env", "example.env")):
     """Lightweight loader for .env / example.env files into os.environ."""
     for path in filepaths:
@@ -18,7 +37,7 @@ def load_dotenv(filepaths=(".env", "example.env")):
                             k, v = line.split("=", 1)
                             k = k.strip()
                             v = v.strip().strip("'\"")
-                            if k and k not in os.environ:
+                            if k:
                                 os.environ[k] = v
                 logger.info(f"Loaded environment variables from {path}")
                 break
@@ -49,23 +68,29 @@ class Config:
     periodic_info_interval: int = field(default_factory=lambda: int(os.getenv("PERIODIC_INFO_INTERVAL", "15")))
 
     def load(self, filepath: str = CONFIG_FILE):
-        """Load configuration from JSON file if present."""
+        """Load configuration from JSON file if present, respecting environment variable overrides."""
         if os.path.exists(filepath):
             try:
                 with open(filepath, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 for key, val in data.items():
-                    if hasattr(self, key) and val is not None:
-                        curr_val = getattr(self, key)
-                        if isinstance(curr_val, bool):
-                            if isinstance(val, bool):
-                                setattr(self, key, val)
+                    if hasattr(self, key):
+                        env_var = ENV_KEYS.get(key)
+                        # If environment variable is explicitly set and non-empty in os.environ, preserve environment value
+                        if env_var and os.environ.get(env_var):
+                            continue
+
+                        if val is not None:
+                            curr_val = getattr(self, key)
+                            if isinstance(curr_val, bool):
+                                if isinstance(val, bool):
+                                    setattr(self, key, val)
+                                else:
+                                    setattr(self, key, str(val).lower() in ("true", "1", "yes"))
+                            elif isinstance(curr_val, int):
+                                setattr(self, key, int(val))
                             else:
-                                setattr(self, key, str(val).lower() in ("true", "1", "yes"))
-                        elif isinstance(curr_val, int):
-                            setattr(self, key, int(val))
-                        else:
-                            setattr(self, key, str(val) if val is not None else "")
+                                setattr(self, key, str(val))
                 logger.info(f"Loaded configuration from {filepath}")
             except Exception as e:
                 logger.error(f"Failed to load config from {filepath}: {e}")
