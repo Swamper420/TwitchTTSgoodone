@@ -38,6 +38,11 @@ class TestTextChunkerShortMessages(unittest.TestCase):
         text_10 = "1234567890"
         self.assertEqual(ensure_min_length(text_10, min_length=10), "1234567890")
 
+    def test_sanitize_text_strips_symbols(self):
+        self.assertEqual(sanitize_text("Hello, world! How are you?"), "Hello world How are you")
+        self.assertEqual(sanitize_text("user@domain #1 test!!!"), "user domain 1 test")
+        self.assertEqual(sanitize_text("???!!!"), "")
+
     @patch("app.server.tts_client.synthesize")
     @patch("app.server.broadcast_event")
     def test_process_incoming_text_short_raw_text(self, mock_broadcast, mock_synthesize):

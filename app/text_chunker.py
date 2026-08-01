@@ -14,7 +14,7 @@ from app.config import config
 from app.text_normalizer import normalize_text
 
 def sanitize_text(text: str) -> str:
-    """Sanitize message text by normalizing abbreviations/currencies, stripping URLs, control chars, and excessive repeating characters."""
+    """Sanitize message text by normalizing abbreviations/currencies, stripping URLs, control chars, symbols, and excessive whitespace."""
     if not text:
         return ""
     
@@ -27,11 +27,11 @@ def sanitize_text(text: str) -> str:
     # Strip URLs
     text = re.sub(r'https?://\S+|www\.\S+', '', text)
     
+    # Strip all symbols and punctuation, keeping only alphanumeric characters and spaces
+    text = re.sub(r'[^\w\s]|_', ' ', text)
+    
     # Reduce character repetition (e.g., "looooool" -> "loool")
     text = re.sub(r'(.)\1{3,}', r'\1\1\1', text)
-    
-    # Reduce excessive punctuation (e.g. "!!!" -> "!")
-    text = re.sub(r'([!?.])\1+', r'\1', text)
     
     # Collapse whitespace
     text = re.sub(r'\s+', ' ', text).strip()

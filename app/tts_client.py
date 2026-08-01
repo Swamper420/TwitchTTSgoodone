@@ -45,6 +45,11 @@ class TTSClient:
         model_to_use = sanitize_identifier(raw_model, max_len=100) if raw_model else ""
         format_to_use = sanitize_audio_format(raw_format, default="wav")
         
+        # Strip all symbols and punctuation, keeping only alphanumeric characters and spaces
+        if text:
+            text = re.sub(r'[^\w\s]|_', ' ', text)
+            text = re.sub(r'\s+', ' ', text).strip()
+
         # Ensure text meets minimum character threshold to avoid API blocking short requests
         min_chars = config.min_chunk_chars
         if text and len(text) < min_chars:
