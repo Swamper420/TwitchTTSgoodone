@@ -86,7 +86,80 @@ document.addEventListener('DOMContentLoaded', () => {
         playNextChunk();
     }
 
-    function playNextChunk() {
+    const chimeToggle = document.getElementById('chimeToggle');
+    const spectrumCanvas = document.getElementById('spectrumCanvas');
+    let canvasCtx = spectrumCanvas ? spectrumCanvas.getContext('2d') : null;
+
+    // Web Audio API State
+    let audioCtx = null;
+    let analyser = null;
+    let audioSource = null;
+
+    function initWebAudioVisualizer() {
+        if (audioCtx) return;
+        try {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 64;
+            audioSource = audioCtx.createMediaElementSource(audioPlayer);
+            audioSource.connect(analyser);
+            analyser.connect(audioCtx.destination);
+            renderSpectrum();
+        } catch (e) {
+            console.log('Web Audio API initialized on user interaction');
+        }
+    }
+
+    function playChimeSound() {
+        if (!chimeToggle || !chimeToggle.checked) return Promise.resolve();
+        return new Promise((resolve) => {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+                osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.12); // A5
+                gain.gain.setValueAtTime(0.15, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.25);
+                setTimeout(resolve, 250);
+            } catch (e) {
+                resolve();
+            }
+        });
+    }
+
+    function renderSpectrum() {
+        if (!canvasCtx || !analyser) return;
+        requestAnimationFrame(renderSpectrum);
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        analyser.getByteFrequencyData(dataArray);
+
+        const width = spectrumCanvas.width;
+        const height = spectrumCanvas.height;
+        canvasCtx.clearRect(0, 0, width, height);
+
+        const barWidth = (width / bufferLength) * 1.5;
+        let x = 0;
+
+        for (let i = 0; i < bufferLength; i++) {
+            const barHeight = (dataArray[i] / 255) * height;
+            const gradient = canvasCtx.createLinearGradient(0, height, 0, 0);
+            gradient.addColorStop(0, '#9146ff');
+            gradient.addColorStop(1, '#00f0ff');
+
+            canvasCtx.fillStyle = gradient;
+            canvasCtx.fillRect(x, height - barHeight, barWidth - 1, barHeight);
+            x += barWidth + 1;
+        }
+    }
+
+    async function playNextChunk() {
         if (bufferTimer) {
             clearTimeout(bufferTimer);
             bufferTimer = null;
@@ -96,9 +169,13 @@ document.addEventListener('DOMContentLoaded', () => {
             isPlaying = false;
             currentItem = null;
             updateNowPlayingUI(null);
-            visualizer.classList.remove('playing');
             updateQueueUI();
             return;
+        }
+
+        initWebAudioVisualizer();
+        if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume();
         }
 
         isPlaying = true;
@@ -106,19 +183,42 @@ document.addEventListener('DOMContentLoaded', () => {
         updateQueueUI();
         updateNowPlayingUI(currentItem);
 
+        if (currentItem.chunk_index === 1 && chimeToggle && chimeToggle.checked) {
+            await playChimeSound();
+        }
+
         audioPlayer.src = currentItem.url;
         audioPlayer.volume = volumeSlider.value / 100;
         
         audioPlayer.play().then(() => {
-            visualizer.classList.add('playing');
         }).catch(err => {
             console.error('Audio playback error:', err);
-            visualizer.classList.remove('playing');
             isPlaying = false;
-            // Try next chunk if playback failed
             checkAndPlayNext();
         });
     }
+
+    // Global Hotkeys
+    document.addEventListener('keydown', (e) => {
+        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
+            return;
+        }
+
+        if (e.code === 'Space') {
+            e.preventDefault();
+            if (audioPlayer.paused && currentItem) {
+                audioPlayer.play();
+            } else {
+                audioPlayer.pause();
+            }
+        } else if (e.code === 'KeyS') {
+            skipBtn.click();
+        } else if (e.code === 'KeyC') {
+            clearBtn.click();
+        } else if (e.code === 'KeyM') {
+            muteBtn.click();
+        }
+    });
 
     audioPlayer.addEventListener('ended', () => {
         visualizer.classList.remove('playing');

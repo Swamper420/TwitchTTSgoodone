@@ -43,9 +43,7 @@
 
                 <div class="player-display">
                     <div class="now-playing-box" id="nowPlayingBox">
-                        <div class="equalizer-visualizer" id="visualizer">
-                            <span></span><span></span><span></span><span></span><span></span>
-                        </div>
+                        <canvas id="spectrumCanvas" width="180" height="60" class="spectrum-canvas"></canvas>
                         <div class="now-playing-info">
                             <span class="label">NOW SPEAKING</span>
                             <h3 id="currentSpeaker" class="speaker-name">Waiting for messages...</h3>
@@ -59,18 +57,24 @@
 
                     <!-- Audio Player Controls -->
                     <div class="player-controls">
-                        <button id="skipBtn" class="btn btn-secondary" title="Skip current audio">
+                        <button id="skipBtn" class="btn btn-secondary" title="Skip current audio [S]">
                             <span>⏭️</span> Skip
                         </button>
-                        <button id="clearBtn" class="btn btn-danger" title="Clear all queued audio">
-                            <span>🗑️</span> Clear Queue
+                        <button id="clearBtn" class="btn btn-danger" title="Clear all queued audio [C]">
+                            <span>🗑️</span> Clear
                         </button>
 
                         <div class="volume-control">
-                            <button id="muteBtn" class="btn-icon" title="Mute/Unmute">🔊</button>
+                            <button id="muteBtn" class="btn-icon" title="Mute/Unmute [M]">🔊</button>
                             <input type="range" id="volumeSlider" min="0" max="100" value="80" title="Volume" />
                             <span id="volumeValue">80%</span>
                         </div>
+
+                        <label class="toggle-switch" title="Play chime sound before TTS messages">
+                            <input type="checkbox" id="chimeToggle">
+                            <span class="slider"></span>
+                            <span class="toggle-label">Chime</span>
+                        </label>
 
                         <label class="toggle-switch">
                             <input type="checkbox" id="autoPlayToggle" checked>

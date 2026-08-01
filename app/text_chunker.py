@@ -10,10 +10,15 @@ class TTSChunk:
     total_chunks: int = 1
 
 
+from app.text_normalizer import normalize_text
+
 def sanitize_text(text: str) -> str:
-    """Sanitize message text by stripping URLs, excessive repeating characters, and bad characters."""
+    """Sanitize message text by normalizing abbreviations/currencies, stripping URLs, and excessive repeating characters."""
     if not text:
         return ""
+    
+    # Advanced text normalization (currencies, numbers, abbreviations, emotes)
+    text = normalize_text(text)
     
     # Strip URLs
     text = re.sub(r'https?://\S+|www\.\S+', '', text)
