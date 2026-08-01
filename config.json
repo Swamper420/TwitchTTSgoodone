@@ -10,9 +10,11 @@
   "twitch_channel": "m_e_s_t_a_a_j_a",
   "user_template": "{user} sanoo: {text}",
   "voice_presets": "mieto, terapisti, terry, tuomo4, niilo",
-  "twitch_bot_username": "Telebotti",
-  "twitch_oauth_token": "9nwggdcu9sdjgtuemfblr0x0mq5cw6",
+  "twitch_bot_username": "TTSBOTgood",
+  "twitch_oauth_token": "l4x0e6ngoqiizy27jled7buf1sfgf9",
   "enable_chat_responses": true,
   "enable_periodic_info": true,
-  "periodic_info_interval": 10
+  "periodic_info_interval": 10,
+  "admin_password": "",
+  "twitch_client_id": ""
 }

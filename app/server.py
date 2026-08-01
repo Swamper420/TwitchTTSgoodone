@@ -15,6 +15,15 @@ from app.tts_client import tts_client, TTSClient
 from app.twitch_listener import TwitchListener
 from app.user_voices import user_voice_manager
 from app.auth import dashboard_auth_manager, twitch_token_validator, mask_token
+from app.sanitizer import (
+    sanitize_string,
+    sanitize_username,
+    sanitize_identifier,
+    sanitize_int,
+    sanitize_bool,
+    sanitize_audio_format,
+    sanitize_url,
+)
 
 logger = logging.getLogger("Server")
 
@@ -305,8 +314,9 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
 
         # Route: Stream Audio File
         if path.startswith("/api/audio/"):
-            chunk_id = path.split("/api/audio/")[-1]
-            if chunk_id in audio_store:
+            raw_id = path.split("/api/audio/")[-1]
+            chunk_id = sanitize_identifier(raw_id, max_len=64)
+            if chunk_id and chunk_id in audio_store:
                 audio_bytes, mime_type, _ = audio_store[chunk_id]
                 self.send_response(200)
                 self.send_header("Content-Type", mime_type)
@@ -343,10 +353,15 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
 
         # Route: Proxy GET /api/tts
         if path == "/api/tts":
-            text = query.get("text", [""])[0]
-            voice = query.get("voice", [None])[0]
-            model = query.get("model", [None])[0]
-            fmt = query.get("format", [None])[0]
+            raw_text = query.get("text", [""])[0]
+            raw_voice = query.get("voice", [None])[0]
+            raw_model = query.get("model", [None])[0]
+            raw_fmt = query.get("format", [None])[0]
+
+            text = sanitize_string(raw_text, max_len=2000)
+            voice = sanitize_identifier(raw_voice, max_len=100) if raw_voice is not None else None
+            model = sanitize_identifier(raw_model, max_len=100) if raw_model is not None else None
+            fmt = sanitize_audio_format(raw_fmt) if raw_fmt is not None else None
             
             if not text:
                 self._send_json(400, {"error": "Missing required parameter 'text'"})
@@ -373,8 +388,9 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             return
             
         rel_path = path.lstrip('/')
-        safe_path = os.path.join(STATIC_DIR, rel_path)
-        if os.path.isfile(safe_path) and os.path.abspath(safe_path).startswith(os.path.abspath(STATIC_DIR)):
+        safe_path = os.path.abspath(os.path.join(STATIC_DIR, rel_path))
+        static_dir_abs = os.path.abspath(STATIC_DIR)
+        if os.path.isfile(safe_path) and (os.path.commonpath([static_dir_abs, safe_path]) == static_dir_abs):
             mime = "text/css" if path.endswith(".css") else ("application/javascript" if path.endswith(".js") else "text/plain")
             self._serve_static_file(safe_path, mime)
             return
@@ -385,24 +401,35 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
 
-        content_len = int(self.headers.get('Content-Length', 0))
+        try:
+            content_len = int(self.headers.get('Content-Length', 0))
+        except (ValueError, TypeError):
+            content_len = 0
+
+        # Maximum payload limit (5MB)
+        if content_len > 5 * 1024 * 1024:
+            self._send_json(413, {"error": "Payload too large (max 5MB)"})
+            return
+
         post_data = self.rfile.read(content_len) if content_len > 0 else b"{}"
 
         try:
             body = json.loads(post_data.decode('utf-8')) if post_data else {}
+            if not isinstance(body, dict):
+                body = {}
         except Exception:
             body = {}
 
         # Route: Validate Twitch Token (Public/Auth tool)
         if path == "/api/auth/validate_twitch":
-            token = body.get("oauth_token", "").strip()
+            token = sanitize_string(body.get("oauth_token"), max_len=500)
             res = twitch_token_validator.validate_token(token)
             self._send_json(200, res)
             return
 
         # Route: Admin Login
         if path == "/api/auth/login":
-            password = body.get("password", "").strip()
+            password = sanitize_string(body.get("password"), max_len=500)
             success, session_token, err = dashboard_auth_manager.authenticate(password)
             if success:
                 self._send_json(200, {"success": True, "token": session_token})
@@ -419,10 +446,10 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
 
         # Route: Proxy POST /api/tts
         if path == "/api/tts":
-            text = body.get("text", "")
-            voice = body.get("voice")
-            model = body.get("model")
-            fmt = body.get("format")
+            text = sanitize_string(body.get("text"), max_len=2000)
+            voice = sanitize_identifier(body.get("voice"), max_len=100) if body.get("voice") is not None else None
+            model = sanitize_identifier(body.get("model"), max_len=100) if body.get("model") is not None else None
+            fmt = sanitize_audio_format(body.get("format")) if body.get("format") is not None else None
             
             if not text:
                 self._send_json(400, {"error": "Missing required field 'text'"})
@@ -453,9 +480,9 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
 
         # Route: Connect Twitch Channel
         if path == "/api/connect":
-            channel = body.get("channel", "").strip()
+            channel = sanitize_username(body.get("channel"))
             if not channel:
-                self._send_json(400, {"error": "Channel name is required"})
+                self._send_json(400, {"error": "Valid Twitch channel name is required (1-25 alphanumeric/underscore characters)"})
                 return
             config.twitch_channel = channel
             config.save()
@@ -490,10 +517,10 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
 
         # Route: Manual Test TTS
         if path == "/api/tts/test":
-            text = body.get("text", "").strip()
-            voice = body.get("voice")
-            model = body.get("model")
-            user = body.get("user", "TestUser")
+            text = sanitize_string(body.get("text"), max_len=2000)
+            voice = sanitize_identifier(body.get("voice"), max_len=100) if body.get("voice") is not None else None
+            model = sanitize_identifier(body.get("model"), max_len=100) if body.get("model") is not None else None
+            user = sanitize_string(body.get("user", "TestUser"), max_len=50, default="TestUser")
             
             if not text:
                 self._send_json(400, {"error": "Text is required"})
@@ -511,41 +538,43 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         # Route: Save Config/Settings
         if path == "/api/settings":
             if "tts_api_url" in body:
-                config.tts_api_url = str(body["tts_api_url"]).strip()
+                config.tts_api_url = sanitize_url(body["tts_api_url"], default=config.tts_api_url)
                 tts_client.base_url = config.tts_api_url.rstrip('/')
             if "tts_voice" in body:
-                config.tts_voice = str(body["tts_voice"]).strip()
+                config.tts_voice = sanitize_identifier(body["tts_voice"], max_len=100, default=config.tts_voice)
             if "tts_model" in body:
-                config.tts_model = str(body["tts_model"]).strip()
+                config.tts_model = sanitize_identifier(body["tts_model"], max_len=100, default=config.tts_model)
             if "tts_format" in body:
-                config.tts_format = str(body["tts_format"]).strip()
+                config.tts_format = sanitize_audio_format(body["tts_format"], default=config.tts_format)
             if "max_chunk_chars" in body:
-                config.max_chunk_chars = int(body["max_chunk_chars"])
+                config.max_chunk_chars = sanitize_int(body["max_chunk_chars"], default=config.max_chunk_chars, min_val=10, max_val=5000)
             if "min_chunk_chars" in body:
-                config.min_chunk_chars = int(body["min_chunk_chars"])
+                config.min_chunk_chars = sanitize_int(body["min_chunk_chars"], default=config.min_chunk_chars, min_val=1, max_val=500)
             if "user_template" in body:
-                config.user_template = str(body["user_template"]).strip()
+                config.user_template = sanitize_string(body["user_template"], max_len=500, default=config.user_template)
             if "voice_presets" in body:
-                config.voice_presets = str(body["voice_presets"]).strip()
+                config.voice_presets = sanitize_string(body["voice_presets"], max_len=1000, default=config.voice_presets)
             if "twitch_bot_username" in body:
-                config.twitch_bot_username = str(body["twitch_bot_username"]).strip()
+                cleaned_bot_user = sanitize_username(body["twitch_bot_username"])
+                if cleaned_bot_user:
+                    config.twitch_bot_username = cleaned_bot_user
             if "twitch_oauth_token" in body:
-                raw_tok = str(body["twitch_oauth_token"]).strip()
+                raw_tok = sanitize_string(body["twitch_oauth_token"], max_len=500)
                 # Don't update if sent masked string unless it changed
-                if not raw_tok.startswith("oauth:••••") and not raw_tok.startswith("••••"):
+                if raw_tok and not raw_tok.startswith("oauth:••••") and not raw_tok.startswith("••••"):
                     config.twitch_oauth_token = raw_tok
             if "enable_chat_responses" in body:
-                config.enable_chat_responses = bool(body["enable_chat_responses"])
+                config.enable_chat_responses = sanitize_bool(body["enable_chat_responses"], default=config.enable_chat_responses)
             if "enable_periodic_info" in body:
-                config.enable_periodic_info = bool(body["enable_periodic_info"])
+                config.enable_periodic_info = sanitize_bool(body["enable_periodic_info"], default=config.enable_periodic_info)
             if "periodic_info_interval" in body:
-                config.periodic_info_interval = int(body["periodic_info_interval"])
+                config.periodic_info_interval = sanitize_int(body["periodic_info_interval"], default=config.periodic_info_interval, min_val=1, max_val=1440)
             if "admin_password" in body:
-                raw_pwd = str(body["admin_password"]).strip()
-                if raw_pwd != "••••••••":
+                raw_pwd = sanitize_string(body["admin_password"], max_len=500)
+                if raw_pwd and raw_pwd != "••••••••":
                     config.admin_password = raw_pwd
             if "twitch_client_id" in body:
-                config.twitch_client_id = str(body["twitch_client_id"]).strip()
+                config.twitch_client_id = sanitize_string(body["twitch_client_id"], max_len=200)
             
             config.save()
             if twitch_bot:
@@ -557,10 +586,10 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
 
         # Route: User Voices Management
         if path == "/api/user_voices/set":
-            username = body.get("user", "").strip()
-            voice = body.get("voice", "").strip()
+            username = sanitize_username(body.get("user"))
+            voice = sanitize_identifier(body.get("voice"), max_len=100)
             if not username or not voice:
-                self._send_json(400, {"error": "Both 'user' and 'voice' parameters are required"})
+                self._send_json(400, {"error": "Both valid 'user' and 'voice' parameters are required"})
                 return
             saved = user_voice_manager.set_voice(username, voice)
             broadcast_event("status", self._get_status_dict())
@@ -568,9 +597,9 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/user_voices/delete":
-            username = body.get("user", "").strip()
+            username = sanitize_username(body.get("user"))
             if not username:
-                self._send_json(400, {"error": "Parameter 'user' is required"})
+                self._send_json(400, {"error": "Valid parameter 'user' is required"})
                 return
             user_voice_manager.clear_user(username)
             broadcast_event("status", self._get_status_dict())
