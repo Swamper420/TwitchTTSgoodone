@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twitch TTS Bot - Audio Overlay & Control Dashboard</title>
+    <!-- Modern Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Top Header Navbar -->
+        <header class="navbar">
+            <div class="logo">
+                <div class="logo-icon">🎙️</div>
+                <div class="logo-text">
+                    <h1>Twitch<span>TTS</span></h1>
+                    <span class="badge">Local API</span>
+                </div>
+            </div>
+
+            <div class="channel-connect-bar">
+                <div class="status-pill" id="statusPill">
+                    <span class="status-dot"></span>
+                    <span id="statusText">Disconnected</span>
+                </div>
+                <input type="text" id="channelInput" placeholder="Enter Twitch Channel..." />
+                <button id="connectBtn" class="btn btn-primary">Connect</button>
+            </div>
+        </header>
+
+        <!-- Main Dashboard Layout -->
+        <main class="dashboard-grid">
+            <!-- Left Column: Audio Queue & Player -->
+            <section class="card player-card">
+                <div class="card-header">
+                    <h2><span class="icon">🔊</span> Audio Queue Player</h2>
+                    <span class="queue-badge" id="queueBadge">0 in queue</span>
+                </div>
+
+                <div class="player-display">
+                    <div class="now-playing-box" id="nowPlayingBox">
+                        <div class="equalizer-visualizer" id="visualizer">
+                            <span></span><span></span><span></span><span></span><span></span>
+                        </div>
+                        <div class="now-playing-info">
+                            <span class="label">NOW SPEAKING</span>
+                            <h3 id="currentSpeaker" class="speaker-name">Waiting for messages...</h3>
+                            <p id="currentText" class="spoken-text">Connect to Twitch chat or test a voice below.</p>
+                            <div class="meta-tags">
+                                <span class="tag" id="voiceTag">Voice: Default</span>
+                                <span class="tag" id="chunkTag">Chunk: 0 / 0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Audio Player Controls -->
+                    <div class="player-controls">
+                        <button id="skipBtn" class="btn btn-secondary" title="Skip current audio">
+                            <span>⏭️</span> Skip
+                        </button>
+                        <button id="clearBtn" class="btn btn-danger" title="Clear all queued audio">
+                            <span>🗑️</span> Clear Queue
+                        </button>
+
+                        <div class="volume-control">
+                            <button id="muteBtn" class="btn-icon" title="Mute/Unmute">🔊</button>
+                            <input type="range" id="volumeSlider" min="0" max="100" value="80" title="Volume" />
+                            <span id="volumeValue">80%</span>
+                        </div>
+
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="autoPlayToggle" checked>
+                            <span class="slider"></span>
+                            <span class="toggle-label">Auto Play</span>
+                        </label>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Column: Manual Test Console & Multi-Voice Info -->
+            <section class="card test-card">
+                <div class="card-header">
+                    <h2><span class="icon">⚡</span> Manual TTS Test Console</h2>
+                </div>
+
+                <div class="test-form">
+                    <div class="form-group">
+                        <label for="testTextInput">
+                            Test Message 
+                            <span class="hint">Use <code>[voicename]</code> tags for multi-voice!</span>
+                        </label>
+                        <textarea id="testTextInput" rows="3" placeholder="Hello! [alice] Welcome to the stream! [bob] How is everyone doing today?"></textarea>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="testVoiceInput">Voice Override</label>
+                            <input type="text" id="testVoiceInput" placeholder="e.g. alice, bob (optional)" />
+                        </div>
+                        <div class="form-group">
+                            <label for="testModelInput">Model Override</label>
+                            <input type="text" id="testModelInput" placeholder="Model name (optional)" />
+                        </div>
+                    </div>
+
+                    <div class="action-row">
+                        <button id="sendTestBtn" class="btn btn-accent btn-large">
+                            <span>🚀</span> Synthesize & Play
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Bottom Left: Settings -->
+            <section class="card settings-card">
+                <div class="card-header">
+                    <h2><span class="icon">⚙️</span> Local TTS API Settings</h2>
+                </div>
+                <div class="settings-form">
+                    <div class="form-row">
+                        <div class="form-group full-width">
+                            <label for="apiUrlInput">Local TTS API Endpoint</label>
+                            <input type="text" id="apiUrlInput" value="http://localhost:8080/api/tts" />
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="defaultVoiceInput">Default Voice</label>
+                            <input type="text" id="defaultVoiceInput" placeholder="CHATTERBOX_DEFAULT_VOICE" />
+                        </div>
+                        <div class="form-group">
+                            <label for="formatSelect">Audio Format</label>
+                            <select id="formatSelect">
+                                <option value="wav" selected>WAV (.wav)</option>
+                                <option value="ogg">Ogg Opus (.ogg)</option>
+                                <option value="json">JSON Base64</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="maxChunkInput">Max Chunk Chars</label>
+                            <input type="number" id="maxChunkInput" value="100" min="20" max="500" />
+                        </div>
+                    </div>
+
+                    <button id="saveSettingsBtn" class="btn btn-secondary">Save Settings</button>
+                </div>
+            </section>
+
+            <!-- Bottom Right: Live Chat Feed -->
+            <section class="card chat-card">
+                <div class="card-header">
+                    <h2><span class="icon">💬</span> Live Twitch Chat Feed</h2>
+                </div>
+                <div class="chat-feed" id="chatFeed">
+                    <div class="chat-placeholder">No messages received yet. Connect to a Twitch channel to start listening!</div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Hidden HTML5 Audio Element -->
+    <audio id="audioPlayer" preload="auto"></audio>
+
+    <script src="app.js"></script>
+</body>
+</html>

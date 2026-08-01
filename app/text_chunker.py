@@ -1,0 +1,146 @@
+import re
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
+
+@dataclass
+class TTSChunk:
+    text: str
+    voice: Optional[str] = None
+    chunk_index: int = 0
+    total_chunks: int = 1
+
+
+def sanitize_text(text: str) -> str:
+    """Sanitize message text by stripping URLs, excessive repeating characters, and bad characters."""
+    if not text:
+        return ""
+    
+    # Strip URLs
+    text = re.sub(r'https?://\S+|www\.\S+', '', text)
+    
+    # Reduce character repetition (e.g., "looooool" -> "loool")
+    text = re.sub(r'(.)\1{3,}', r'\1\1\1', text)
+    
+    # Reduce excessive punctuation (e.g. "!!!" -> "!")
+    text = re.sub(r'([!?.])\1+', r'\1', text)
+    
+    # Collapse whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+
+def parse_voice_tags(text: str) -> List[Tuple[Optional[str], str]]:
+    """
+    Parse [voicename] tags from text and return a list of (voice_name, segment_text) tuples.
+    Example:
+    "Hello world [alice] this is Alice speaking [bob] and this is Bob!"
+    -> [(None, "Hello world"), ("alice", "this is Alice speaking"), ("bob", "and this is Bob!")]
+    """
+    # Match pattern like [voice_name]
+    pattern = r'\[([a-zA-Z0-9_\-]+)\]'
+    tokens = re.split(pattern, text)
+    
+    # re.split with 1 group returns: [text_before, group_1, text_after, group_2, text_after...]
+    segments: List[Tuple[Optional[str], str]] = []
+    
+    current_voice: Optional[str] = None
+    first_part = tokens[0].strip() if tokens else ""
+    if first_part:
+        segments.append((None, first_part))
+        
+    i = 1
+    while i < len(tokens):
+        voice_name = tokens[i].strip()
+        segment_text = tokens[i + 1].strip() if (i + 1) < len(tokens) else ""
+        if segment_text:
+            segments.append((voice_name, segment_text))
+        current_voice = voice_name
+        i += 2
+        
+    return segments
+
+
+def split_text_into_chunks(text: str, max_chars: int = 100) -> List[str]:
+    """Split text into chunks by sentence boundaries, clauses, and word boundaries."""
+    sanitized = sanitize_text(text)
+    if not sanitized:
+        return []
+    
+    if len(sanitized) <= max_chars:
+        return [sanitized]
+    
+    # Step 1: Split into sentences (. ! ? \n)
+    sentence_pattern = r'(?<=[.!?\n])\s+'
+    raw_sentences = [s.strip() for s in re.split(sentence_pattern, sanitized) if s.strip()]
+    
+    chunks: List[str] = []
+    
+    for sentence in raw_sentences:
+        if len(sentence) <= max_chars:
+            chunks.append(sentence)
+            continue
+            
+        # Step 2: Split long sentence by clauses (, ; : -)
+        clause_pattern = r'(?<=[,;:-])\s+'
+        raw_clauses = [c.strip() for c in re.split(clause_pattern, sentence) if c.strip()]
+        
+        current_chunk = ""
+        for clause in raw_clauses:
+            if len(clause) > max_chars:
+                # Flush existing chunk
+                if current_chunk:
+                    chunks.append(current_chunk.strip())
+                    current_chunk = ""
+                # Step 3: Hard split at word boundaries
+                words = clause.split()
+                sub_chunk = ""
+                for word in words:
+                    if len(sub_chunk) + len(word) + 1 <= max_chars:
+                        sub_chunk = f"{sub_chunk} {word}".strip()
+                    else:
+                        if sub_chunk:
+                            chunks.append(sub_chunk)
+                        sub_chunk = word
+                if sub_chunk:
+                    chunks.append(sub_chunk)
+            else:
+                if len(current_chunk) + len(clause) + 1 <= max_chars:
+                    current_chunk = f"{current_chunk} {clause}".strip()
+                else:
+                    if current_chunk:
+                        chunks.append(current_chunk)
+                    current_chunk = clause
+        if current_chunk:
+            chunks.append(current_chunk)
+            
+    return chunks
+
+
+def process_message_to_chunks(text: str, max_chars: int = 100) -> List[TTSChunk]:
+    """
+    Full message processing pipeline:
+    1. Parse [voice] tags
+    2. Sanitize and chunk each voice segment
+    3. Return TTSChunk objects with index tracking
+    """
+    voice_segments = parse_voice_tags(text)
+    all_chunks: List[TTSChunk] = []
+    
+    temp_chunks: List[Tuple[Optional[str], str]] = []
+    for voice, seg_text in voice_segments:
+        sub_chunks = split_text_into_chunks(seg_text, max_chars=max_chars)
+        for sub in sub_chunks:
+            temp_chunks.append((voice, sub))
+            
+    total = len(temp_chunks)
+    for idx, (voice, chunk_text_val) in enumerate(temp_chunks):
+        all_chunks.append(
+            TTSChunk(
+                text=chunk_text_val,
+                voice=voice,
+                chunk_index=idx,
+                total_chunks=total
+            )
+        )
+        
+    return all_chunks
