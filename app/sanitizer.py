@@ -54,6 +54,23 @@ def sanitize_int(val: Any, default: int, min_val: Optional[int] = None, max_val:
     return res
 
 
+def sanitize_float(val: Any, default: float, min_val: Optional[float] = None, max_val: Optional[float] = None) -> float:
+    """Safely parse float and clamp within optional min_val and max_val bounds."""
+    try:
+        if isinstance(val, bool):
+            return default
+        res = float(val)
+    except (ValueError, TypeError):
+        return default
+
+    if min_val is not None and res < min_val:
+        res = min_val
+    if max_val is not None and res > max_val:
+        res = max_val
+    return res
+
+
+
 def sanitize_bool(val: Any, default: bool = False) -> bool:
     """Safely parse boolean value."""
     if isinstance(val, bool):

@@ -25,6 +25,7 @@ ENV_KEYS = {
     "periodic_info_interval": "PERIODIC_INFO_INTERVAL",
     "admin_password": "ADMIN_PASSWORD",
     "twitch_client_id": "TWITCH_CLIENT_ID",
+    "same_user_timeout": "SAME_USER_TIMEOUT",
 }
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -88,6 +89,7 @@ class Config:
     periodic_info_interval: int = field(default_factory=lambda: int(os.getenv("PERIODIC_INFO_INTERVAL", "15")))
     admin_password: str = field(default_factory=lambda: os.getenv("ADMIN_PASSWORD", ""))
     twitch_client_id: str = field(default_factory=lambda: os.getenv("TWITCH_CLIENT_ID", ""))
+    same_user_timeout: float = field(default_factory=lambda: float(os.getenv("SAME_USER_TIMEOUT", "10.0")))
 
     def load(self, filepath: str = CONFIG_FILE):
         """Load configuration from JSON file if present, respecting environment variable overrides."""
@@ -103,6 +105,11 @@ class Config:
                 elif isinstance(curr_val, int):
                     try:
                         setattr(self, key, int(val_str))
+                    except ValueError:
+                        pass
+                elif isinstance(curr_val, float):
+                    try:
+                        setattr(self, key, float(val_str))
                     except ValueError:
                         pass
                 else:
@@ -128,6 +135,8 @@ class Config:
                                     setattr(self, key, str(val).lower() in ("true", "1", "yes"))
                             elif isinstance(curr_val, int):
                                 setattr(self, key, int(val))
+                            elif isinstance(curr_val, float):
+                                setattr(self, key, float(val))
                             else:
                                 setattr(self, key, str(val))
                 logger.info(f"Loaded configuration from {filepath}")
@@ -174,6 +183,7 @@ class Config:
             "periodic_info_interval": self.periodic_info_interval,
             "admin_password": self.admin_password,
             "twitch_client_id": self.twitch_client_id,
+            "same_user_timeout": self.same_user_timeout,
         }
 
     def to_masked_dict(self) -> Dict[str, Any]:

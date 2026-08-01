@@ -36,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const maxChunkInput = document.getElementById('maxChunkInput');
     const minChunkInput = document.getElementById('minChunkInput');
     const userTemplateInput = document.getElementById('userTemplateInput');
+    const sameUserTimeoutInput = document.getElementById('sameUserTimeoutInput');
     const voicePresetsInput = document.getElementById('voicePresetsInput');
     const saveSettingsBtn = document.getElementById('saveSettingsBtn');
 
@@ -569,6 +570,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (maxChunkInput) maxChunkInput.value = data.config.max_chunk_chars || 50;
             if (minChunkInput) minChunkInput.value = data.config.min_chunk_chars || 10;
             if (userTemplateInput) userTemplateInput.value = data.config.user_template || '';
+            if (sameUserTimeoutInput) sameUserTimeoutInput.value = data.config.same_user_timeout !== undefined ? data.config.same_user_timeout : 10;
             if (voicePresetsInput) voicePresetsInput.value = data.config.voice_presets || '';
 
             if (botUsernameInput) botUsernameInput.value = data.config.twitch_bot_username || '';
@@ -906,7 +908,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     admin_password: adminPasswordInput ? adminPasswordInput.value.trim() : '',
                     enable_chat_responses: enableChatResponsesToggle ? enableChatResponsesToggle.checked : true,
                     enable_periodic_info: enablePeriodicInfoToggle ? enablePeriodicInfoToggle.checked : false,
-                    periodic_info_interval: periodicInfoIntervalInput ? (parseInt(periodicInfoIntervalInput.value, 10) || 15) : 15
+                    periodic_info_interval: periodicInfoIntervalInput ? (parseInt(periodicInfoIntervalInput.value, 10) || 15) : 15,
+                    same_user_timeout: sameUserTimeoutInput ? (parseFloat(sameUserTimeoutInput.value) >= 0 ? parseFloat(sameUserTimeoutInput.value) : 10) : 10
                 })
             });
             const validRes = await handleFetchResponse(res);

@@ -23,6 +23,7 @@ from app.sanitizer import (
     sanitize_bool,
     sanitize_audio_format,
     sanitize_url,
+    sanitize_float,
 )
 
 logger = logging.getLogger("Server")
@@ -78,17 +79,19 @@ def _periodic_info_loop():
 
 
 last_command_broadcast_time = 0.0
+last_speaker: Optional[str] = None
+last_speaker_time: float = 0.0
 
 def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str] = None, override_model: Optional[str] = None):
     """
     Process incoming chat or test message:
     1. Intercept chat commands (!help, !tts, !botinfo, !voices, !myvoice, !skip, !clear).
-    2. Prepend user template to regular text.
+    2. Prepend user template to regular text (unless sent back-to-back by same user).
     3. Parse into chunks (with per-chunk voice tags if present).
     4. Request local TTS API for each chunk.
     5. Save audio to memory store and notify frontend player via SSE.
     """
-    global last_command_broadcast_time
+    global last_command_broadcast_time, last_speaker, last_speaker_time
 
     if raw_text:
         raw_lower = raw_text.strip().lower()
@@ -164,7 +167,14 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                 clean_raw = clean_raw + "bruhbruh"
             raw_text = clean_raw
 
-    if user:
+    now = time.time()
+    skip_user_prefix = False
+    if user and last_speaker:
+        if user.strip().lower() == last_speaker.strip().lower():
+            if config.same_user_timeout > 0 and (now - last_speaker_time) <= config.same_user_timeout:
+                skip_user_prefix = True
+
+    if user and not skip_user_prefix:
         if "{user}" in config.user_template and "{text}" in config.user_template:
             try:
                 text_to_speak = config.user_template.format(user=user, text=raw_text)
@@ -174,6 +184,13 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
             text_to_speak = f"{user} {config.user_template} {raw_text}"
     else:
         text_to_speak = raw_text
+
+    if user:
+        last_speaker = user
+        last_speaker_time = now
+    else:
+        last_speaker = None
+        last_speaker_time = 0.0
 
     chunks = process_message_to_chunks(text_to_speak, max_chars=config.max_chunk_chars, min_chars=config.min_chunk_chars)
     if not chunks:
@@ -604,6 +621,8 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                     config.admin_password = raw_pwd
             if "twitch_client_id" in body:
                 config.twitch_client_id = sanitize_string(body["twitch_client_id"], max_len=200)
+            if "same_user_timeout" in body:
+                config.same_user_timeout = sanitize_float(body["same_user_timeout"], default=config.same_user_timeout, min_val=0.0, max_val=300.0)
             
             config.save()
             if twitch_bot:

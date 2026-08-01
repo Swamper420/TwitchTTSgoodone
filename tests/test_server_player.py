@@ -88,5 +88,51 @@ class TestPlayerServerRoutes(unittest.TestCase):
             self.assertNotIn("channelInput", body)
             self.assertNotIn("saveSettingsBtn", body)
 
+    def test_same_user_back_to_back_cooldown(self):
+        from unittest.mock import patch
+        import app.server as server_module
+        from app.config import config
+
+        synthesized_texts = []
+
+        def mock_synthesize(text, voice="", model="", audio_format="ogg"):
+            synthesized_texts.append(text)
+            return b"fake_audio_bytes", "audio/ogg"
+
+        original_timeout = config.same_user_timeout
+        config.same_user_timeout = 10.0
+
+        try:
+            # Reset last speaker state
+            server_module.last_speaker = None
+            server_module.last_speaker_time = 0.0
+
+            with patch("app.server.tts_client.synthesize", side_effect=mock_synthesize):
+                # Message 1 from UserA
+                server_module.process_incoming_text("UserA", "Tämä on ensimmäinen lause")
+                self.assertEqual(len(synthesized_texts), 1)
+                self.assertIn("UserA sanoo", synthesized_texts[0])
+
+                # Message 2 from UserA immediately after (should skip 'UserA sanoo')
+                server_module.process_incoming_text("UserA", "Tämä on toinen lause perään")
+                self.assertEqual(len(synthesized_texts), 2)
+                self.assertNotIn("UserA", synthesized_texts[1])
+                self.assertTrue(synthesized_texts[1].startswith("Tämä on toinen lause perään"))
+
+                # Message 3 from UserB (different user, should include 'UserB sanoo')
+                server_module.process_incoming_text("UserB", "Tämä on UserB:n lause")
+                self.assertEqual(len(synthesized_texts), 3)
+                self.assertIn("UserB sanoo", synthesized_texts[2])
+
+                # Message 4 from UserB after timeout (> 10s ago)
+                server_module.last_speaker_time = time.time() - 20.0
+                server_module.process_incoming_text("UserB", "Tämä tulee pitkän ajan päästä")
+                self.assertEqual(len(synthesized_texts), 4)
+                self.assertIn("UserB sanoo", synthesized_texts[3])
+        finally:
+            config.same_user_timeout = original_timeout
+
+
 if __name__ == "__main__":
     unittest.main()
+

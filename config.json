@@ -16,5 +16,6 @@
   "enable_periodic_info": true,
   "periodic_info_interval": 10,
   "admin_password": "",
-  "twitch_client_id": ""
+  "twitch_client_id": "",
+  "same_user_timeout": 10.0
 }
