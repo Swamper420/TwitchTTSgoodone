@@ -3,6 +3,8 @@ import logging
 import os
 from typing import Dict, Optional
 
+from app.sanitizer import sanitize_identifier, sanitize_username
+
 logger = logging.getLogger("UserVoices")
 
 USER_VOICES_FILE = os.getenv("USER_VOICES_FILE", "user_voices.json")
@@ -22,7 +24,11 @@ class UserVoiceManager:
                 with open(self.filepath, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 if isinstance(data, dict):
-                    self._voices = {str(k).lower(): str(v).strip() for k, v in data.items() if v}
+                    self._voices = {
+                        sanitize_username(k): sanitize_identifier(v, max_len=100)
+                        for k, v in data.items()
+                        if k and v and sanitize_username(k) and sanitize_identifier(v, max_len=100)
+                    }
                 logger.info(f"Loaded {len(self._voices)} user voice mappings from {self.filepath}")
             except Exception as e:
                 logger.error(f"Failed to load user voices from {self.filepath}: {e}")
@@ -41,14 +47,18 @@ class UserVoiceManager:
         """Get signature voice for username if registered."""
         if not username:
             return None
-        return self._voices.get(username.strip().lower())
+        user_clean = sanitize_username(username)
+        return self._voices.get(user_clean) if user_clean else None
         
     def set_voice(self, username: str, voice_name: str) -> str:
         """Set signature voice for username. Returns clean voice name."""
-        user_clean = username.strip().lower()
-        voice_clean = voice_name.strip().lower()
+        user_clean = sanitize_username(username)
+        if not user_clean:
+            return "default"
+
+        voice_clean = sanitize_identifier(voice_name, max_len=100).lower()
         
-        if voice_clean in ("reset", "clear", "default", "none", ""):
+        if not voice_clean or voice_clean in ("reset", "clear", "default", "none"):
             if user_clean in self._voices:
                 del self._voices[user_clean]
                 self.save()

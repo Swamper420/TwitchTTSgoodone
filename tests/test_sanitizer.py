@@ -38,6 +38,7 @@ class TestSanitizer(unittest.TestCase):
     def test_sanitize_identifier(self):
         self.assertEqual(sanitize_identifier("voice-name_1.0"), "voice-name_1.0")
         self.assertEqual(sanitize_identifier("voice<script>alert(1)</script>"), "voicescriptalert1script")
+        self.assertEqual(sanitize_identifier("__import__('os')._exit(0"), "__import__os._exit0")
         self.assertEqual(sanitize_identifier("", default="default_voice"), "default_voice")
 
     def test_sanitize_int(self):

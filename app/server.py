@@ -127,10 +127,10 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
         # Command: !myvoice / !voice
         if raw_lower.startswith("!myvoice") or raw_lower.startswith("!voice"):
             parts = raw_text.strip().split(maxsplit=1)
-            requested_voice = parts[1].strip() if len(parts) > 1 else ""
+            raw_voice_arg = parts[1].strip() if len(parts) > 1 else ""
             user_name = user or "Chatter"
 
-            if not requested_voice:
+            if not raw_voice_arg:
                 curr_voice = user_voice_manager.get_voice(user_name) or config.tts_voice
                 msg_text = f"@{user_name} Usage: !myvoice <voicename> or !myvoice reset. Your active voice: '{curr_voice}'. Presets: {config.voice_presets}"
                 broadcast_event("chat_message", {"user": "System", "message": msg_text, "timestamp": time.time()})
@@ -138,11 +138,12 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                     twitch_bot.send_chat(msg_text)
                 return
 
-            saved_voice = user_voice_manager.set_voice(user_name, requested_voice)
-            if saved_voice == "default" or requested_voice.lower() in ("reset", "clear", "default", "none"):
+            clean_requested = sanitize_identifier(raw_voice_arg, max_len=100)
+            if not clean_requested or raw_voice_arg.lower() in ("reset", "clear", "default", "none"):
                 user_voice_manager.clear_user(user_name)
                 msg_text = f"Reset @{user_name}'s signature TTS voice to global default ('{config.tts_voice}')."
             else:
+                saved_voice = user_voice_manager.set_voice(user_name, clean_requested)
                 msg_text = f"Saved signature TTS voice for @{user_name} to '{saved_voice}'!"
 
             broadcast_event("chat_message", {"user": "System", "message": msg_text, "timestamp": time.time()})

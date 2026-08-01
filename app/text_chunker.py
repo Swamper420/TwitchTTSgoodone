@@ -14,9 +14,12 @@ from app.config import config
 from app.text_normalizer import normalize_text
 
 def sanitize_text(text: str) -> str:
-    """Sanitize message text by normalizing abbreviations/currencies, stripping URLs, and excessive repeating characters."""
+    """Sanitize message text by normalizing abbreviations/currencies, stripping URLs, control chars, and excessive repeating characters."""
     if not text:
         return ""
+    
+    # Strip null bytes, control characters, and non-printable unicode ranges that trigger special token errors
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\ufffe\uffff]', '', text)
     
     # Advanced text normalization (currencies, numbers, abbreviations, emotes)
     text = normalize_text(text)

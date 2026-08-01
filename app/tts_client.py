@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional, Tuple
 import requests
 
 from app.config import config
+from app.sanitizer import sanitize_identifier, sanitize_audio_format
 
 logger = logging.getLogger("TTSClient")
 
@@ -36,9 +37,13 @@ class TTSClient:
         Synthesize text to audio.
         Returns tuple of (audio_bytes, mime_type).
         """
-        voice_to_use = voice or config.tts_voice
-        model_to_use = model or config.tts_model
-        format_to_use = audio_format or config.tts_format or "wav"
+        raw_voice = voice or config.tts_voice
+        raw_model = model or config.tts_model
+        raw_format = audio_format or config.tts_format or "wav"
+
+        voice_to_use = sanitize_identifier(raw_voice, max_len=100) if raw_voice else ""
+        model_to_use = sanitize_identifier(raw_model, max_len=100) if raw_model else ""
+        format_to_use = sanitize_audio_format(raw_format, default="wav")
         
         # Ensure text meets minimum character threshold to avoid API blocking short requests
         min_chars = config.min_chunk_chars
