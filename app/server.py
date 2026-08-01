@@ -45,25 +45,64 @@ def broadcast_event(event_type: str, payload: dict):
             sse_clients.remove(q)
 
 
+def send_bot_helpful_info() -> str:
+    """Send helpful info about TTS bot features to chat & SSE UI."""
+    info_text = f"🎙️ Twitch TTS Bot Info: Set your default voice with '!myvoice <voice>' (e.g. !myvoice mieto) or reset with '!myvoice reset'. Preset voices: [{config.voice_presets}]. Use [voicename] tags in chat for multi-voice!"
+    broadcast_event("chat_message", {"user": "System", "message": info_text, "timestamp": time.time()})
+    if config.enable_chat_responses and twitch_bot:
+        twitch_bot.send_chat(info_text)
+    return info_text
+
+
+def _periodic_info_loop():
+    logger.info("Periodic info background thread running.")
+    while True:
+        try:
+            interval_mins = max(1, config.periodic_info_interval)
+            time.sleep(interval_mins * 60)
+            if config.enable_periodic_info and twitch_bot and twitch_bot.running and twitch_bot.channel:
+                logger.info("Broadcasting periodic helpful info to Twitch chat...")
+                send_bot_helpful_info()
+        except Exception as e:
+            logger.error(f"Error in periodic info loop: {e}")
+
+
 def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str] = None, override_model: Optional[str] = None):
     """
     Process incoming chat or test message:
-    1. Intercept !myvoice / !voice commands.
-    2. Prepend "<user> sanoo: " to regular text.
+    1. Intercept !help, !tts, !voices, !myvoice / !voice commands.
+    2. Prepend user template to regular text.
     3. Parse into chunks (with per-chunk voice tags if present).
     4. Request local TTS API for each chunk.
     5. Save audio to memory store and notify frontend player via SSE.
     """
     if raw_text:
         raw_lower = raw_text.strip().lower()
+
+        # Command: !help, !tts, !botinfo
+        if raw_lower in ("!help", "!tts", "!botinfo"):
+            send_bot_helpful_info()
+            return
+
+        # Command: !voices
+        if raw_lower == "!voices":
+            voices_msg = f"🎙️ Available TTS Voice Presets: {config.voice_presets}. Type !myvoice <voicename> to set your signature voice!"
+            broadcast_event("chat_message", {"user": "System", "message": voices_msg, "timestamp": time.time()})
+            if config.enable_chat_responses and twitch_bot:
+                twitch_bot.send_chat(voices_msg)
+            return
+
+        # Command: !myvoice / !voice
         if raw_lower.startswith("!myvoice") or raw_lower.startswith("!voice"):
             parts = raw_text.strip().split(maxsplit=1)
             requested_voice = parts[1].strip() if len(parts) > 1 else ""
             user_name = user or "Chatter"
             if not requested_voice:
                 curr_voice = user_voice_manager.get_voice(user_name) or config.tts_voice
-                msg_text = f"Usage: !myvoice <voicename> or !myvoice reset. Your signature voice is currently '{curr_voice}'."
-                broadcast_event("chat_message", {"user": "System", "message": f"@{user_name} {msg_text}", "timestamp": time.time()})
+                msg_text = f"@{user_name} Usage: !myvoice <voicename> or !myvoice reset. Your signature voice is currently '{curr_voice}'. Presets: {config.voice_presets}"
+                broadcast_event("chat_message", {"user": "System", "message": msg_text, "timestamp": time.time()})
+                if config.enable_chat_responses and twitch_bot:
+                    twitch_bot.send_chat(msg_text)
                 return
 
             saved_voice = user_voice_manager.set_voice(user_name, requested_voice)
@@ -73,9 +112,13 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                 msg_text = f"Saved signature TTS voice for @{user_name} to '{saved_voice}'!"
 
             broadcast_event("chat_message", {"user": "System", "message": msg_text, "timestamp": time.time()})
+            if config.enable_chat_responses and twitch_bot:
+                twitch_bot.send_chat(msg_text)
+
             broadcast_event("status", {
                 "channel": config.twitch_channel,
                 "connected": bool(twitch_bot and twitch_bot.running and twitch_bot.channel),
+                "authenticated": bool(twitch_bot and twitch_bot.is_authenticated),
                 "config": config.to_dict(),
                 "user_voices": user_voice_manager.get_all()
             })
@@ -335,6 +378,12 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"success": True, "channel": channel})
             return
 
+        # Route: Send Helpful Info Now to Chat
+        if path == "/api/bot/send_info":
+            info_msg = send_bot_helpful_info()
+            self._send_json(200, {"success": True, "message": info_msg})
+            return
+
         # Route: Manual Test TTS
         if path == "/api/tts/test":
             text = body.get("text", "").strip()
@@ -374,8 +423,21 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 config.user_template = str(body["user_template"]).strip()
             if "voice_presets" in body:
                 config.voice_presets = str(body["voice_presets"]).strip()
+            if "twitch_bot_username" in body:
+                config.twitch_bot_username = str(body["twitch_bot_username"]).strip()
+            if "twitch_oauth_token" in body:
+                config.twitch_oauth_token = str(body["twitch_oauth_token"]).strip()
+            if "enable_chat_responses" in body:
+                config.enable_chat_responses = bool(body["enable_chat_responses"])
+            if "enable_periodic_info" in body:
+                config.enable_periodic_info = bool(body["enable_periodic_info"])
+            if "periodic_info_interval" in body:
+                config.periodic_info_interval = int(body["periodic_info_interval"])
             
             config.save()
+            if twitch_bot:
+                twitch_bot.set_credentials(config.twitch_bot_username, config.twitch_oauth_token)
+            
             broadcast_event("status", self._get_status_dict())
             self._send_json(200, {"success": True, "config": self._get_config_dict()})
             return
@@ -414,6 +476,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         return {
             "channel": config.twitch_channel,
             "connected": bool(twitch_bot and twitch_bot.running and twitch_bot.channel),
+            "authenticated": bool(twitch_bot and twitch_bot.is_authenticated),
             "config": self._get_config_dict(),
             "user_voices": user_voice_manager.get_all()
         }
@@ -448,9 +511,17 @@ def run_server(host: str = "0.0.0.0", port: int = 5000):
     global twitch_bot
     
     # Initialize Twitch bot listener
-    twitch_bot = TwitchListener(on_message=on_twitch_message)
+    twitch_bot = TwitchListener(
+        on_message=on_twitch_message,
+        bot_username=config.twitch_bot_username,
+        oauth_token=config.twitch_oauth_token
+    )
     twitch_bot.start(channel=config.twitch_channel)
     
+    # Start periodic helpful info background thread
+    p_thread = threading.Thread(target=_periodic_info_loop, daemon=True)
+    p_thread.start()
+
     server_address = (host, port)
     httpd = ThreadingHTTPServer(server_address, TTSRequestHandler)
     logger.info(f"Twitch TTS Bot Web Server running on http://{host}:{port}")

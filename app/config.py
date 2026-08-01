@@ -21,6 +21,11 @@ class Config:
     twitch_channel: str = field(default_factory=lambda: os.getenv("TWITCH_CHANNEL", "m_e_s_t_a_a_j_a"))
     user_template: str = field(default_factory=lambda: os.getenv("USER_TEMPLATE", "{user} sanoo: {text}"))
     voice_presets: str = field(default_factory=lambda: os.getenv("VOICE_PRESETS", "mieto, terapisti, terry, tuomo4, niilo"))
+    twitch_bot_username: str = field(default_factory=lambda: os.getenv("TWITCH_BOT_USERNAME", ""))
+    twitch_oauth_token: str = field(default_factory=lambda: os.getenv("TWITCH_OAUTH_TOKEN", ""))
+    enable_chat_responses: bool = field(default_factory=lambda: os.getenv("ENABLE_CHAT_RESPONSES", "true").lower() in ("true", "1", "yes"))
+    enable_periodic_info: bool = field(default_factory=lambda: os.getenv("ENABLE_PERIODIC_INFO", "false").lower() in ("true", "1", "yes"))
+    periodic_info_interval: int = field(default_factory=lambda: int(os.getenv("PERIODIC_INFO_INTERVAL", "15")))
 
     def load(self, filepath: str = CONFIG_FILE):
         """Load configuration from JSON file if present."""
@@ -31,7 +36,12 @@ class Config:
                 for key, val in data.items():
                     if hasattr(self, key) and val is not None:
                         curr_val = getattr(self, key)
-                        if isinstance(curr_val, int):
+                        if isinstance(curr_val, bool):
+                            if isinstance(val, bool):
+                                setattr(self, key, val)
+                            else:
+                                setattr(self, key, str(val).lower() in ("true", "1", "yes"))
+                        elif isinstance(curr_val, int):
                             setattr(self, key, int(val))
                         else:
                             setattr(self, key, str(val) if val is not None else "")
@@ -61,6 +71,11 @@ class Config:
             "twitch_channel": self.twitch_channel,
             "user_template": self.user_template,
             "voice_presets": self.voice_presets,
+            "twitch_bot_username": self.twitch_bot_username,
+            "twitch_oauth_token": self.twitch_oauth_token,
+            "enable_chat_responses": self.enable_chat_responses,
+            "enable_periodic_info": self.enable_periodic_info,
+            "periodic_info_interval": self.periodic_info_interval,
         }
 
 config = Config()

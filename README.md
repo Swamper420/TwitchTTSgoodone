@@ -10,7 +10,22 @@ A lightweight, simple, and high-performance Python Twitch TTS (Text-To-Speech) B
 - **Multi-Voice Tag Support**: Users can trigger different voices within a single message using `[voicename]` tags (e.g. `[alice] Hello world! [bob] How are you?`).
 - **Smart Text Chunking**: Automatically sanitizes messages (strips URLs, reduces spam) and splits text at sentence/clause boundaries (`.`, `!`, `?`, `,`, `;`) into smaller chunks for fast TTS generation and minimal audio latency.
 - **Web Audio Player & Overlay**: Dark-mode dashboard and OBS Browser Source with live HTML5 Audio queue, visual equalizer, auto-play, skip track, volume controls, and live chat feed.
-- **Anonymous Twitch Connection**: Connect to any public Twitch channel in read-only mode without needing Twitch API keys or OAuth setup!
+- **Real Twitch Chat Bot & Interactive Commands**: Optionally authenticate with a bot username & OAuth token to send helpful chat responses (`!help`, `!voices`, `!myvoice <voice>`) and periodic info tips directly back into Twitch stream chat!
+- **Anonymous Twitch Connection**: Connect to any public Twitch channel in read-only mode (`justinfan`) without needing Twitch API keys or OAuth setup!
+
+---
+
+## 🤖 Real Twitch Chat Bot & Commands
+
+When configured with bot credentials (or through the Web UI Settings):
+- **`!help` / `!tts` / `!botinfo`**: Explains how TTS works, voice tags, and setting custom signature voices.
+- **`!voices`**: Lists available voice presets.
+- **`!myvoice <voicename>`**: Sets the chatter's personal signature voice (e.g. `!myvoice mieto`) or resets with `!myvoice reset`.
+
+### Setting Up Bot OAuth:
+1. Obtain an OAuth token for your Twitch bot account from [twitchapps.com/tmi/](https://twitchapps.com/tmi/).
+2. Enter your **Bot Username** and **OAuth Token** (`oauth:xxxxxxxxxxxxx`) in the Web Dashboard settings or `config.json`.
+3. Enable **Reply in Real Chat** and optional **Periodic Helpful Tips**.
 
 ---
 

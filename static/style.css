@@ -865,3 +865,52 @@ textarea:focus, input[type="text"]:focus, input[type="number"]:focus, select:foc
 .user-voice-tag .remove-btn:hover {
     color: var(--accent-red);
 }
+
+/* Auth Badge in Header */
+.auth-badge {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--border-color);
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+
+.auth-badge.authenticated {
+    background: rgba(0, 230, 153, 0.15);
+    border-color: var(--accent-green);
+    color: var(--accent-green);
+    box-shadow: 0 0 10px rgba(0, 230, 153, 0.2);
+}
+
+/* Form Section Title */
+.form-section-title {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--accent-cyan);
+    margin-top: 14px;
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Checkbox Group in Settings */
+.form-group.checkbox-group {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding-top: 24px;
+}
+
+/* Settings Actions Row */
+.settings-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+}

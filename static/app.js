@@ -489,6 +489,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateStatusUI(data) {
+        const authBadge = document.getElementById('authBadge');
+        const authText = document.getElementById('authText');
+        const botUsernameInput = document.getElementById('botUsernameInput');
+        const botOauthInput = document.getElementById('botOauthInput');
+        const enableChatResponsesToggle = document.getElementById('enableChatResponsesToggle');
+        const enablePeriodicInfoToggle = document.getElementById('enablePeriodicInfoToggle');
+        const periodicInfoIntervalInput = document.getElementById('periodicInfoIntervalInput');
+
         if (data.channel) {
             channelInput.value = data.channel;
         }
@@ -502,6 +510,17 @@ document.addEventListener('DOMContentLoaded', () => {
             connectBtn.textContent = 'Connect';
         }
 
+        if (authBadge && authText) {
+            if (data.authenticated) {
+                authBadge.classList.add('authenticated');
+                const botName = data.config && data.config.twitch_bot_username ? data.config.twitch_bot_username : 'Bot';
+                authText.textContent = `Bot Active (@${botName})`;
+            } else {
+                authBadge.classList.remove('authenticated');
+                authText.textContent = 'Read-Only (justinfan)';
+            }
+        }
+
         if (data.config) {
             if (apiUrlInput) apiUrlInput.value = data.config.tts_api_url || '';
             if (defaultVoiceInput) defaultVoiceInput.value = data.config.tts_voice || '';
@@ -511,6 +530,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (minChunkInput) minChunkInput.value = data.config.min_chunk_chars || 10;
             if (userTemplateInput) userTemplateInput.value = data.config.user_template || '';
             if (voicePresetsInput) voicePresetsInput.value = data.config.voice_presets || '';
+
+            if (botUsernameInput) botUsernameInput.value = data.config.twitch_bot_username || '';
+            if (botOauthInput) botOauthInput.value = data.config.twitch_oauth_token || '';
+            if (enableChatResponsesToggle) enableChatResponsesToggle.checked = data.config.enable_chat_responses !== false;
+            if (enablePeriodicInfoToggle) enablePeriodicInfoToggle.checked = !!data.config.enable_periodic_info;
+            if (periodicInfoIntervalInput) periodicInfoIntervalInput.value = data.config.periodic_info_interval || 15;
 
             renderVoiceChips(data.config.voice_presets);
         }
@@ -653,6 +678,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Save Settings
     saveSettingsBtn.addEventListener('click', async () => {
+        const botUsernameInput = document.getElementById('botUsernameInput');
+        const botOauthInput = document.getElementById('botOauthInput');
+        const enableChatResponsesToggle = document.getElementById('enableChatResponsesToggle');
+        const enablePeriodicInfoToggle = document.getElementById('enablePeriodicInfoToggle');
+        const periodicInfoIntervalInput = document.getElementById('periodicInfoIntervalInput');
+
         try {
             const res = await fetch('/api/settings', {
                 method: 'POST',
@@ -665,7 +696,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     max_chunk_chars: maxChunkInput ? (parseInt(maxChunkInput.value, 10) || 50) : 50,
                     min_chunk_chars: minChunkInput ? (parseInt(minChunkInput.value, 10) || 10) : 10,
                     user_template: userTemplateInput ? userTemplateInput.value.trim() : '',
-                    voice_presets: voicePresetsInput ? voicePresetsInput.value.trim() : ''
+                    voice_presets: voicePresetsInput ? voicePresetsInput.value.trim() : '',
+                    twitch_bot_username: botUsernameInput ? botUsernameInput.value.trim() : '',
+                    twitch_oauth_token: botOauthInput ? botOauthInput.value.trim() : '',
+                    enable_chat_responses: enableChatResponsesToggle ? enableChatResponsesToggle.checked : true,
+                    enable_periodic_info: enablePeriodicInfoToggle ? enablePeriodicInfoToggle.checked : false,
+                    periodic_info_interval: periodicInfoIntervalInput ? (parseInt(periodicInfoIntervalInput.value, 10) || 15) : 15
                 })
             });
             if (res.ok) {
@@ -679,6 +715,23 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('Failed to save settings', 'error');
         }
     });
+
+    const sendHelpfulInfoBtn = document.getElementById('sendHelpfulInfoBtn');
+    if (sendHelpfulInfoBtn) {
+        sendHelpfulInfoBtn.addEventListener('click', async () => {
+            try {
+                const res = await fetch('/api/bot/send_info', { method: 'POST' });
+                if (res.ok) {
+                    showToast('Posted helpful bot info tip to chat!', 'success');
+                } else {
+                    showToast('Failed to send helpful info', 'error');
+                }
+            } catch (e) {
+                console.error('Failed to send helpful info:', e);
+                showToast('Error connecting to backend', 'error');
+            }
+        });
+    }
 
     // Chat Feed Helper
     function addChatMessage(user, msg) {
