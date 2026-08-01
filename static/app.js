@@ -188,16 +188,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const head = audioQueue[0];
 
-        // If this is chunk 1 of multi-chunk message, wait briefly for chunk 2 to buffer
+        // If this is chunk 1 of a multi-chunk message, wait for chunk 2 to be ready before playing chunk 1
         if (head.total_chunks > 1 && head.chunk_index === 1) {
-            if (audioQueue.length < 2) {
+            const hasChunk2 = audioQueue.some(item => item.chunk_index === 2 && item.user === head.user);
+            if (!hasChunk2) {
                 if (!bufferTimer) {
                     bufferTimer = setTimeout(() => {
                         bufferTimer = null;
                         if (!isPlaying && audioQueue.length > 0) {
                             playNextChunk();
                         }
-                    }, 2500);
+                    }, 12000); // Safety fallback timeout if chunk 2 generation fails
                 }
                 return;
             }
@@ -451,6 +452,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         evtSource.addEventListener('error', (e) => {
+            if (bufferTimer) {
+                clearTimeout(bufferTimer);
+                bufferTimer = null;
+            }
+            if (!isPlaying && audioQueue.length > 0) {
+                checkAndPlayNext();
+            }
             if (e.data) {
                 try {
                     const errData = JSON.parse(e.data);
