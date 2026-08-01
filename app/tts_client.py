@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import logging
+import re
 import time
 import urllib.parse
 from typing import Dict, Any, Optional, Tuple
@@ -53,12 +54,9 @@ class TTSClient:
         # Ensure text meets minimum character threshold to avoid API blocking short requests
         min_chars = config.min_chunk_chars
         if text and len(text) < min_chars:
-            while len(text) < min_chars:
-                text = text + "bruhbruh"
+            text = text + "." * (min_chars - len(text))
         elif not text:
-            text = "bruhbruh"
-            while len(text) < min_chars:
-                text = text + "bruhbruh"
+            text = "." * min_chars
         
         # Check Cache
         cache_key = self._compute_cache_key(text, voice_to_use, model_to_use, format_to_use)

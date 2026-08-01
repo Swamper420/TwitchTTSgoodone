@@ -16,27 +16,10 @@ from unittest.mock import patch, MagicMock
 
 class TestTextChunkerShortMessages(unittest.TestCase):
 
-    def test_ensure_min_length_short_text(self):
-        # Text shorter than 10 letters gets "bruhbruh" appended with no gaps
-        res = ensure_min_length("hi", min_length=10)
-        self.assertEqual(res, "hibruhbruh")
-        self.assertGreaterEqual(len(res), 10)
-
-    def test_ensure_min_length_single_char(self):
-        # 1 char ("a") -> "abruhbruh" (len 9) -> "abruhbruhbruhbruh" (len 17 >= 10)
-        res = ensure_min_length("a", min_length=10)
-        self.assertEqual(res, "abruhbruhbruhbruh")
-        self.assertGreaterEqual(len(res), 10)
-
-    def test_ensure_min_length_empty(self):
-        res = ensure_min_length("", min_length=10)
-        self.assertEqual(res, "bruhbruhbruhbruh")
-        self.assertGreaterEqual(len(res), 10)
-
-    def test_ensure_min_length_sufficient_text(self):
-        # Text >= 10 letters remains unchanged
-        text_10 = "1234567890"
-        self.assertEqual(ensure_min_length(text_10, min_length=10), "1234567890")
+    def test_ensure_min_length_dot_padding(self):
+        self.assertEqual(ensure_min_length("hi", min_length=10), "hi........")
+        self.assertEqual(ensure_min_length("", min_length=10), "..........")
+        self.assertEqual(ensure_min_length("1234567890", min_length=10), "1234567890")
 
     def test_sanitize_text_strips_symbols(self):
         self.assertEqual(sanitize_text("Hello, world! How are you?"), "Hello world How are you")
@@ -47,11 +30,22 @@ class TestTextChunkerShortMessages(unittest.TestCase):
     @patch("app.server.broadcast_event")
     def test_process_incoming_text_short_raw_text(self, mock_broadcast, mock_synthesize):
         mock_synthesize.return_value = (b"fake_audio", "audio/wav")
-        # Raw text "moi" (len 3 < 10) should have bruhbruh appended with no gaps
+        # Short message "moi" (len 3 < 10) should have bruhbruh appended
         process_incoming_text(user="Tester", raw_text="moi")
         mock_synthesize.assert_called()
         called_text = mock_synthesize.call_args[1].get("text") or mock_synthesize.call_args[0][0]
         self.assertIn("moibruhbruh", called_text)
+
+    @patch("app.server.tts_client.synthesize")
+    @patch("app.server.broadcast_event")
+    def test_process_incoming_text_long_raw_text(self, mock_broadcast, mock_synthesize):
+        mock_synthesize.return_value = (b"fake_audio", "audio/wav")
+        # Long message >= 10 letters should NOT have bruhbruh appended
+        long_msg = "myvoice obama print"
+        process_incoming_text(user="Tester", raw_text=long_msg)
+        mock_synthesize.assert_called()
+        called_text = mock_synthesize.call_args[1].get("text") or mock_synthesize.call_args[0][0]
+        self.assertNotIn("bruhbruh", called_text)
 
 
 if __name__ == "__main__":

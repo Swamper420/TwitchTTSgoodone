@@ -128,14 +128,14 @@ def split_text_into_chunks(text: str, max_chars: Optional[int] = None) -> List[s
 
 
 def ensure_min_length(text: str, min_length: Optional[int] = None) -> str:
-    """Ensure text is at least min_length characters long by appending 'bruhbruh' with no gaps to texts shorter than min_length."""
+    """Ensure text is at least min_length characters long by padding with trailing dots."""
     if min_length is None:
         min_length = config.min_chunk_chars
     if not text:
-        text = ""
+        return "." * min_length
     if len(text) < min_length:
-        while len(text) < min_length:
-            text = text + "bruhbruh"
+        needed = min_length - len(text)
+        return text + "." * needed
     return text
 
 
