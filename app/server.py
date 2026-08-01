@@ -397,6 +397,11 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             file_path = os.path.join(STATIC_DIR, "player.html")
             self._serve_static_file(file_path, "text/html; charset=utf-8")
             return
+
+        if path in ("/obs", "/obs.html", "/overlay", "/overlay.html"):
+            file_path = os.path.join(STATIC_DIR, "obs.html")
+            self._serve_static_file(file_path, "text/html; charset=utf-8")
+            return
             
         rel_path = path.lstrip('/')
         safe_path = os.path.abspath(os.path.join(STATIC_DIR, rel_path))
