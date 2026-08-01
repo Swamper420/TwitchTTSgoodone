@@ -46,6 +46,39 @@ def mask_token(token: str, keep_chars: int = 4) -> str:
     return f"{prefix}{masked_part}{suffix}"
 
 
+HASH_PREFIX = "pbkdf2_sha256$"
+PBKDF2_ITERATIONS = 260000
+
+
+def hash_password(password: str) -> str:
+    """Hash a password using PBKDF2-SHA256 with a random salt."""
+    if not password:
+        return ""
+    salt = os.urandom(16)
+    dk = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, PBKDF2_ITERATIONS)
+    return f"{HASH_PREFIX}{PBKDF2_ITERATIONS}${salt.hex()}${dk.hex()}"
+
+
+def verify_password(password: str, stored: str) -> bool:
+    """Verify a password against a stored hash or plaintext (legacy migration)."""
+    if not password or not stored:
+        return False
+
+    if stored.startswith(HASH_PREFIX):
+        try:
+            remainder = stored[len(HASH_PREFIX):]
+            iterations_str, salt_hex, hash_hex = remainder.split('$', 2)
+            dk = hashlib.pbkdf2_hmac(
+                'sha256', password.encode('utf-8'), bytes.fromhex(salt_hex), int(iterations_str)
+            )
+            return secrets.compare_digest(dk.hex(), hash_hex)
+        except (ValueError, IndexError):
+            return False
+    else:
+        # Legacy plaintext comparison (timing-safe)
+        return secrets.compare_digest(password, stored)
+
+
 class TwitchTokenValidator:
     """
     Validates Twitch OAuth 2.0 access tokens directly against the official
@@ -195,7 +228,7 @@ class DashboardAuthManager:
             self._active_sessions[token] = time.time() + self._session_ttl_seconds
             return True, token, None
 
-        if password and secrets.compare_digest(password.strip(), self.admin_password):
+        if password and verify_password(password.strip(), self.admin_password):
             token = secrets.token_hex(24)
             self._active_sessions[token] = time.time() + self._session_ttl_seconds
             logger.info("Successful Dashboard Admin Login.")

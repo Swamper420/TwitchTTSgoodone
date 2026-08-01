@@ -14,7 +14,8 @@ from app.text_chunker import process_message_to_chunks, TTSChunk
 from app.tts_client import tts_client, TTSClient
 from app.twitch_listener import TwitchListener
 from app.user_voices import user_voice_manager
-from app.auth import dashboard_auth_manager, twitch_token_validator, mask_token
+from app.auth import dashboard_auth_manager, twitch_token_validator, mask_token, hash_password
+from app.rate_limiter import login_limiter, tts_limiter
 from app.sanitizer import (
     sanitize_string,
     sanitize_username,
@@ -75,6 +76,10 @@ def _periodic_info_loop():
             if config.enable_periodic_info and twitch_bot and twitch_bot.running and twitch_bot.channel:
                 logger.info("Broadcasting periodic helpful info to Twitch chat...")
                 send_bot_helpful_info()
+            # Periodic security cleanup
+            dashboard_auth_manager.cleanup_expired_sessions()
+            login_limiter.cleanup()
+            tts_limiter.cleanup()
         except Exception as e:
             logger.error(f"Error in periodic info loop: {e}")
 
@@ -172,10 +177,7 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
     if user and not skip_user_prefix:
         tts_user = sanitize_speaker_name_for_tts(user)
         if "{user}" in config.user_template and "{text}" in config.user_template:
-            try:
-                text_to_speak = config.user_template.format(user=tts_user, text=raw_text)
-            except Exception:
-                text_to_speak = f"{tts_user} sanoo: {raw_text}"
+            text_to_speak = config.user_template.replace("{user}", tts_user).replace("{text}", raw_text)
         else:
             text_to_speak = f"{tts_user} {config.user_template} {raw_text}"
     else:
@@ -229,9 +231,9 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
             audio_store[chunk_id] = (audio_bytes, mime_type, item_meta)
             audio_queue.append(item_meta)
             
-            # Clean up old audio from store if > 100 items
-            if len(audio_store) > 100:
-                oldest_id = list(audio_store.keys())[0]
+            # Clean up old audio from store
+            while len(audio_store) > 200:
+                oldest_id = next(iter(audio_store))
                 del audio_store[oldest_id]
                 
             # Broadcast to web audio player
@@ -255,9 +257,24 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         pass
 
     def _send_cors_headers(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self.headers.get("Origin", "")
+        if origin:
+            port = str(config.server_port)
+            allowed = {
+                f"http://localhost:{port}",
+                f"http://127.0.0.1:{port}",
+            }
+            if config.server_host not in ("0.0.0.0", "::", ""):
+                allowed.add(f"http://{config.server_host}:{port}")
+            if origin in allowed:
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Token")
+
+    def _get_client_ip(self) -> str:
+        """Get client IP address for rate limiting."""
+        return self.client_address[0] if self.client_address else "unknown"
 
     def _get_request_auth_token(self) -> str:
         token = self.headers.get("X-Admin-Token")
@@ -372,6 +389,9 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
 
         # Route: Proxy GET /api/tts
         if path == "/api/tts":
+            if not tts_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
             raw_text = query.get("text", [""])[0]
             raw_voice = query.get("voice", [None])[0]
             raw_model = query.get("model", [None])[0]
@@ -397,7 +417,8 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(audio_bytes)
             except Exception as e:
-                self._send_json(500, {"error": str(e)})
+                logger.error(f"GET /api/tts error: {e}")
+                self._send_json(500, {"error": "TTS synthesis failed"})
             return
 
         # Serve static files (HTML, CSS, JS)
@@ -471,6 +492,9 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
 
         # Route: Admin Login
         if path == "/api/auth/login":
+            if not login_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Too many login attempts. Try again later."})
+                return
             password = sanitize_string(body.get("password"), max_len=500)
             success, session_token, err = dashboard_auth_manager.authenticate(password)
             if success:
@@ -488,6 +512,9 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
 
         # Route: Proxy POST /api/tts
         if path == "/api/tts":
+            if not tts_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
             text = sanitize_string(body.get("text"), max_len=2000)
             voice = sanitize_identifier(body.get("voice"), max_len=100) if body.get("voice") is not None else None
             model = sanitize_identifier(body.get("model"), max_len=100) if body.get("model") is not None else None
@@ -513,7 +540,8 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                     self.end_headers()
                     self.wfile.write(audio_bytes)
             except Exception as e:
-                self._send_json(500, {"error": str(e)})
+                logger.error(f"POST /api/tts error: {e}")
+                self._send_json(500, {"error": "TTS synthesis failed"})
             return
 
         # Protected administrative routes below
@@ -614,7 +642,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             if "admin_password" in body:
                 raw_pwd = sanitize_string(body["admin_password"], max_len=500)
                 if raw_pwd and raw_pwd != "••••••••":
-                    config.admin_password = raw_pwd
+                    config.admin_password = hash_password(raw_pwd)
             if "twitch_client_id" in body:
                 config.twitch_client_id = sanitize_string(body["twitch_client_id"], max_len=200)
             if "same_user_timeout" in body:
@@ -693,7 +721,8 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(content)
         except Exception as e:
-            self.send_error(500, f"Error reading static file: {e}")
+            logger.error(f"Error reading static file {filepath}: {e}")
+            self.send_error(500, "Internal server error")
 
 
 def run_server(host: str = "0.0.0.0", port: int = 5000):
