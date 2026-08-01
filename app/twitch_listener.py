@@ -1,6 +1,7 @@
 import random
 import re
 import socket
+import ssl
 import threading
 import time
 import logging
@@ -14,7 +15,8 @@ class TwitchListener:
     """Twitch IRC socket listener and sender for chat PRIVMSG events."""
     
     IRC_HOST = "irc.chat.twitch.tv"
-    IRC_PORT = 6667
+    IRC_PORT_SSL = 6697
+    IRC_PORT_PLAIN = 6667
     
     def __init__(self, on_message: Callable[[str, str], None], bot_username: str = "", oauth_token: str = ""):
         self.on_message = on_message
@@ -160,7 +162,7 @@ class TwitchListener:
                     nick = bot_user.lower()
                     pass_str = oauth_tok if oauth_tok.startswith("oauth:") else f"oauth:{oauth_tok}"
                     self.is_authenticated = False
-                    logger.info(f"Connecting to Twitch IRC ({self.IRC_HOST}:{self.IRC_PORT}) as BOT '{nick}' for channel #{self.channel}...")
+                    logger.info(f"Connecting to Twitch IRC ({self.IRC_HOST}:{self.IRC_PORT_SSL} SSL) as BOT '{nick}' for channel #{self.channel}...")
                 else:
                     nick = f"justinfan{random.randint(10000, 99999)}"
                     pass_str = "SCHMOOPIIE"
@@ -170,7 +172,14 @@ class TwitchListener:
                     else:
                         logger.info(f"Connecting to Twitch IRC as ANONYMOUS reader {nick} for channel #{self.channel}...")
 
-                self.sock = socket.create_connection((self.IRC_HOST, self.IRC_PORT), timeout=10)
+                try:
+                    raw_sock = socket.create_connection((self.IRC_HOST, self.IRC_PORT_SSL), timeout=10)
+                    ctx = ssl.create_default_context()
+                    self.sock = ctx.wrap_socket(raw_sock, server_hostname=self.IRC_HOST)
+                except Exception as ssl_err:
+                    logger.warning(f"SSL IRC connection failed ({ssl_err}). Falling back to port {self.IRC_PORT_PLAIN}...")
+                    self.sock = socket.create_connection((self.IRC_HOST, self.IRC_PORT_PLAIN), timeout=10)
+
                 self.sock.send(f"PASS {pass_str}\r\n".encode("utf-8"))
                 self.sock.send(f"NICK {nick}\r\n".encode("utf-8"))
                 self.sock.send(f"JOIN #{self.channel}\r\n".encode("utf-8"))
