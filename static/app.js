@@ -18,12 +18,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const muteBtn = document.getElementById('muteBtn');
     const volumeSlider = document.getElementById('volumeSlider');
     const volumeValue = document.getElementById('volumeValue');
+    const chimeToggle = document.getElementById('chimeToggle');
     const autoPlayToggle = document.getElementById('autoPlayToggle');
+
+    const queueList = document.getElementById('queueList');
 
     const testTextInput = document.getElementById('testTextInput');
     const testVoiceInput = document.getElementById('testVoiceInput');
     const testModelInput = document.getElementById('testModelInput');
     const sendTestBtn = document.getElementById('sendTestBtn');
+    const voiceChips = document.getElementById('voiceChips');
 
     const apiUrlInput = document.getElementById('apiUrlInput');
     const defaultVoiceInput = document.getElementById('defaultVoiceInput');
@@ -32,12 +36,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveSettingsBtn = document.getElementById('saveSettingsBtn');
 
     const chatFeed = document.getElementById('chatFeed');
+    const audioUnlockOverlay = document.getElementById('audioUnlockOverlay');
+    const enableAudioBtn = document.getElementById('enableAudioBtn');
+    const toastContainer = document.getElementById('toastContainer');
+    const spectrumCanvas = document.getElementById('spectrumCanvas');
+    const canvasCtx = spectrumCanvas ? spectrumCanvas.getContext('2d') : null;
 
     // Audio Queue State
     let audioQueue = [];
     let isPlaying = false;
     let currentItem = null;
     let bufferTimer = null;
+
+    // Web Audio API State
+    let audioCtx = null;
+    let analyser = null;
+    let audioSource = null;
+    let animFrameId = null;
 
     // Load initial settings & status
     fetchStatus();
@@ -46,54 +61,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initSSE();
 
     // ----------------------------------------------------
-    // Audio Player & Queue Management
+    // Audio Autoplay & Web Audio Visualizer
     // ----------------------------------------------------
-
-    function enqueueAudioChunk(chunk) {
-        audioQueue.push(chunk);
-        updateQueueUI();
-        checkAndPlayNext();
-    }
-
-    function checkAndPlayNext() {
-        if (!autoPlayToggle.checked || isPlaying || audioQueue.length === 0) {
-            return;
-        }
-
-        const head = audioQueue[0];
-
-        // If this is the 1st chunk of a multi-chunk message, wait for the 2nd chunk to arrive first
-        if (head.total_chunks > 1 && head.chunk_index === 1) {
-            if (audioQueue.length < 2) {
-                // Wait for 2nd chunk, but set safety timeout in case 2nd chunk fails/delays
-                if (!bufferTimer) {
-                    bufferTimer = setTimeout(() => {
-                        bufferTimer = null;
-                        if (!isPlaying && audioQueue.length > 0) {
-                            playNextChunk();
-                        }
-                    }, 3000);
-                }
-                return;
-            }
-        }
-
-        if (bufferTimer) {
-            clearTimeout(bufferTimer);
-            bufferTimer = null;
-        }
-
-        playNextChunk();
-    }
-
-    const chimeToggle = document.getElementById('chimeToggle');
-    const spectrumCanvas = document.getElementById('spectrumCanvas');
-    let canvasCtx = spectrumCanvas ? spectrumCanvas.getContext('2d') : null;
-
-    // Web Audio API State
-    let audioCtx = null;
-    let analyser = null;
-    let audioSource = null;
 
     function initWebAudioVisualizer() {
         if (audioCtx) return;
@@ -106,9 +75,28 @@ document.addEventListener('DOMContentLoaded', () => {
             analyser.connect(audioCtx.destination);
             renderSpectrum();
         } catch (e) {
-            console.log('Web Audio API initialized on user interaction');
+            console.log('Web Audio API initialized on user interaction:', e);
         }
     }
+
+    function unlockAudio() {
+        initWebAudioVisualizer();
+        if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+        if (audioUnlockOverlay) {
+            audioUnlockOverlay.classList.add('hidden');
+        }
+        // Silent play to unlock HTML5 audio element
+        audioPlayer.play().then(() => {
+            audioPlayer.pause();
+        }).catch(() => {});
+    }
+
+    if (enableAudioBtn) {
+        enableAudioBtn.addEventListener('click', unlockAudio);
+    }
+    document.addEventListener('click', unlockAudio, { once: true });
 
     function playChimeSound() {
         if (!chimeToggle || !chimeToggle.checked) return Promise.resolve();
@@ -135,7 +123,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderSpectrum() {
         if (!canvasCtx || !analyser) return;
-        requestAnimationFrame(renderSpectrum);
+        animFrameId = requestAnimationFrame(renderSpectrum);
+        
         const bufferLength = analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
         analyser.getByteFrequencyData(dataArray);
@@ -148,7 +137,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let x = 0;
 
         for (let i = 0; i < bufferLength; i++) {
-            const barHeight = (dataArray[i] / 255) * height;
+            const barHeight = isPlaying ? (dataArray[i] / 255) * height : 2;
             const gradient = canvasCtx.createLinearGradient(0, height, 0, 0);
             gradient.addColorStop(0, '#9146ff');
             gradient.addColorStop(1, '#00f0ff');
@@ -157,6 +146,46 @@ document.addEventListener('DOMContentLoaded', () => {
             canvasCtx.fillRect(x, height - barHeight, barWidth - 1, barHeight);
             x += barWidth + 1;
         }
+    }
+
+    // ----------------------------------------------------
+    // Audio Queue Player & Controls
+    // ----------------------------------------------------
+
+    function enqueueAudioChunk(chunk) {
+        audioQueue.push(chunk);
+        updateQueueUI();
+        checkAndPlayNext();
+    }
+
+    function checkAndPlayNext() {
+        if (!autoPlayToggle.checked || isPlaying || audioQueue.length === 0) {
+            return;
+        }
+
+        const head = audioQueue[0];
+
+        // If this is chunk 1 of multi-chunk message, wait briefly for chunk 2 to buffer
+        if (head.total_chunks > 1 && head.chunk_index === 1) {
+            if (audioQueue.length < 2) {
+                if (!bufferTimer) {
+                    bufferTimer = setTimeout(() => {
+                        bufferTimer = null;
+                        if (!isPlaying && audioQueue.length > 0) {
+                            playNextChunk();
+                        }
+                    }, 2500);
+                }
+                return;
+            }
+        }
+
+        if (bufferTimer) {
+            clearTimeout(bufferTimer);
+            bufferTimer = null;
+        }
+
+        playNextChunk();
     }
 
     async function playNextChunk() {
@@ -168,6 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (audioQueue.length === 0) {
             isPlaying = false;
             currentItem = null;
+            if (visualizer) visualizer.classList.remove('playing');
             updateNowPlayingUI(null);
             updateQueueUI();
             return;
@@ -180,6 +210,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         isPlaying = true;
         currentItem = audioQueue.shift();
+        if (visualizer) visualizer.classList.add('playing');
+        
         updateQueueUI();
         updateNowPlayingUI(currentItem);
 
@@ -193,55 +225,20 @@ document.addEventListener('DOMContentLoaded', () => {
         audioPlayer.play().then(() => {
         }).catch(err => {
             console.error('Audio playback error:', err);
+            if (visualizer) visualizer.classList.remove('playing');
             isPlaying = false;
             checkAndPlayNext();
         });
     }
-
-    // Global Hotkeys
-    document.addEventListener('keydown', (e) => {
-        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
-            return;
-        }
-
-        if (e.code === 'Space') {
-            e.preventDefault();
-            if (audioPlayer.paused && currentItem) {
-                audioPlayer.play();
-            } else {
-                audioPlayer.pause();
-            }
-        } else if (e.code === 'KeyS') {
-            skipBtn.click();
-        } else if (e.code === 'KeyC') {
-            clearBtn.click();
-        } else if (e.code === 'KeyM') {
-            muteBtn.click();
-        }
-    });
-
-    audioPlayer.addEventListener('ended', () => {
-        visualizer.classList.remove('playing');
-        isPlaying = false;
-        if (autoPlayToggle.checked) {
-            checkAndPlayNext();
-        }
-    });
-
-    audioPlayer.addEventListener('error', (e) => {
-        console.error('Playback error on track:', e);
-        visualizer.classList.remove('playing');
-        isPlaying = false;
-        checkAndPlayNext();
-    });
 
     // Skip current audio track
     skipBtn.addEventListener('click', () => {
         if (isPlaying || audioPlayer.src) {
             audioPlayer.pause();
             audioPlayer.currentTime = 0;
-            visualizer.classList.remove('playing');
+            if (visualizer) visualizer.classList.remove('playing');
             isPlaying = false;
+            showToast('Skipped current audio', 'success');
             checkAndPlayNext();
         }
     });
@@ -257,9 +254,10 @@ document.addEventListener('DOMContentLoaded', () => {
         audioPlayer.currentTime = 0;
         isPlaying = false;
         currentItem = null;
-        visualizer.classList.remove('playing');
+        if (visualizer) visualizer.classList.remove('playing');
         updateNowPlayingUI(null);
         updateQueueUI();
+        showToast('Cleared audio queue', 'success');
     });
 
     // Volume & Mute Controls
@@ -276,14 +274,86 @@ document.addEventListener('DOMContentLoaded', () => {
         muteBtn.textContent = audioPlayer.muted ? '🔇' : '🔊';
     });
 
+    audioPlayer.addEventListener('ended', () => {
+        if (visualizer) visualizer.classList.remove('playing');
+        isPlaying = false;
+        if (autoPlayToggle.checked) {
+            checkAndPlayNext();
+        }
+    });
+
+    audioPlayer.addEventListener('error', (e) => {
+        console.error('Playback error on track:', e);
+        if (visualizer) visualizer.classList.remove('playing');
+        isPlaying = false;
+        checkAndPlayNext();
+    });
+
+    // Global Hotkeys
+    document.addEventListener('keydown', (e) => {
+        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
+            return;
+        }
+
+        if (e.code === 'Space') {
+            e.preventDefault();
+            if (audioPlayer.paused && currentItem) {
+                audioPlayer.play();
+                if (visualizer) visualizer.classList.add('playing');
+            } else {
+                audioPlayer.pause();
+                if (visualizer) visualizer.classList.remove('playing');
+            }
+        } else if (e.code === 'KeyS') {
+            skipBtn.click();
+        } else if (e.code === 'KeyC') {
+            clearBtn.click();
+        } else if (e.code === 'KeyM') {
+            muteBtn.click();
+        }
+    });
+
     function updateQueueUI() {
         queueBadge.textContent = `${audioQueue.length} in queue`;
+
+        if (!queueList) return;
+        queueList.innerHTML = '';
+
+        if (audioQueue.length === 0) {
+            queueList.innerHTML = '<div class="queue-empty-text">Queue is currently empty</div>';
+            return;
+        }
+
+        audioQueue.forEach((item, idx) => {
+            const div = document.createElement('div');
+            div.className = 'queue-item';
+            div.innerHTML = `
+                <div class="queue-item-info">
+                    <span class="queue-item-user">#${idx + 1} - ${escapeHtml(item.user)} (${item.voice || 'default'})</span>
+                    <span class="queue-item-text">"${escapeHtml(item.text)}"</span>
+                </div>
+                <button class="queue-item-remove" title="Remove from queue" data-index="${idx}">✖</button>
+            `;
+            queueList.appendChild(div);
+        });
+
+        // Add event listeners to remove buttons
+        queueList.querySelectorAll('.queue-item-remove').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const idx = parseInt(e.currentTarget.getAttribute('data-index'), 10);
+                if (!isNaN(idx) && idx >= 0 && idx < audioQueue.length) {
+                    audioQueue.splice(idx, 1);
+                    updateQueueUI();
+                    showToast('Removed item from queue', 'success');
+                }
+            });
+        });
     }
 
     function updateNowPlayingUI(item) {
         if (!item) {
             speakerName.textContent = 'Idle / Ready';
-            spokenText.textContent = 'Waiting for Twitch chat messages or manual test...';
+            spokenText.textContent = 'Waiting for Twitch chat messages or manual test input...';
             voiceTag.textContent = 'Voice: Default';
             chunkTag.textContent = 'Chunk: 0 / 0';
             return;
@@ -293,6 +363,22 @@ document.addEventListener('DOMContentLoaded', () => {
         spokenText.textContent = `"${item.text}"`;
         voiceTag.textContent = `Voice: ${item.voice || 'default'}`;
         chunkTag.textContent = `Chunk: ${item.chunk_index} / ${item.total_chunks}`;
+    }
+
+    // ----------------------------------------------------
+    // Voice Tag Chips Helper
+    // ----------------------------------------------------
+
+    if (voiceChips) {
+        voiceChips.addEventListener('click', (e) => {
+            if (e.target.classList.contains('chip')) {
+                const voice = e.target.getAttribute('data-voice');
+                if (voice) {
+                    testTextInput.value = (testTextInput.value + ` [${voice}] `).trimStart();
+                    testTextInput.focus();
+                }
+            }
+        });
     }
 
     // ----------------------------------------------------
@@ -322,6 +408,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     const errData = JSON.parse(e.data);
                     console.error('Server SSE error:', errData.message);
+                    showToast(`Error: ${errData.message}`, 'error');
                 } catch(err){}
             }
         });
@@ -377,10 +464,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ channel: targetChannel })
             });
             if (res.ok) {
+                showToast(`Connecting to Twitch channel #${targetChannel}...`, 'success');
                 fetchStatus();
             }
         } catch (e) {
             console.error('Failed to connect channel:', e);
+            showToast('Failed to connect to Twitch channel', 'error');
         }
     });
 
@@ -405,9 +494,14 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (res.ok) {
                 addChatMessage('TestUser', text);
+                showToast('TTS synthesis job queued!', 'success');
+            } else {
+                const errData = await res.json();
+                showToast(`Synthesis failed: ${errData.error || 'Unknown error'}`, 'error');
             }
         } catch (e) {
             console.error('Failed to send test TTS:', e);
+            showToast('Failed to connect to backend server', 'error');
         } finally {
             sendTestBtn.disabled = false;
             sendTestBtn.innerHTML = '<span>🚀</span> Synthesize & Play';
@@ -428,14 +522,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 })
             });
             if (res.ok) {
-                alert('Settings saved successfully!');
+                showToast('Settings saved successfully!', 'success');
             }
         } catch (e) {
             console.error('Failed to save settings:', e);
+            showToast('Failed to save settings', 'error');
         }
     });
 
-    // Chat Feed
+    // Chat Feed Helper
     function addChatMessage(user, msg) {
         const placeholder = chatFeed.querySelector('.chat-placeholder');
         if (placeholder) placeholder.remove();
@@ -449,5 +544,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function escapeHtml(str) {
         return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    // Toast Notification Helper
+    function showToast(message, type = 'info') {
+        if (!toastContainer) return;
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        const icon = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
+        toast.innerHTML = `<span>${icon}</span> <span>${escapeHtml(message)}</span>`;
+        toastContainer.appendChild(toast);
+
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transition = 'opacity 0.3s ease';
+            setTimeout(() => toast.remove(), 300);
+        }, 3500);
     }
 });

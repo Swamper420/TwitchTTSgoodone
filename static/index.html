@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Twitch TTS Bot - Audio Overlay & Control Dashboard</title>
+    <meta name="description" content="Real-time Twitch TTS bot dashboard with local API integration, multi-voice support, and live spectrum audio visualization.">
     <!-- Modern Typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,6 +12,20 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- Audio Autoplay Unlock Overlay -->
+    <div id="audioUnlockOverlay" class="audio-unlock-overlay">
+        <div class="audio-unlock-card">
+            <h2>🎙️ Enable Twitch TTS Audio</h2>
+            <p>Click below to activate audio playback and initialize the visualizer.</p>
+            <button id="enableAudioBtn" class="btn btn-primary btn-large">
+                <span>🔊</span> Activate Audio Output
+            </button>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
     <div class="app-container">
         <!-- Top Header Navbar -->
         <header class="navbar">
@@ -43,11 +58,18 @@
 
                 <div class="player-display">
                     <div class="now-playing-box" id="nowPlayingBox">
-                        <canvas id="spectrumCanvas" width="180" height="60" class="spectrum-canvas"></canvas>
+                        <!-- Animated Equalizer Bars -->
+                        <div id="visualizer" class="equalizer-visualizer" title="Equalizer visualizer">
+                            <span></span><span></span><span></span><span></span><span></span>
+                        </div>
+
+                        <!-- Real-time Web Audio Spectrum Canvas -->
+                        <canvas id="spectrumCanvas" width="140" height="60" class="spectrum-canvas"></canvas>
+
                         <div class="now-playing-info">
                             <span class="label">NOW SPEAKING</span>
-                            <h3 id="currentSpeaker" class="speaker-name">Waiting for messages...</h3>
-                            <p id="currentText" class="spoken-text">Connect to Twitch chat or test a voice below.</p>
+                            <h3 id="currentSpeaker" class="speaker-name">Idle / Ready</h3>
+                            <p id="currentText" class="spoken-text">Waiting for chat messages or manual test input...</p>
                             <div class="meta-tags">
                                 <span class="tag" id="voiceTag">Voice: Default</span>
                                 <span class="tag" id="chunkTag">Chunk: 0 / 0</span>
@@ -82,6 +104,11 @@
                             <span class="toggle-label">Auto Play</span>
                         </label>
                     </div>
+
+                    <!-- Live Queue List Display -->
+                    <div class="queue-list-container" id="queueList">
+                        <div class="queue-empty-text">Queue is currently empty</div>
+                    </div>
                 </div>
             </section>
 
@@ -98,6 +125,14 @@
                             <span class="hint">Use <code>[voicename]</code> tags for multi-voice!</span>
                         </label>
                         <textarea id="testTextInput" rows="3" placeholder="Hello! [alice] Welcome to the stream! [bob] How is everyone doing today?"></textarea>
+
+                        <!-- Preset Voice Chips -->
+                        <div class="voice-chips" id="voiceChips">
+                            <span class="chip" data-voice="alice">+ [alice]</span>
+                            <span class="chip" data-voice="bob">+ [bob]</span>
+                            <span class="chip" data-voice="charlie">+ [charlie]</span>
+                            <span class="chip" data-voice="dave">+ [dave]</span>
+                        </div>
                     </div>
 
                     <div class="form-row">
@@ -165,6 +200,14 @@
                 </div>
             </section>
         </main>
+
+        <!-- Hotkeys Footer -->
+        <footer class="hotkeys-bar">
+            <div class="hotkey-tag"><kbd>Space</kbd> Play / Pause</div>
+            <div class="hotkey-tag"><kbd>S</kbd> Skip Track</div>
+            <div class="hotkey-tag"><kbd>C</kbd> Clear Queue</div>
+            <div class="hotkey-tag"><kbd>M</kbd> Mute Audio</div>
+        </footer>
     </div>
 
     <!-- Hidden HTML5 Audio Element -->
