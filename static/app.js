@@ -37,6 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let audioQueue = [];
     let isPlaying = false;
     let currentItem = null;
+    let bufferTimer = null;
 
     // Load initial settings & status
     fetchStatus();
@@ -51,12 +52,46 @@ document.addEventListener('DOMContentLoaded', () => {
     function enqueueAudioChunk(chunk) {
         audioQueue.push(chunk);
         updateQueueUI();
-        if (autoPlayToggle.checked && !isPlaying) {
-            playNextChunk();
+        checkAndPlayNext();
+    }
+
+    function checkAndPlayNext() {
+        if (!autoPlayToggle.checked || isPlaying || audioQueue.length === 0) {
+            return;
         }
+
+        const head = audioQueue[0];
+
+        // If this is the 1st chunk of a multi-chunk message, wait for the 2nd chunk to arrive first
+        if (head.total_chunks > 1 && head.chunk_index === 1) {
+            if (audioQueue.length < 2) {
+                // Wait for 2nd chunk, but set safety timeout in case 2nd chunk fails/delays
+                if (!bufferTimer) {
+                    bufferTimer = setTimeout(() => {
+                        bufferTimer = null;
+                        if (!isPlaying && audioQueue.length > 0) {
+                            playNextChunk();
+                        }
+                    }, 3000);
+                }
+                return;
+            }
+        }
+
+        if (bufferTimer) {
+            clearTimeout(bufferTimer);
+            bufferTimer = null;
+        }
+
+        playNextChunk();
     }
 
     function playNextChunk() {
+        if (bufferTimer) {
+            clearTimeout(bufferTimer);
+            bufferTimer = null;
+        }
+
         if (audioQueue.length === 0) {
             isPlaying = false;
             currentItem = null;
@@ -78,25 +113,26 @@ document.addEventListener('DOMContentLoaded', () => {
             visualizer.classList.add('playing');
         }).catch(err => {
             console.error('Audio playback error:', err);
-            // If user interaction was needed for autoplay, retry on next interaction
             visualizer.classList.remove('playing');
             isPlaying = false;
+            // Try next chunk if playback failed
+            checkAndPlayNext();
         });
     }
 
     audioPlayer.addEventListener('ended', () => {
         visualizer.classList.remove('playing');
+        isPlaying = false;
         if (autoPlayToggle.checked) {
-            playNextChunk();
-        } else {
-            isPlaying = false;
+            checkAndPlayNext();
         }
     });
 
     audioPlayer.addEventListener('error', (e) => {
         console.error('Playback error on track:', e);
         visualizer.classList.remove('playing');
-        playNextChunk();
+        isPlaying = false;
+        checkAndPlayNext();
     });
 
     // Skip current audio track
@@ -105,12 +141,17 @@ document.addEventListener('DOMContentLoaded', () => {
             audioPlayer.pause();
             audioPlayer.currentTime = 0;
             visualizer.classList.remove('playing');
-            playNextChunk();
+            isPlaying = false;
+            checkAndPlayNext();
         }
     });
 
     // Clear entire queue
     clearBtn.addEventListener('click', () => {
+        if (bufferTimer) {
+            clearTimeout(bufferTimer);
+            bufferTimer = null;
+        }
         audioQueue = [];
         audioPlayer.pause();
         audioPlayer.currentTime = 0;
