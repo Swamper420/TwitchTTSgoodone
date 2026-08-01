@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.sanitizer import (
     sanitize_string,
     sanitize_username,
+    sanitize_speaker_name_for_tts,
     sanitize_identifier,
     sanitize_int,
     sanitize_bool,
@@ -34,6 +35,13 @@ class TestSanitizer(unittest.TestCase):
         # Invalid usernames with special symbols return empty string
         self.assertEqual(sanitize_username("invalid<user>!"), "")
         self.assertEqual(sanitize_username("user with spaces"), "")
+
+    def test_sanitize_speaker_name_for_tts(self):
+        self.assertEqual(sanitize_speaker_name_for_tts("m_e_s_t_a_a_j_a"), "mestaaja")
+        self.assertEqual(sanitize_speaker_name_for_tts("user.name"), "username")
+        self.assertEqual(sanitize_speaker_name_for_tts("foo/bar:baz-123"), "foobarbaz123")
+        self.assertEqual(sanitize_speaker_name_for_tts("Joe_123"), "Joe123")
+        self.assertEqual(sanitize_speaker_name_for_tts("Cool User"), "Cool User")
 
     def test_sanitize_identifier(self):
         self.assertEqual(sanitize_identifier("voice-name_1.0"), "voice-name_1.0")

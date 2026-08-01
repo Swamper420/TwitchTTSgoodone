@@ -24,6 +24,7 @@ from app.sanitizer import (
     sanitize_audio_format,
     sanitize_url,
     sanitize_float,
+    sanitize_speaker_name_for_tts,
 )
 
 logger = logging.getLogger("Server")
@@ -175,13 +176,14 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                 skip_user_prefix = True
 
     if user and not skip_user_prefix:
+        tts_user = sanitize_speaker_name_for_tts(user)
         if "{user}" in config.user_template and "{text}" in config.user_template:
             try:
-                text_to_speak = config.user_template.format(user=user, text=raw_text)
+                text_to_speak = config.user_template.format(user=tts_user, text=raw_text)
             except Exception:
-                text_to_speak = f"{user} sanoo: {raw_text}"
+                text_to_speak = f"{tts_user} sanoo: {raw_text}"
         else:
-            text_to_speak = f"{user} {config.user_template} {raw_text}"
+            text_to_speak = f"{tts_user} {config.user_template} {raw_text}"
     else:
         text_to_speak = raw_text
 

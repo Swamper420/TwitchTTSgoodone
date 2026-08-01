@@ -28,6 +28,16 @@ def sanitize_username(val: Any, max_len: int = 25) -> str:
     return s
 
 
+def sanitize_speaker_name_for_tts(val: Any) -> str:
+    r"""Strip symbols (.:_/\- etc) from speaker username so TTS pronounces it cleanly."""
+    s = sanitize_string(val, max_len=100)
+    if not s:
+        return ""
+    clean = re.sub(r'[^\w\s]|_', '', s).strip()
+    return clean if clean else s
+
+
+
 def sanitize_identifier(val: Any, max_len: int = 100, default: str = "") -> str:
     """Sanitize identifiers such as voice names, model names, chunk IDs (alphanumeric, -, _, .)."""
     s = sanitize_string(val, max_len=max_len, default=default)
