@@ -9,9 +9,9 @@
   "server_port": 5000,
   "twitch_channel": "m_e_s_t_a_a_j_a",
   "user_template": "{user} sanoo: {text}",
-  "voice_presets": "mieto, terapisti, terry, tuomo4, niilo, tuomo2",
-  "twitch_bot_username": "TTSMIES",
-  "twitch_oauth_token": "",
+  "voice_presets": "mieto, terapisti, terry, tuomo4, niilo",
+  "twitch_bot_username": "TTSBOTTIMIES",
+  "twitch_oauth_token": "9nwggdcu9sdjgtuemfblr0x0mq5cw6",
   "enable_chat_responses": true,
   "enable_periodic_info": true,
   "periodic_info_interval": 10

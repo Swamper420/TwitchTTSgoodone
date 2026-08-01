@@ -104,37 +104,48 @@ class TwitchListener:
             self.sock = None
 
     def _run_loop(self):
+        fallback_anon = False
+        last_auth_attempt = None
+
         while self.running:
             if not self.channel:
                 time.sleep(1.0)
                 continue
-                
+
             try:
                 with self._lock:
                     bot_user = self.bot_username
                     oauth_tok = self.oauth_token
 
-                if bot_user and oauth_tok:
+                current_creds = (bot_user, oauth_tok)
+                if current_creds != last_auth_attempt:
+                    fallback_anon = False
+                    last_auth_attempt = current_creds
+
+                use_auth = bool(bot_user and oauth_tok) and not fallback_anon
+
+                if use_auth:
                     nick = bot_user.lower()
                     pass_str = oauth_tok if oauth_tok.startswith("oauth:") else f"oauth:{oauth_tok}"
-                    self.is_authenticated = True
+                    self.is_authenticated = False
                     logger.info(f"Connecting to Twitch IRC ({self.IRC_HOST}:{self.IRC_PORT}) as BOT '{nick}' for channel #{self.channel}...")
                 else:
                     nick = f"justinfan{random.randint(10000, 99999)}"
                     pass_str = "SCHMOOPIIE"
                     self.is_authenticated = False
-                    logger.info(f"Connecting to Twitch IRC ({self.IRC_HOST}:{self.IRC_PORT}) as ANONYMOUS {nick} for channel #{self.channel}...")
-                
+                    if bot_user and oauth_tok and fallback_anon:
+                        logger.warning(f"Connecting to Twitch IRC as ANONYMOUS reader {nick} (Auth failed for BOT '{bot_user}'). Chat TTS enabled, bot chat replies disabled.")
+                    else:
+                        logger.info(f"Connecting to Twitch IRC as ANONYMOUS reader {nick} for channel #{self.channel}...")
+
                 self.sock = socket.create_connection((self.IRC_HOST, self.IRC_PORT), timeout=10)
                 self.sock.send(f"PASS {pass_str}\r\n".encode("utf-8"))
                 self.sock.send(f"NICK {nick}\r\n".encode("utf-8"))
                 self.sock.send(f"JOIN #{self.channel}\r\n".encode("utf-8"))
-                
-                logger.info(f"Successfully joined Twitch chat: #{self.channel} (Authenticated: {self.is_authenticated})")
-                
+
                 buffer = ""
                 self.sock.settimeout(2.0)
-                
+
                 while self.running and self.sock:
                     try:
                         data = self.sock.recv(4096).decode("utf-8", errors="ignore")
@@ -144,28 +155,39 @@ class TwitchListener:
                         buffer += data
                         lines = buffer.split("\r\n")
                         buffer = lines.pop()
-                        
+
+                        auth_failed_in_batch = False
                         for line in lines:
-                            self._handle_irc_line(line)
+                            res = self._handle_irc_line(line, expected_auth=use_auth)
+                            if res == "AUTH_FAILED":
+                                logger.error(f"Twitch IRC authentication failed for bot '{bot_user}'. Switching to anonymous reader mode.")
+                                fallback_anon = True
+                                auth_failed_in_batch = True
+                                break
+
+                        if auth_failed_in_batch:
+                            break
+
                     except socket.timeout:
                         continue
                     except Exception as e:
                         if self.running:
                             logger.error(f"Error receiving Twitch chat data: {e}")
                         break
-                        
+
             except Exception as e:
                 if self.running:
                     logger.warning(f"Twitch connection error: {e}. Reconnecting in 5s...")
-                    time.sleep(5)
             finally:
                 self._disconnect_socket()
-                
-    def _handle_irc_line(self, line: str):
+                if self.running:
+                    time.sleep(3.0)
+
+    def _handle_irc_line(self, line: str, expected_auth: bool = False) -> Optional[str]:
         line = line.strip()
         if not line:
-            return
-            
+            return None
+
         # PING / PONG heartbeat
         if line.startswith("PING"):
             pong_resp = line.replace("PING", "PONG")
@@ -175,8 +197,24 @@ class TwitchListener:
                         self.sock.send(f"{pong_resp}\r\n".encode("utf-8"))
                 except Exception:
                     pass
-            return
-            
+            return None
+
+        # Twitch IRC NOTICE messages (e.g. authentication errors)
+        if "NOTICE" in line:
+            logger.warning(f"Twitch IRC Server NOTICE: {line}")
+            if any(err_msg in line for err_msg in ["Login unsuccessful", "Login authentication failed", "Improperly formatted auth"]):
+                self.is_authenticated = False
+                return "AUTH_FAILED"
+
+        # Welcome message (001) confirms successful connection
+        if " 001 " in line:
+            if expected_auth:
+                self.is_authenticated = True
+                logger.info(f"Twitch IRC Authentication SUCCESSFUL for BOT '{self.bot_username}'. Joined chat: #{self.channel}")
+            else:
+                self.is_authenticated = False
+                logger.info(f"Twitch IRC Successfully joined chat anonymously as reader: #{self.channel}")
+
         # Match PRIVMSG line: :username!username@username.tmi.twitch.tv PRIVMSG #channel :message
         match = re.match(r'^:([^!]+)![^@]+@[^\s]+\s+PRIVMSG\s+#[^\s]+\s+:(.*)$', line)
         if match:
@@ -187,3 +225,5 @@ class TwitchListener:
                 self.on_message(username, message)
             except Exception as e:
                 logger.error(f"Error processing chat message from {username}: {e}")
+
+        return None
