@@ -157,7 +157,12 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                 "config": config.to_dict(),
                 "user_voices": user_voice_manager.get_all()
             })
-            return
+    if raw_text and not raw_text.strip().startswith("!"):
+        clean_raw = raw_text.strip()
+        if len(clean_raw) < 10:
+            while len(clean_raw) < 10:
+                clean_raw = clean_raw + "bruhbruh"
+            raw_text = clean_raw
 
     if user:
         if "{user}" in config.user_template and "{text}" in config.user_template:

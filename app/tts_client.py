@@ -48,9 +48,12 @@ class TTSClient:
         # Ensure text meets minimum character threshold to avoid API blocking short requests
         min_chars = config.min_chunk_chars
         if text and len(text) < min_chars:
-            text = text + "." * (min_chars - len(text))
+            while len(text) < min_chars:
+                text = text + "bruhbruh"
         elif not text:
-            text = "." * min_chars
+            text = "bruhbruh"
+            while len(text) < min_chars:
+                text = text + "bruhbruh"
         
         # Check Cache
         cache_key = self._compute_cache_key(text, voice_to_use, model_to_use, format_to_use)
