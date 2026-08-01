@@ -6,6 +6,27 @@ from typing import Optional, Dict, Any
 
 logger = logging.getLogger("Config")
 
+def load_dotenv(filepaths=(".env", "example.env")):
+    """Lightweight loader for .env / example.env files into os.environ."""
+    for path in filepaths:
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k = k.strip()
+                            v = v.strip().strip("'\"")
+                            if k and k not in os.environ:
+                                os.environ[k] = v
+                logger.info(f"Loaded environment variables from {path}")
+                break
+            except Exception as e:
+                logger.warning(f"Could not load {path}: {e}")
+
+load_dotenv()
+
 CONFIG_FILE = os.getenv("CONFIG_FILE", "config.json")
 
 @dataclass
