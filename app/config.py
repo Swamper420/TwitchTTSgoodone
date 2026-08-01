@@ -20,7 +20,7 @@ class Config:
     server_port: int = field(default_factory=lambda: int(os.getenv("SERVER_PORT", "5000")))
     twitch_channel: str = field(default_factory=lambda: os.getenv("TWITCH_CHANNEL", "m_e_s_t_a_a_j_a"))
     user_template: str = field(default_factory=lambda: os.getenv("USER_TEMPLATE", "{user} sanoo: {text}"))
-    voice_presets: str = field(default_factory=lambda: os.getenv("VOICE_PRESETS", "mieto, alice, bob, charlie, dave"))
+    voice_presets: str = field(default_factory=lambda: os.getenv("VOICE_PRESETS", "mieto, terapisti, terry, tuomo4, niilo"))
 
     def load(self, filepath: str = CONFIG_FILE):
         """Load configuration from JSON file if present."""

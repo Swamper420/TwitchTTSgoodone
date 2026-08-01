@@ -46,6 +46,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const spectrumCanvas = document.getElementById('spectrumCanvas');
     const canvasCtx = spectrumCanvas ? spectrumCanvas.getContext('2d') : null;
 
+    // Constants
+    const SILENT_WAV_SRC = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
+
     // Audio Queue State
     let audioQueue = [];
     let isPlaying = false;
@@ -69,7 +72,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // ----------------------------------------------------
 
     function initWebAudioVisualizer() {
-        if (audioCtx) return;
+        if (audioCtx) {
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            return;
+        }
         try {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             analyser = audioCtx.createAnalyser();
@@ -91,10 +99,18 @@ document.addEventListener('DOMContentLoaded', () => {
         if (audioUnlockOverlay) {
             audioUnlockOverlay.classList.add('hidden');
         }
-        // Silent play to unlock HTML5 audio element
-        audioPlayer.play().then(() => {
-            audioPlayer.pause();
-        }).catch(() => {});
+        // Silent play to unlock HTML5 audio element safely without src error
+        if (!audioPlayer.src || audioPlayer.src === window.location.href || audioPlayer.src.startsWith('data:')) {
+            audioPlayer.src = SILENT_WAV_SRC;
+            audioPlayer.play().then(() => {
+                audioPlayer.pause();
+            }).catch(() => {});
+        }
+
+        // Trigger queue playback if items arrived before user interaction
+        if (!isPlaying && audioQueue.length > 0) {
+            checkAndPlayNext();
+        }
     }
 
     if (enableAudioBtn) {
@@ -106,7 +122,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!chimeToggle || !chimeToggle.checked) return Promise.resolve();
         return new Promise((resolve) => {
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+                if (ctx.state === 'suspended') {
+                    ctx.resume();
+                }
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
                 osc.type = 'sine';
@@ -225,23 +244,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
         audioPlayer.src = currentItem.url;
         audioPlayer.volume = volumeSlider.value / 100;
+        audioPlayer.load();
         
         audioPlayer.play().then(() => {
+            if (audioUnlockOverlay) {
+                audioUnlockOverlay.classList.add('hidden');
+            }
         }).catch(err => {
-            console.error('Audio playback error:', err);
+            console.error('Audio playback error / Autoplay blocked:', err);
             if (visualizer) visualizer.classList.remove('playing');
+            
+            // Re-queue item so it isn't lost if autoplay was blocked
+            if (currentItem) {
+                audioQueue.unshift(currentItem);
+            }
             isPlaying = false;
-            checkAndPlayNext();
+            currentItem = null;
+            updateNowPlayingUI(null);
+            updateQueueUI();
+
+            // Prompt user to activate audio if autoplay was blocked
+            if (audioUnlockOverlay) {
+                audioUnlockOverlay.classList.remove('hidden');
+            }
         });
     }
 
     // Skip current audio track
     skipBtn.addEventListener('click', () => {
-        if (isPlaying || audioPlayer.src) {
+        if (isPlaying || currentItem) {
             audioPlayer.pause();
             audioPlayer.currentTime = 0;
             if (visualizer) visualizer.classList.remove('playing');
             isPlaying = false;
+            currentItem = null;
             showToast('Skipped current audio', 'success');
             checkAndPlayNext();
         }
@@ -287,9 +323,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     audioPlayer.addEventListener('error', (e) => {
+        if (audioPlayer.src === SILENT_WAV_SRC || !audioPlayer.src || audioPlayer.src === window.location.href) {
+            return;
+        }
         console.error('Playback error on track:', e);
         if (visualizer) visualizer.classList.remove('playing');
         isPlaying = false;
+        if (currentItem) {
+            currentItem = null;
+            updateNowPlayingUI(null);
+        }
         checkAndPlayNext();
     });
 
