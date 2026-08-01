@@ -316,6 +316,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             return
 
         # Route: Save Config/Settings
+        if path == "/api/settings":
             if "tts_api_url" in body:
                 config.tts_api_url = str(body["tts_api_url"]).strip()
                 tts_client.base_url = config.tts_api_url.rstrip('/')
