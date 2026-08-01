@@ -476,7 +476,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // API Actions & Forms
     // ----------------------------------------------------
 
-    async function fetchStatus() {
     function getAuthHeaders() {
         const headers = { 'Content-Type': 'application/json' };
         const adminToken = localStorage.getItem('admin_token');
@@ -666,17 +665,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Connect / Disconnect Twitch Channel
-    connectBtn.addEventListener('click', async () => {
-        const targetChannel = channelInput.value.trim();
-        if (!targetChannel) return;
-
-        try {
-            const res = await fetch('/api/connect', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ channel: targetChannel })
-            });
     function updateTwitchAuthBadgeUI(info) {
         const badge = document.getElementById('twitchOAuthBadge');
         const drawer = document.getElementById('twitchAuthDetails');
@@ -942,18 +930,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const validRes = await handleFetchResponse(res);
                 if (validRes && validRes.ok) {
                     showToast('Posted helpful bot info tip to chat!', 'success');
-                }
-            } catch (e) {
-                console.error('Failed to send helpful info:', e);
-                showToast('Error connecting to backend', 'error');
-            }
-        });
-    }
-                const res = await fetch('/api/bot/send_info', { method: 'POST' });
-                if (res.ok) {
-                    showToast('Posted helpful bot info tip to chat!', 'success');
-                } else {
-                    showToast('Failed to send helpful info', 'error');
                 }
             } catch (e) {
                 console.error('Failed to send helpful info:', e);

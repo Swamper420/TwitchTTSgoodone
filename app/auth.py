@@ -14,17 +14,29 @@ logger = logging.getLogger("Auth")
 TWITCH_VALIDATE_URL = "https://id.twitch.tv/oauth2/validate"
 
 
+def clean_oauth_token(token: str) -> str:
+    """Clean and strip prefixes (oauth:, bearer:), quotes, and whitespace from token string."""
+    if not token:
+        return ""
+    tok = token.strip().strip('"').strip("'")
+    import re
+    # Remove repeated leading oauth: or bearer: prefixes case-insensitively
+    while True:
+        m = re.match(r'^(oauth:|bearer:)\s*', tok, flags=re.IGNORECASE)
+        if m:
+            tok = tok[m.end():].strip().strip('"').strip("'")
+        else:
+            break
+    return tok
+
+
 def mask_token(token: str, keep_chars: int = 4) -> str:
     """Mask a sensitive token string (e.g. oauth:xxxxxxxx -> oauth:••••••••abcd)."""
     if not token:
         return ""
-    token_str = token.strip()
-    prefix = ""
-    if token_str.lower().startswith("oauth:"):
-        prefix = "oauth:"
-        raw_tok = token_str[6:]
-    else:
-        raw_tok = token_str
+    has_oauth_prefix = token.strip().lower().startswith("oauth:")
+    raw_tok = clean_oauth_token(token)
+    prefix = "oauth:" if has_oauth_prefix else ""
 
     if len(raw_tok) <= keep_chars:
         return prefix + "•" * len(raw_tok)
@@ -54,7 +66,8 @@ class TwitchTokenValidator:
         - expires_at_iso (str) - Calculated ISO timestamp of expiration
         - error (str or None) - Error description if invalid
         """
-        if not oauth_token or not oauth_token.strip():
+        raw_token = clean_oauth_token(oauth_token)
+        if not raw_token:
             return {
                 "valid": False,
                 "login": "",
@@ -66,11 +79,7 @@ class TwitchTokenValidator:
                 "error": "No OAuth token provided",
             }
 
-        raw_token = oauth_token.strip()
-        if raw_token.lower().startswith("oauth:"):
-            token_for_header = raw_token[6:].strip()
-        else:
-            token_for_header = raw_token
+        token_for_header = raw_token
 
         req = urllib.request.Request(TWITCH_VALIDATE_URL)
         # Twitch validate endpoint accepts "Authorization: OAuth <token>" or "Authorization: Bearer <token>"

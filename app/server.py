@@ -68,29 +68,51 @@ def _periodic_info_loop():
             logger.error(f"Error in periodic info loop: {e}")
 
 
+last_command_broadcast_time = 0.0
+
 def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str] = None, override_model: Optional[str] = None):
     """
     Process incoming chat or test message:
-    1. Intercept !help, !tts, !voices, !myvoice / !voice commands.
+    1. Intercept chat commands (!help, !tts, !botinfo, !voices, !myvoice, !skip, !clear).
     2. Prepend user template to regular text.
     3. Parse into chunks (with per-chunk voice tags if present).
     4. Request local TTS API for each chunk.
     5. Save audio to memory store and notify frontend player via SSE.
     """
+    global last_command_broadcast_time
+
     if raw_text:
         raw_lower = raw_text.strip().lower()
 
-        # Command: !help, !tts, !botinfo
-        if raw_lower in ("!help", "!tts", "!botinfo"):
-            send_bot_helpful_info()
+        # Command: !skip / !clear
+        if raw_lower in ("!skip", "!next"):
+            logger.info(f"Chat command '!skip' received from user '{user}'.")
+            broadcast_event("skip_audio", {"user": user, "timestamp": time.time()})
+            return
+
+        if raw_lower in ("!clear", "!clearqueue", "!stop"):
+            logger.info(f"Chat command '!clear' received from user '{user}'.")
+            audio_queue.clear()
+            broadcast_event("clear_audio", {"user": user, "timestamp": time.time()})
+            return
+
+        # Command: !help, !tts, !botinfo, !info, !about
+        if raw_lower in ("!help", "!tts", "!botinfo", "!info", "!about"):
+            now = time.time()
+            if now - last_command_broadcast_time > 3.0:
+                last_command_broadcast_time = now
+                send_bot_helpful_info()
             return
 
         # Command: !voices
-        if raw_lower == "!voices":
-            voices_msg = f"🎙️ Available TTS Voice Presets: {config.voice_presets}. Type !myvoice <voicename> to set your signature voice!"
-            broadcast_event("chat_message", {"user": "System", "message": voices_msg, "timestamp": time.time()})
-            if config.enable_chat_responses and twitch_bot:
-                twitch_bot.send_chat(voices_msg)
+        if raw_lower in ("!voices", "!preset", "!presets"):
+            now = time.time()
+            if now - last_command_broadcast_time > 3.0:
+                last_command_broadcast_time = now
+                voices_msg = f"🎙️ Available TTS Voice Presets: [{config.voice_presets}]. Type !myvoice <voicename> to set your signature voice!"
+                broadcast_event("chat_message", {"user": "System", "message": voices_msg, "timestamp": time.time()})
+                if config.enable_chat_responses and twitch_bot:
+                    twitch_bot.send_chat(voices_msg)
             return
 
         # Command: !myvoice / !voice
@@ -98,17 +120,19 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
             parts = raw_text.strip().split(maxsplit=1)
             requested_voice = parts[1].strip() if len(parts) > 1 else ""
             user_name = user or "Chatter"
+
             if not requested_voice:
                 curr_voice = user_voice_manager.get_voice(user_name) or config.tts_voice
-                msg_text = f"@{user_name} Usage: !myvoice <voicename> or !myvoice reset. Your signature voice is currently '{curr_voice}'. Presets: {config.voice_presets}"
+                msg_text = f"@{user_name} Usage: !myvoice <voicename> or !myvoice reset. Your active voice: '{curr_voice}'. Presets: {config.voice_presets}"
                 broadcast_event("chat_message", {"user": "System", "message": msg_text, "timestamp": time.time()})
                 if config.enable_chat_responses and twitch_bot:
                     twitch_bot.send_chat(msg_text)
                 return
 
             saved_voice = user_voice_manager.set_voice(user_name, requested_voice)
-            if saved_voice == "default":
-                msg_text = f"Reset @{user_name}'s signature TTS voice to default."
+            if saved_voice == "default" or requested_voice.lower() in ("reset", "clear", "default", "none"):
+                user_voice_manager.clear_user(user_name)
+                msg_text = f"Reset @{user_name}'s signature TTS voice to global default ('{config.tts_voice}')."
             else:
                 msg_text = f"Saved signature TTS voice for @{user_name} to '{saved_voice}'!"
 
@@ -424,6 +448,23 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"success": True, "message": info_msg})
             return
 
+        # Route: Force Reconnect Twitch Bot
+        if path == "/api/bot/reconnect":
+            if twitch_bot:
+                twitch_bot.reconnect()
+                broadcast_event("status", self._get_status_dict())
+                self._send_json(200, {"success": True, "message": "Twitch bot reconnection triggered."})
+            else:
+                self._send_json(400, {"error": "Twitch bot is not initialized."})
+            return
+
+        # Route: Clear Audio Queue
+        if path == "/api/queue/clear":
+            audio_queue.clear()
+            broadcast_event("clear_audio", {"user": "Dashboard", "timestamp": time.time()})
+            self._send_json(200, {"success": True, "message": "Audio queue cleared."})
+            return
+
         # Route: Manual Test TTS
         if path == "/api/tts/test":
             text = body.get("text", "").strip()
@@ -529,7 +570,8 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             "config": self._get_config_dict(),
             "user_voices": user_voice_manager.get_all(),
             "auth_required": dashboard_auth_manager.is_auth_required(),
-            "twitch_auth": twitch_bot.get_auth_info() if twitch_bot else {}
+            "twitch_auth": twitch_bot.get_auth_info() if twitch_bot else {},
+            "bot_status": twitch_bot.get_status() if twitch_bot else {}
         }
 
     def _get_config_dict(self) -> dict:
