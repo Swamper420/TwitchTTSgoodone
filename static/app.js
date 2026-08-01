@@ -46,6 +46,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const spectrumCanvas = document.getElementById('spectrumCanvas');
     const canvasCtx = spectrumCanvas ? spectrumCanvas.getContext('2d') : null;
 
+    const userVoicesList = document.getElementById('userVoicesList');
+    const clearAllVoicesBtn = document.getElementById('clearAllVoicesBtn');
+
     // Constants
     const SILENT_WAV_SRC = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
 
@@ -511,6 +514,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             renderVoiceChips(data.config.voice_presets);
         }
+
+        if (data.user_voices) {
+            renderUserVoices(data.user_voices);
+        }
     }
 
     function renderVoiceChips(voicePresetsStr) {
@@ -523,6 +530,68 @@ document.addEventListener('DOMContentLoaded', () => {
             chip.setAttribute('data-voice', voice);
             chip.textContent = `+ [${voice}]`;
             voiceChips.appendChild(chip);
+        });
+    }
+
+    function renderUserVoices(userVoicesObj) {
+        if (!userVoicesList) return;
+        userVoicesList.innerHTML = '';
+        const entries = Object.entries(userVoicesObj || {});
+        if (entries.length === 0) {
+            userVoicesList.innerHTML = '<span class="user-voices-empty">No chatter voices claimed yet. Type <code>!myvoice &lt;name&gt;</code> in chat!</span>';
+            return;
+        }
+
+        entries.forEach(([user, voice]) => {
+            const tag = document.createElement('span');
+            tag.className = 'user-voice-tag';
+            tag.innerHTML = `
+                <span class="name">@${escapeHtml(user)}</span>:
+                <span class="voice">${escapeHtml(voice)}</span>
+                <button class="remove-btn" data-user="${escapeHtml(user)}" title="Reset voice for @${escapeHtml(user)}">✖</button>
+            `;
+            userVoicesList.appendChild(tag);
+        });
+
+        userVoicesList.querySelectorAll('.remove-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const username = e.currentTarget.getAttribute('data-user');
+                if (username) {
+                    await deleteUserVoice(username);
+                }
+            });
+        });
+    }
+
+    async function deleteUserVoice(username) {
+        try {
+            const res = await fetch('/api/user_voices/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user: username })
+            });
+            if (res.ok) {
+                showToast(`Reset voice for @${username}`, 'success');
+                fetchStatus();
+            }
+        } catch(e) {
+            console.error('Failed to delete user voice:', e);
+        }
+    }
+
+    if (clearAllVoicesBtn) {
+        clearAllVoicesBtn.addEventListener('click', async () => {
+            if (confirm('Clear all saved chatter voices?')) {
+                try {
+                    const res = await fetch('/api/user_voices/clear', { method: 'POST' });
+                    if (res.ok) {
+                        showToast('Cleared all saved chatter voices', 'success');
+                        fetchStatus();
+                    }
+                } catch(e) {
+                    console.error('Failed to clear user voices:', e);
+                }
+            }
         });
     }
 

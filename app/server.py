@@ -12,6 +12,7 @@ from app.config import config
 from app.text_chunker import process_message_to_chunks, TTSChunk
 from app.tts_client import tts_client, TTSClient
 from app.twitch_listener import TwitchListener
+from app.user_voices import user_voice_manager
 
 logger = logging.getLogger("Server")
 
@@ -46,11 +47,39 @@ def broadcast_event(event_type: str, payload: dict):
 def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str] = None, override_model: Optional[str] = None):
     """
     Process incoming chat or test message:
-    1. Prepend "<user> sanoo: " to the text.
-    2. Parse into chunks (with per-chunk voice tags if present).
-    3. Request local TTS API for each chunk.
-    4. Save audio to memory store and notify frontend player via SSE.
+    1. Intercept !myvoice / !voice commands.
+    2. Prepend "<user> sanoo: " to regular text.
+    3. Parse into chunks (with per-chunk voice tags if present).
+    4. Request local TTS API for each chunk.
+    5. Save audio to memory store and notify frontend player via SSE.
     """
+    if raw_text:
+        raw_lower = raw_text.strip().lower()
+        if raw_lower.startswith("!myvoice") or raw_lower.startswith("!voice"):
+            parts = raw_text.strip().split(maxsplit=1)
+            requested_voice = parts[1].strip() if len(parts) > 1 else ""
+            user_name = user or "Chatter"
+            if not requested_voice:
+                curr_voice = user_voice_manager.get_voice(user_name) or config.tts_voice
+                msg_text = f"Usage: !myvoice <voicename> or !myvoice reset. Your signature voice is currently '{curr_voice}'."
+                broadcast_event("chat_message", {"user": "System", "message": f"@{user_name} {msg_text}", "timestamp": time.time()})
+                return
+
+            saved_voice = user_voice_manager.set_voice(user_name, requested_voice)
+            if saved_voice == "default":
+                msg_text = f"Reset @{user_name}'s signature TTS voice to default."
+            else:
+                msg_text = f"Saved signature TTS voice for @{user_name} to '{saved_voice}'!"
+
+            broadcast_event("chat_message", {"user": "System", "message": msg_text, "timestamp": time.time()})
+            broadcast_event("status", {
+                "channel": config.twitch_channel,
+                "connected": bool(twitch_bot and twitch_bot.running and twitch_bot.channel),
+                "config": config.to_dict(),
+                "user_voices": user_voice_manager.get_all()
+            })
+            return
+
     if user:
         if "{user}" in config.user_template and "{text}" in config.user_template:
             try:
@@ -68,9 +97,14 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
 
     logger.info(f"Processing text from '{user}': '{text_to_speak[:40]}' -> {len(chunks)} chunks")
 
+    user_saved_voice = user_voice_manager.get_voice(user)
     for chunk in chunks:
-        # Determine voice override: per-chunk tag takes priority over override_voice over default config
-        voice_to_use = chunk.voice or override_voice or config.tts_voice
+        # Determine voice override hierarchy:
+        # 1. Inline per-chunk tag ([alice])
+        # 2. Manual test console override parameter
+        # 3. User's saved signature voice (!myvoice)
+        # 4. Global default config voice
+        voice_to_use = chunk.voice or override_voice or user_saved_voice or config.tts_voice
         model_to_use = override_model or config.tts_model
         
         try:
@@ -197,6 +231,11 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         # Route: API Status
         if path == "/api/status":
             self._send_json(200, self._get_status_dict())
+            return
+
+        # Route: User Voices List
+        if path == "/api/user_voices":
+            self._send_json(200, {"user_voices": user_voice_manager.get_all()})
             return
 
         # Route: Proxy GET /api/tts
@@ -340,13 +379,42 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"success": True, "config": self._get_config_dict()})
             return
 
+        # Route: User Voices Management
+        if path == "/api/user_voices/set":
+            username = body.get("user", "").strip()
+            voice = body.get("voice", "").strip()
+            if not username or not voice:
+                self._send_json(400, {"error": "Both 'user' and 'voice' parameters are required"})
+                return
+            saved = user_voice_manager.set_voice(username, voice)
+            broadcast_event("status", self._get_status_dict())
+            self._send_json(200, {"success": True, "user": username, "voice": saved, "user_voices": user_voice_manager.get_all()})
+            return
+
+        if path == "/api/user_voices/delete":
+            username = body.get("user", "").strip()
+            if not username:
+                self._send_json(400, {"error": "Parameter 'user' is required"})
+                return
+            user_voice_manager.clear_user(username)
+            broadcast_event("status", self._get_status_dict())
+            self._send_json(200, {"success": True, "user_voices": user_voice_manager.get_all()})
+            return
+
+        if path == "/api/user_voices/clear":
+            user_voice_manager.clear_all()
+            broadcast_event("status", self._get_status_dict())
+            self._send_json(200, {"success": True, "user_voices": {}})
+            return
+
         self.send_error(404, "Not Found")
 
     def _get_status_dict(self) -> dict:
         return {
             "channel": config.twitch_channel,
             "connected": bool(twitch_bot and twitch_bot.running and twitch_bot.channel),
-            "config": self._get_config_dict()
+            "config": self._get_config_dict(),
+            "user_voices": user_voice_manager.get_all()
         }
 
     def _get_config_dict(self) -> dict:
