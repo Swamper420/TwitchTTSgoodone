@@ -23,6 +23,8 @@ ENV_KEYS = {
     "enable_chat_responses": "ENABLE_CHAT_RESPONSES",
     "enable_periodic_info": "ENABLE_PERIODIC_INFO",
     "periodic_info_interval": "PERIODIC_INFO_INTERVAL",
+    "admin_password": "ADMIN_PASSWORD",
+    "twitch_client_id": "TWITCH_CLIENT_ID",
 }
 
 def load_dotenv(filepaths=(".env", "example.env")):
@@ -66,6 +68,8 @@ class Config:
     enable_chat_responses: bool = field(default_factory=lambda: os.getenv("ENABLE_CHAT_RESPONSES", "true").lower() in ("true", "1", "yes"))
     enable_periodic_info: bool = field(default_factory=lambda: os.getenv("ENABLE_PERIODIC_INFO", "false").lower() in ("true", "1", "yes"))
     periodic_info_interval: int = field(default_factory=lambda: int(os.getenv("PERIODIC_INFO_INTERVAL", "15")))
+    admin_password: str = field(default_factory=lambda: os.getenv("ADMIN_PASSWORD", ""))
+    twitch_client_id: str = field(default_factory=lambda: os.getenv("TWITCH_CLIENT_ID", ""))
 
     def load(self, filepath: str = CONFIG_FILE):
         """Load configuration from JSON file if present, respecting environment variable overrides."""
@@ -94,6 +98,8 @@ class Config:
                 logger.info(f"Loaded configuration from {filepath}")
             except Exception as e:
                 logger.error(f"Failed to load config from {filepath}: {e}")
+        
+        self._sync_auth_manager()
 
     def save(self, filepath: str = CONFIG_FILE):
         """Save configuration to JSON file."""
@@ -103,6 +109,15 @@ class Config:
             logger.info(f"Saved configuration to {filepath}")
         except Exception as e:
             logger.error(f"Failed to save config to {filepath}: {e}")
+            
+        self._sync_auth_manager()
+
+    def _sync_auth_manager(self):
+        try:
+            from app.auth import dashboard_auth_manager
+            dashboard_auth_manager.update_admin_password(self.admin_password)
+        except Exception:
+            pass
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -122,8 +137,20 @@ class Config:
             "enable_chat_responses": self.enable_chat_responses,
             "enable_periodic_info": self.enable_periodic_info,
             "periodic_info_interval": self.periodic_info_interval,
+            "admin_password": self.admin_password,
+            "twitch_client_id": self.twitch_client_id,
         }
+
+    def to_masked_dict(self) -> Dict[str, Any]:
+        """Returns config dict with sensitive tokens and passwords masked for public/SSE endpoints."""
+        d = self.to_dict()
+        from app.auth import mask_token
+        d["twitch_oauth_token"] = mask_token(self.twitch_oauth_token)
+        d["has_admin_password"] = bool(self.admin_password)
+        d["admin_password"] = "••••••••" if self.admin_password else ""
+        return d
 
 config = Config()
 config.load()
+
 

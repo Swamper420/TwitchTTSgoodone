@@ -223,16 +223,63 @@
                         </div>
                     </div>
 
-                    <!-- Twitch Bot Real Chat Settings -->
-                    <div class="form-section-title">🤖 Real Twitch Chat Bot Credentials & Info</div>
+                    <!-- Twitch Bot Modern OAuth Authentication Manager -->
+                    <div class="form-section-title">🔑 Modern Twitch OAuth 2.0 & Dashboard Auth</div>
+                    
+                    <div id="twitchOAuthCard" class="auth-status-card">
+                        <div class="auth-status-header">
+                            <div id="twitchOAuthBadge" class="auth-status-badge badge-anon">
+                                <span class="badge-icon">⚠️</span>
+                                <span class="badge-label">Anonymous Reader Mode</span>
+                            </div>
+                            <button type="button" id="validateTokenBtn" class="btn btn-small btn-secondary">⚡ Validate Token</button>
+                        </div>
+
+                        <div id="twitchAuthDetails" class="auth-details-drawer hidden">
+                            <div class="auth-detail-grid">
+                                <div class="detail-item"><span class="detail-label">Bot Login:</span> <strong id="authDetailLogin">-</strong></div>
+                                <div class="detail-item"><span class="detail-label">User ID:</span> <span id="authDetailUserId">-</span></div>
+                                <div class="detail-item"><span class="detail-label">Client ID:</span> <span id="authDetailClientId">-</span></div>
+                                <div class="detail-item"><span class="detail-label">Expires In:</span> <span id="authDetailExpires">-</span></div>
+                            </div>
+                            <div class="scopes-container">
+                                <span class="detail-label">Authorized Scopes:</span>
+                                <div id="authDetailScopes" class="scope-tags"><span class="scope-tag scope-read">chat:read</span><span class="scope-tag scope-edit">chat:edit</span></div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="botUsernameInput">Bot Username <span class="hint">(Leave blank for read-only justinfan)</span></label>
-                            <input type="text" id="botUsernameInput" placeholder="my_tts_bot" />
+                            <label for="botOauthInput">Twitch OAuth Access Token <span class="hint">(oauth:xxxxxxxxxxxxx or raw bearer token)</span></label>
+                            <div class="input-with-button">
+                                <input type="password" id="botOauthInput" placeholder="oauth:xxxxxxxxxxxxxxxx" autocomplete="off" />
+                                <button type="button" id="toggleOauthVisibilityBtn" class="btn btn-icon-only" title="Show/Hide Token">👁️</button>
+                            </div>
                         </div>
                         <div class="form-group">
-                            <label for="botOauthInput">Twitch OAuth Token <span class="hint">(oauth:xxxxxxxxxxxxx)</span></label>
-                            <input type="password" id="botOauthInput" placeholder="oauth:xxxxxxxxxxxxxxxx" />
+                            <label for="botUsernameInput">Bot Username <span class="hint">(Auto-detected from token if left blank)</span></label>
+                            <div class="input-with-button">
+                                <input type="text" id="botUsernameInput" placeholder="Auto-detected or enter username" />
+                                <button type="button" id="autoDetectBotBtn" class="btn btn-small btn-outline" title="Auto-detect username from token">🪄 Auto</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="auth-help-banner">
+                        <span>Need a Twitch OAuth Token?</span>
+                        <a href="https://twitchapps.com/tmi/" target="_blank" rel="noopener noreferrer" class="auth-link">🔑 Get Twitch OAuth Token (chat:read chat:edit) ↗</a>
+                    </div>
+
+                    <!-- Dashboard Protection Settings -->
+                    <div class="form-section-title" style="margin-top: 1.5rem;">🛡️ Dashboard Access Control</div>
+                    <div class="form-row">
+                        <div class="form-group full-width">
+                            <label for="adminPasswordInput">Dashboard Admin Password <span class="hint">(Optional - leave blank to disable login requirement)</span></label>
+                            <div class="input-with-button">
+                                <input type="password" id="adminPasswordInput" placeholder="••••••••" autocomplete="new-password" />
+                                <button type="button" id="toggleAdminPasswordVisibilityBtn" class="btn btn-icon-only" title="Show/Hide Password">👁️</button>
+                            </div>
                         </div>
                     </div>
 
@@ -266,6 +313,26 @@
                     </div>
                 </div>
             </section>
+
+            <!-- Dashboard Admin Login Modal -->
+            <div id="adminLoginModal" class="modal-overlay hidden">
+                <div class="modal-card">
+                    <div class="modal-header">
+                        <h2>🔒 Dashboard Authentication</h2>
+                    </div>
+                    <div class="modal-body">
+                        <p>This Twitch TTS Dashboard is protected with an admin password.</p>
+                        <div class="form-group" style="margin-top: 1rem;">
+                            <label for="loginPasswordInput">Admin Password</label>
+                            <input type="password" id="loginPasswordInput" placeholder="Enter admin password..." />
+                        </div>
+                        <div id="loginErrorMsg" class="error-msg hidden"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="loginSubmitBtn" class="btn btn-primary">Unlock Dashboard</button>
+                    </div>
+                </div>
+            </div>
 
             <!-- Bottom Right: Live Chat Feed -->
             <section class="card chat-card">

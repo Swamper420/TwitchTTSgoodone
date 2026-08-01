@@ -477,10 +477,46 @@ document.addEventListener('DOMContentLoaded', () => {
     // ----------------------------------------------------
 
     async function fetchStatus() {
+    function getAuthHeaders() {
+        const headers = { 'Content-Type': 'application/json' };
+        const adminToken = localStorage.getItem('admin_token');
+        if (adminToken) {
+            headers['X-Admin-Token'] = adminToken;
+        }
+        return headers;
+    }
+
+    async function handleFetchResponse(res) {
+        if (res.status === 401) {
+            const data = await res.json().catch(() => ({}));
+            if (data.auth_required) {
+                showAdminLoginModal();
+            }
+            return null;
+        }
+        return res;
+    }
+
+    function showAdminLoginModal() {
+        const modal = document.getElementById('adminLoginModal');
+        if (modal) {
+            modal.classList.remove('hidden');
+        }
+    }
+
+    function hideAdminLoginModal() {
+        const modal = document.getElementById('adminLoginModal');
+        if (modal) {
+            modal.classList.add('hidden');
+        }
+    }
+
+    async function fetchStatus() {
         try {
-            const res = await fetch('/api/status');
-            if (res.ok) {
-                const data = await res.json();
+            const res = await fetch('/api/status', { headers: getAuthHeaders() });
+            const validRes = await handleFetchResponse(res);
+            if (validRes && validRes.ok) {
+                const data = await validRes.json();
                 updateStatusUI(data);
             }
         } catch (e) {
@@ -493,6 +529,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const authText = document.getElementById('authText');
         const botUsernameInput = document.getElementById('botUsernameInput');
         const botOauthInput = document.getElementById('botOauthInput');
+        const adminPasswordInput = document.getElementById('adminPasswordInput');
         const enableChatResponsesToggle = document.getElementById('enableChatResponsesToggle');
         const enablePeriodicInfoToggle = document.getElementById('enablePeriodicInfoToggle');
         const periodicInfoIntervalInput = document.getElementById('periodicInfoIntervalInput');
@@ -513,12 +550,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (authBadge && authText) {
             if (data.authenticated) {
                 authBadge.classList.add('authenticated');
-                const botName = data.config && data.config.twitch_bot_username ? data.config.twitch_bot_username : 'Bot';
+                const botName = data.config && data.config.twitch_bot_username ? data.config.twitch_bot_username : (data.twitch_auth && data.twitch_auth.login ? data.twitch_auth.login : 'Bot');
                 authText.textContent = `Bot Active (@${botName})`;
             } else {
                 authBadge.classList.remove('authenticated');
                 authText.textContent = 'Read-Only (justinfan)';
             }
+        }
+
+        if (data.twitch_auth) {
+            updateTwitchAuthBadgeUI(data.twitch_auth);
         }
 
         if (data.config) {
@@ -532,7 +573,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (voicePresetsInput) voicePresetsInput.value = data.config.voice_presets || '';
 
             if (botUsernameInput) botUsernameInput.value = data.config.twitch_bot_username || '';
-            if (botOauthInput) botOauthInput.value = data.config.twitch_oauth_token || '';
+            if (botOauthInput && data.config.twitch_oauth_token) {
+                botOauthInput.value = data.config.twitch_oauth_token;
+            }
+            if (adminPasswordInput && data.config.admin_password) {
+                adminPasswordInput.value = data.config.admin_password;
+            }
             if (enableChatResponsesToggle) enableChatResponsesToggle.checked = data.config.enable_chat_responses !== false;
             if (enablePeriodicInfoToggle) enablePeriodicInfoToggle.checked = !!data.config.enable_periodic_info;
             if (periodicInfoIntervalInput) periodicInfoIntervalInput.value = data.config.periodic_info_interval || 15;
@@ -631,7 +677,211 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ channel: targetChannel })
             });
+    function updateTwitchAuthBadgeUI(info) {
+        const badge = document.getElementById('twitchOAuthBadge');
+        const drawer = document.getElementById('twitchAuthDetails');
+        const loginEl = document.getElementById('authDetailLogin');
+        const userIdEl = document.getElementById('authDetailUserId');
+        const clientIdEl = document.getElementById('authDetailClientId');
+        const expiresEl = document.getElementById('authDetailExpires');
+        const scopesEl = document.getElementById('authDetailScopes');
+
+        if (!badge) return;
+
+        if (!info || !info.valid) {
+            if (info && info.error && info.error !== 'No OAuth token provided') {
+                badge.className = 'auth-status-badge badge-invalid';
+                badge.innerHTML = `<span class="badge-icon">❌</span><span class="badge-label">Invalid OAuth Token (${escapeHtml(info.error)})</span>`;
+            } else {
+                badge.className = 'auth-status-badge badge-anon';
+                badge.innerHTML = `<span class="badge-icon">⚠️</span><span class="badge-label">Anonymous Reader Mode (justinfan)</span>`;
+            }
+            if (drawer) drawer.classList.add('hidden');
+            return;
+        }
+
+        badge.className = 'auth-status-badge badge-valid';
+        badge.innerHTML = `<span class="badge-icon">✓</span><span class="badge-label">Validated as @${escapeHtml(info.login)}</span>`;
+
+        if (drawer) {
+            drawer.classList.remove('hidden');
+            if (loginEl) loginEl.textContent = `@${info.login}`;
+            if (userIdEl) userIdEl.textContent = info.user_id || 'N/A';
+            if (clientIdEl) clientIdEl.textContent = info.client_id ? `${info.client_id.substring(0, 8)}...` : 'N/A';
+            
+            if (expiresEl) {
+                const mins = Math.floor((info.expires_in || 0) / 60);
+                const hrs = Math.floor(mins / 60);
+                if (hrs > 24) {
+                    expiresEl.textContent = `${Math.floor(hrs / 24)} days`;
+                } else if (hrs > 0) {
+                    expiresEl.textContent = `${hrs} hrs ${mins % 60} mins`;
+                } else {
+                    expiresEl.textContent = `${mins} mins`;
+                }
+            }
+
+            if (scopesEl && Array.isArray(info.scopes)) {
+                if (info.scopes.length === 0) {
+                    scopesEl.innerHTML = '<span class="scope-tag">no scopes</span>';
+                } else {
+                    scopesEl.innerHTML = info.scopes.map(s => {
+                        const isRead = s.includes('read');
+                        const isEdit = s.includes('edit');
+                        const cls = isRead ? 'scope-read' : (isEdit ? 'scope-edit' : '');
+                        return `<span class="scope-tag ${cls}">${escapeHtml(s)}</span>`;
+                    }).join('');
+                }
+            }
+        }
+    }
+
+    async function validateTwitchToken() {
+        const botOauthInput = document.getElementById('botOauthInput');
+        const botUsernameInput = document.getElementById('botUsernameInput');
+        const validateTokenBtn = document.getElementById('validateTokenBtn');
+
+        const token = botOauthInput ? botOauthInput.value.trim() : '';
+        if (!token) {
+            updateTwitchAuthBadgeUI({ valid: false, error: 'No OAuth token provided' });
+            showToast('Please enter a Twitch OAuth token to validate', 'info');
+            return;
+        }
+
+        if (validateTokenBtn) {
+            validateTokenBtn.disabled = true;
+            validateTokenBtn.textContent = '⏳ Validating...';
+        }
+
+        try {
+            const res = await fetch('/api/auth/validate_twitch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ oauth_token: token })
+            });
+
             if (res.ok) {
+                const data = await res.json();
+                updateTwitchAuthBadgeUI(data);
+                if (data.valid) {
+                    showToast(`Twitch Token Valid! Authenticated as @${data.login}`, 'success');
+                    if (botUsernameInput && (!botUsernameInput.value.trim() || botUsernameInput.value === 'my_tts_bot')) {
+                        botUsernameInput.value = data.login;
+                        showToast(`Auto-detected bot username: @${data.login}`, 'info');
+                    }
+                } else {
+                    showToast(`Validation Failed: ${data.error || 'Invalid token'}`, 'error');
+                }
+            } else {
+                showToast('Failed to validate token with backend', 'error');
+            }
+        } catch (e) {
+            console.error('Validation error:', e);
+            showToast('Error validating token', 'error');
+        } finally {
+            if (validateTokenBtn) {
+                validateTokenBtn.disabled = false;
+                validateTokenBtn.textContent = '⚡ Validate Token';
+            }
+        }
+    }
+
+    const validateTokenBtn = document.getElementById('validateTokenBtn');
+    if (validateTokenBtn) {
+        validateTokenBtn.addEventListener('click', validateTwitchToken);
+    }
+
+    const autoDetectBotBtn = document.getElementById('autoDetectBotBtn');
+    if (autoDetectBotBtn) {
+        autoDetectBotBtn.addEventListener('click', validateTwitchToken);
+    }
+
+    const toggleOauthVisibilityBtn = document.getElementById('toggleOauthVisibilityBtn');
+    if (toggleOauthVisibilityBtn) {
+        toggleOauthVisibilityBtn.addEventListener('click', () => {
+            const input = document.getElementById('botOauthInput');
+            if (input) {
+                input.type = input.type === 'password' ? 'text' : 'password';
+            }
+        });
+    }
+
+    const toggleAdminPasswordVisibilityBtn = document.getElementById('toggleAdminPasswordVisibilityBtn');
+    if (toggleAdminPasswordVisibilityBtn) {
+        toggleAdminPasswordVisibilityBtn.addEventListener('click', () => {
+            const input = document.getElementById('adminPasswordInput');
+            if (input) {
+                input.type = input.type === 'password' ? 'text' : 'password';
+            }
+        });
+    }
+
+    // Admin Login Modal Handlers
+    const loginSubmitBtn = document.getElementById('loginSubmitBtn');
+    const loginPasswordInput = document.getElementById('loginPasswordInput');
+    const loginErrorMsg = document.getElementById('loginErrorMsg');
+
+    async function performAdminLogin() {
+        if (!loginPasswordInput) return;
+        const password = loginPasswordInput.value.trim();
+        if (loginErrorMsg) loginErrorMsg.classList.add('hidden');
+
+        try {
+            const res = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password })
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                if (data.token) {
+                    localStorage.setItem('admin_token', data.token);
+                    hideAdminLoginModal();
+                    showToast('Dashboard Admin Unlocked!', 'success');
+                    fetchStatus();
+                }
+            } else {
+                const errData = await res.json().catch(() => ({}));
+                if (loginErrorMsg) {
+                    loginErrorMsg.textContent = errData.error || 'Invalid Admin Password';
+                    loginErrorMsg.classList.remove('hidden');
+                }
+            }
+        } catch (e) {
+            console.error('Admin login error:', e);
+            if (loginErrorMsg) {
+                loginErrorMsg.textContent = 'Server connection error';
+                loginErrorMsg.classList.remove('hidden');
+            }
+        }
+    }
+
+    if (loginSubmitBtn) {
+        loginSubmitBtn.addEventListener('click', performAdminLogin);
+    }
+    if (loginPasswordInput) {
+        loginPasswordInput.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter') performAdminLogin();
+        });
+    }
+
+    // Connect Channel Button
+    connectBtn.addEventListener('click', async () => {
+        const targetChannel = channelInput.value.trim();
+        if (!targetChannel) {
+            showToast('Please enter a channel name', 'error');
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/connect', {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({ channel: targetChannel })
+            });
+            const validRes = await handleFetchResponse(res);
+            if (validRes && validRes.ok) {
                 showToast(`Connecting to Twitch channel #${targetChannel}...`, 'success');
                 fetchStatus();
             }
@@ -641,45 +891,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Send Manual Test TTS
-    sendTestBtn.addEventListener('click', async () => {
-        const text = testTextInput.value.trim();
-        if (!text) return;
-
-        sendTestBtn.disabled = true;
-        sendTestBtn.innerHTML = '<span>⏳</span> Synthesizing...';
-
-        try {
-            const res = await fetch('/api/tts/test', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    text: text,
-                    voice: testVoiceInput.value.trim() || null,
-                    model: testModelInput.value.trim() || null,
-                    user: 'TestUser'
-                })
-            });
-            if (res.ok) {
-                addChatMessage('TestUser', text);
-                showToast('TTS synthesis job queued!', 'success');
-            } else {
-                const errData = await res.json();
-                showToast(`Synthesis failed: ${errData.error || 'Unknown error'}`, 'error');
-            }
-        } catch (e) {
-            console.error('Failed to send test TTS:', e);
-            showToast('Failed to connect to backend server', 'error');
-        } finally {
-            sendTestBtn.disabled = false;
-            sendTestBtn.innerHTML = '<span>🚀</span> Synthesize & Play';
-        }
-    });
-
     // Save Settings
     saveSettingsBtn.addEventListener('click', async () => {
         const botUsernameInput = document.getElementById('botUsernameInput');
         const botOauthInput = document.getElementById('botOauthInput');
+        const adminPasswordInput = document.getElementById('adminPasswordInput');
         const enableChatResponsesToggle = document.getElementById('enableChatResponsesToggle');
         const enablePeriodicInfoToggle = document.getElementById('enablePeriodicInfoToggle');
         const periodicInfoIntervalInput = document.getElementById('periodicInfoIntervalInput');
@@ -687,7 +903,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const res = await fetch('/api/settings', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders(),
                 body: JSON.stringify({
                     tts_api_url: apiUrlInput ? apiUrlInput.value.trim() : '',
                     tts_voice: defaultVoiceInput ? defaultVoiceInput.value.trim() : '',
@@ -699,15 +915,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     voice_presets: voicePresetsInput ? voicePresetsInput.value.trim() : '',
                     twitch_bot_username: botUsernameInput ? botUsernameInput.value.trim() : '',
                     twitch_oauth_token: botOauthInput ? botOauthInput.value.trim() : '',
+                    admin_password: adminPasswordInput ? adminPasswordInput.value.trim() : '',
                     enable_chat_responses: enableChatResponsesToggle ? enableChatResponsesToggle.checked : true,
                     enable_periodic_info: enablePeriodicInfoToggle ? enablePeriodicInfoToggle.checked : false,
                     periodic_info_interval: periodicInfoIntervalInput ? (parseInt(periodicInfoIntervalInput.value, 10) || 15) : 15
                 })
             });
-            if (res.ok) {
+            const validRes = await handleFetchResponse(res);
+            if (validRes && validRes.ok) {
                 showToast('Settings saved persistently!', 'success');
                 fetchStatus();
-            } else {
+            } else if (validRes) {
                 showToast('Failed to save settings', 'error');
             }
         } catch (e) {
@@ -720,6 +938,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (sendHelpfulInfoBtn) {
         sendHelpfulInfoBtn.addEventListener('click', async () => {
             try {
+                const res = await fetch('/api/bot/send_info', { method: 'POST', headers: getAuthHeaders() });
+                const validRes = await handleFetchResponse(res);
+                if (validRes && validRes.ok) {
+                    showToast('Posted helpful bot info tip to chat!', 'success');
+                }
+            } catch (e) {
+                console.error('Failed to send helpful info:', e);
+                showToast('Error connecting to backend', 'error');
+            }
+        });
+    }
                 const res = await fetch('/api/bot/send_info', { method: 'POST' });
                 if (res.ok) {
                     showToast('Posted helpful bot info tip to chat!', 'success');

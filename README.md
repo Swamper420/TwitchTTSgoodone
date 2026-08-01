@@ -10,7 +10,10 @@ A lightweight, simple, and high-performance Python Twitch TTS (Text-To-Speech) B
 - **Multi-Voice Tag Support**: Users can trigger different voices within a single message using `[voicename]` tags (e.g. `[alice] Hello world! [bob] How are you?`).
 - **Smart Text Chunking**: Automatically sanitizes messages (strips URLs, reduces spam) and splits text at sentence/clause boundaries (`.`, `!`, `?`, `,`, `;`) into smaller chunks for fast TTS generation and minimal audio latency.
 - **Web Audio Player & Overlay**: Dark-mode dashboard and OBS Browser Source with live HTML5 Audio queue, visual equalizer, auto-play, skip track, volume controls, and live chat feed.
-- **Real Twitch Chat Bot & Interactive Commands**: Optionally authenticate with a bot username & OAuth token to send helpful chat responses (`!help`, `!voices`, `!myvoice <voice>`) and periodic info tips directly back into Twitch stream chat!
+- **Modern Twitch OAuth 2.0 Validation**: Directly validates Twitch access tokens against the official Twitch API (`https://id.twitch.tv/oauth2/validate`). Displays live scope health (`chat:read`, `chat:edit`), User ID, Client ID, and expiration metadata.
+- **Auto-Bot Username Detection**: Leave bot username blank and the bot automatically detects and populates your bot username from Twitch OAuth token metadata!
+- **Masked Credential Security**: OAuth tokens and passwords are automatically masked in web settings and public SSE streams (`oauth:••••••••4a2b`) to prevent stream overlay leaks.
+- **Dashboard Admin Protection**: Secure web dashboard configuration routes with an optional `ADMIN_PASSWORD` and token session authentication (`X-Admin-Token`).
 - **Anonymous Twitch Connection**: Connect to any public Twitch channel in read-only mode (`justinfan`) without needing Twitch API keys or OAuth setup!
 
 ---
@@ -22,10 +25,11 @@ When configured with bot credentials (or through the Web UI Settings):
 - **`!voices`**: Lists available voice presets.
 - **`!myvoice <voicename>`**: Sets the chatter's personal signature voice (e.g. `!myvoice mieto`) or resets with `!myvoice reset`.
 
-### Setting Up Bot OAuth:
-1. Obtain an OAuth token for your Twitch bot account from [twitchapps.com/tmi/](https://twitchapps.com/tmi/).
-2. Enter your **Bot Username** and **OAuth Token** (`oauth:xxxxxxxxxxxxx`) in the Web Dashboard settings or `config.json`.
-3. Enable **Reply in Real Chat** and optional **Periodic Helpful Tips**.
+### Setting Up Modern Twitch Bot OAuth:
+1. Obtain a Twitch OAuth token for your bot account from [twitchapps.com/tmi/](https://twitchapps.com/tmi/).
+2. Enter your **OAuth Token** (`oauth:xxxxxxxxxxxxx` or raw bearer token) in the Web Dashboard.
+3. Click **⚡ Validate Token** to test permissions against Twitch API and auto-detect your bot username!
+4. Save settings to activate real chat bot responses.
 
 ---
 

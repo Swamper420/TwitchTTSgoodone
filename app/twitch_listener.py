@@ -4,7 +4,9 @@ import socket
 import threading
 import time
 import logging
-from typing import Callable, Optional
+from typing import Callable, Optional, Dict, Any
+
+from app.auth import twitch_token_validator
 
 logger = logging.getLogger("TwitchListener")
 
@@ -21,10 +23,23 @@ class TwitchListener:
         self.oauth_token: str = oauth_token.strip()
         self.running: bool = False
         self.is_authenticated: bool = False
+        self.auth_info: Dict[str, Any] = {}
         self.sock: Optional[socket.socket] = None
         self.thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
         self._send_lock = threading.Lock()
+        
+        if self.oauth_token:
+            self._validate_and_update_token(self.bot_username, self.oauth_token)
+
+    def _validate_and_update_token(self, bot_username: str, oauth_token: str) -> Dict[str, Any]:
+        info = twitch_token_validator.validate_token(oauth_token)
+        self.auth_info = info
+        if info.get("valid"):
+            if not bot_username and info.get("login"):
+                self.bot_username = info["login"]
+                logger.info(f"Auto-detected Twitch bot username '@{self.bot_username}' from OAuth token metadata.")
+        return info
         
     def set_credentials(self, bot_username: str, oauth_token: str):
         """Set or update bot authentication credentials."""
@@ -34,9 +49,22 @@ class TwitchListener:
             if self.bot_username != new_bot or self.oauth_token != new_oauth:
                 self.bot_username = new_bot
                 self.oauth_token = new_oauth
+                if self.oauth_token:
+                    info = self._validate_and_update_token(self.bot_username, self.oauth_token)
+                    if info.get("valid") and not self.bot_username:
+                        self.bot_username = info["login"]
+                else:
+                    self.auth_info = {}
+                    
                 logger.info(f"Updated Twitch bot credentials (bot_username='{self.bot_username}')")
                 if self.running:
                     self._disconnect_socket()
+
+    def get_auth_info(self) -> Dict[str, Any]:
+        """Return current Twitch token validation metadata."""
+        with self._lock:
+            return dict(self.auth_info)
+
 
     def set_channel(self, channel: str):
         """Set or switch Twitch channel."""

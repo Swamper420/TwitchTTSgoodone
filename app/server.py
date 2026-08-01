@@ -14,6 +14,7 @@ from app.text_chunker import process_message_to_chunks, TTSChunk
 from app.tts_client import tts_client, TTSClient
 from app.twitch_listener import TwitchListener
 from app.user_voices import user_voice_manager
+from app.auth import dashboard_auth_manager, twitch_token_validator, mask_token
 
 logger = logging.getLogger("Server")
 
@@ -272,6 +273,17 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 self.send_error(404, "Audio chunk not found")
                 return
 
+        # Route: Auth Status
+        if path == "/api/auth/status":
+            tok = self._get_request_auth_token()
+            authenticated = dashboard_auth_manager.verify_session(tok)
+            self._send_json(200, {
+                "auth_required": dashboard_auth_manager.is_auth_required(),
+                "authenticated": authenticated,
+                "twitch_auth": twitch_bot.get_auth_info() if twitch_bot else {}
+            })
+            return
+
         # Route: API Status
         if path == "/api/status":
             self._send_json(200, self._get_status_dict())
@@ -334,6 +346,30 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         except Exception:
             body = {}
 
+        # Route: Validate Twitch Token (Public/Auth tool)
+        if path == "/api/auth/validate_twitch":
+            token = body.get("oauth_token", "").strip()
+            res = twitch_token_validator.validate_token(token)
+            self._send_json(200, res)
+            return
+
+        # Route: Admin Login
+        if path == "/api/auth/login":
+            password = body.get("password", "").strip()
+            success, session_token, err = dashboard_auth_manager.authenticate(password)
+            if success:
+                self._send_json(200, {"success": True, "token": session_token})
+            else:
+                self._send_json(401, {"error": err or "Invalid password"})
+            return
+
+        # Route: Admin Logout
+        if path == "/api/auth/logout":
+            tok = self._get_request_auth_token()
+            dashboard_auth_manager.revoke_session(tok)
+            self._send_json(200, {"success": True})
+            return
+
         # Route: Proxy POST /api/tts
         if path == "/api/tts":
             text = body.get("text", "")
@@ -362,6 +398,10 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                     self.wfile.write(audio_bytes)
             except Exception as e:
                 self._send_json(500, {"error": str(e)})
+            return
+
+        # Protected administrative routes below
+        if not self._check_auth():
             return
 
         # Route: Connect Twitch Channel
@@ -426,13 +466,22 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             if "twitch_bot_username" in body:
                 config.twitch_bot_username = str(body["twitch_bot_username"]).strip()
             if "twitch_oauth_token" in body:
-                config.twitch_oauth_token = str(body["twitch_oauth_token"]).strip()
+                raw_tok = str(body["twitch_oauth_token"]).strip()
+                # Don't update if sent masked string unless it changed
+                if not raw_tok.startswith("oauth:••••") and not raw_tok.startswith("••••"):
+                    config.twitch_oauth_token = raw_tok
             if "enable_chat_responses" in body:
                 config.enable_chat_responses = bool(body["enable_chat_responses"])
             if "enable_periodic_info" in body:
                 config.enable_periodic_info = bool(body["enable_periodic_info"])
             if "periodic_info_interval" in body:
                 config.periodic_info_interval = int(body["periodic_info_interval"])
+            if "admin_password" in body:
+                raw_pwd = str(body["admin_password"]).strip()
+                if raw_pwd != "••••••••":
+                    config.admin_password = raw_pwd
+            if "twitch_client_id" in body:
+                config.twitch_client_id = str(body["twitch_client_id"]).strip()
             
             config.save()
             if twitch_bot:
@@ -478,11 +527,13 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             "connected": bool(twitch_bot and twitch_bot.running and twitch_bot.channel),
             "authenticated": bool(twitch_bot and twitch_bot.is_authenticated),
             "config": self._get_config_dict(),
-            "user_voices": user_voice_manager.get_all()
+            "user_voices": user_voice_manager.get_all(),
+            "auth_required": dashboard_auth_manager.is_auth_required(),
+            "twitch_auth": twitch_bot.get_auth_info() if twitch_bot else {}
         }
 
     def _get_config_dict(self) -> dict:
-        return config.to_dict()
+        return config.to_masked_dict()
 
     def _send_json(self, code: int, data: dict):
         body = json.dumps(data).encode("utf-8")
