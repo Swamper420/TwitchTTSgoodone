@@ -388,8 +388,13 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             return
 
         # Serve static files (HTML, CSS, JS)
-        if path == "/" or path == "/index.html":
+        if path in ("/", "/index.html"):
             file_path = os.path.join(STATIC_DIR, "index.html")
+            self._serve_static_file(file_path, "text/html; charset=utf-8")
+            return
+
+        if path in ("/player", "/player.html", "/listen", "/listen.html"):
+            file_path = os.path.join(STATIC_DIR, "player.html")
             self._serve_static_file(file_path, "text/html; charset=utf-8")
             return
             
@@ -397,7 +402,20 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         safe_path = os.path.abspath(os.path.join(STATIC_DIR, rel_path))
         static_dir_abs = os.path.abspath(STATIC_DIR)
         if os.path.isfile(safe_path) and (os.path.commonpath([static_dir_abs, safe_path]) == static_dir_abs):
-            mime = "text/css" if path.endswith(".css") else ("application/javascript" if path.endswith(".js") else "text/plain")
+            if path.endswith(".html"):
+                mime = "text/html; charset=utf-8"
+            elif path.endswith(".css"):
+                mime = "text/css"
+            elif path.endswith(".js"):
+                mime = "application/javascript"
+            elif path.endswith(".svg"):
+                mime = "image/svg+xml"
+            elif path.endswith(".png"):
+                mime = "image/png"
+            elif path.endswith(".json"):
+                mime = "application/json"
+            else:
+                mime = "text/plain"
             self._serve_static_file(safe_path, mime)
             return
 

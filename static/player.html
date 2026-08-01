@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twitch TTS - Voice Output Player</title>
+    <meta name="description" content="Safe, lightweight real-time voice output player for Twitch TTS. Designed for end-users, listeners, and OBS browser overlays.">
+    <!-- Google Fonts: Outfit & Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="player.css">
+</head>
+<body>
+    <!-- Hidden HTML5 Audio Element -->
+    <audio id="audioPlayer" preload="auto"></audio>
+
+    <!-- Audio Autoplay Unlock Overlay -->
+    <div id="audioUnlockOverlay" class="audio-unlock-overlay">
+        <div class="audio-unlock-card">
+            <div class="unlock-icon">🎙️</div>
+            <h2>Enable Voice Output</h2>
+            <p>Click below to activate live audio stream playback and spectrum visualizer.</p>
+            <button id="enableAudioBtn" class="btn btn-primary btn-large">
+                <span>🔊</span> Start Listening Now
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Application Container -->
+    <div id="playerApp" class="player-container">
+        <!-- Header Bar -->
+        <header class="player-header">
+            <div class="brand">
+                <div class="brand-icon">🎙️</div>
+                <div class="brand-info">
+                    <h1>Twitch<span>TTS</span> Voice Stream</h1>
+                    <span class="safe-badge">🔒 Safe Public Player</span>
+                </div>
+            </div>
+
+            <div class="header-right">
+                <div class="status-pill" id="statusPill">
+                    <span class="status-dot"></span>
+                    <span id="statusText">Connecting...</span>
+                </div>
+
+                <div class="queue-pill" id="queueBadge">
+                    0 in queue
+                </div>
+
+                <button id="overlayModeBtn" class="btn btn-outline" title="Toggle minimal overlay mode for OBS Streamers">
+                    <span>📺</span> <span id="overlayBtnText">OBS Mode</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="player-main">
+            <!-- Hero Audio Player Card -->
+            <section class="card hero-card" id="nowSpeakingCard">
+                <div class="card-top">
+                    <span class="live-indicator"><span class="pulse-dot"></span> VOICE STREAM ACTIVE</span>
+                    <div class="meta-tags">
+                        <span class="tag tag-purple" id="voiceTag">Voice: Default</span>
+                        <span class="tag tag-cyan" id="chunkTag">Ready</span>
+                    </div>
+                </div>
+
+                <!-- Visualizer Display -->
+                <div class="visualizer-container">
+                    <canvas id="spectrumCanvas" width="280" height="70" class="spectrum-canvas"></canvas>
+                    <div id="equalizerVisualizer" class="equalizer-bars" title="Audio Spectrum Visualizer">
+                        <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+                    </div>
+                </div>
+
+                <!-- Now Speaking Details -->
+                <div class="speaker-details">
+                    <div class="speaker-avatar" id="speakerAvatar">🎙️</div>
+                    <div class="speaker-info">
+                        <span class="speaker-label">NOW SPEAKING</span>
+                        <h2 id="currentSpeaker" class="speaker-name">Idle / Listening</h2>
+                        <p id="currentText" class="spoken-text">Waiting for incoming voice messages from chat stream...</p>
+                    </div>
+                </div>
+
+                <!-- Player Controls -->
+                <div class="controls-bar">
+                    <div class="volume-group">
+                        <button id="muteBtn" class="btn-icon" title="Mute/Unmute audio">🔊</button>
+                        <input type="range" id="volumeSlider" min="0" max="100" value="80" title="Adjust Volume" />
+                        <span id="volumeValue" class="volume-val">80%</span>
+                    </div>
+
+                    <div class="toggle-group">
+                        <label class="toggle-switch" title="Play subtle chime before voice messages">
+                            <input type="checkbox" id="chimeToggle" checked>
+                            <span class="slider"></span>
+                        </label>
+                        <span class="toggle-label">Notification Chime</span>
+                    </div>
+
+                    <button id="skipBtn" class="btn btn-secondary" title="Skip currently playing voice chunk">
+                        <span>⏭️</span> Skip Chunk
+                    </button>
+                </div>
+            </section>
+
+            <!-- Voice History Section -->
+            <section class="card history-card">
+                <div class="card-header">
+                    <h3><span class="icon">📜</span> Recent Voice Messages</h3>
+                    <span class="history-count" id="historyCount">0 played</span>
+                </div>
+                <div id="voiceHistoryFeed" class="history-feed">
+                    <div class="feed-empty">No voice messages played yet.</div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="player-footer">
+            <div class="footer-info">
+                <span>🔒 Read-Only Voice Player</span>
+                <span class="dot">•</span>
+                <span>OBS Browser Source URL: <code>/player?mode=overlay</code></span>
+            </div>
+        </footer>
+    </div>
+
+    <script src="player.js"></script>
+</body>
+</html>
