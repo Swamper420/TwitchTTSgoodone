@@ -27,28 +27,46 @@ ENV_KEYS = {
     "twitch_client_id": "TWITCH_CLIENT_ID",
 }
 
-def load_dotenv(filepaths=(".env", "example.env")):
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def load_dotenv(filepaths=(".env", "example.env"), override=False):
     """Lightweight loader for .env / example.env files into os.environ."""
-    for path in filepaths:
-        if os.path.exists(path):
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith("#") and "=" in line:
-                            k, v = line.split("=", 1)
-                            k = k.strip()
-                            v = v.strip().strip("'\"")
-                            if k:
-                                os.environ[k] = v
-                logger.info(f"Loaded environment variables from {path}")
-                break
-            except Exception as e:
-                logger.warning(f"Could not load {path}: {e}")
+    loaded_any = False
+    for relative_or_abs in filepaths:
+        candidates = [
+            relative_or_abs if os.path.isabs(relative_or_abs) else os.path.join(BASE_DIR, relative_or_abs),
+            relative_or_abs
+        ]
+        for path in candidates:
+            if os.path.exists(path) and os.path.isfile(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if line and not line.startswith("#") and "=" in line:
+                                k, v = line.split("=", 1)
+                                k = k.strip()
+                                v = v.strip()
+                                if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
+                                    v = v[1:-1]
+                                elif " #" in v:
+                                    v = v.split(" #")[0].strip()
+
+                                if k:
+                                    if override or k not in os.environ:
+                                        os.environ[k] = v
+                    logger.info(f"Loaded environment variables from {path}")
+                    loaded_any = True
+                    break
+                except Exception as e:
+                    logger.warning(f"Could not load {path}: {e}")
+        if loaded_any:
+            break
+    return loaded_any
 
 load_dotenv()
 
-CONFIG_FILE = os.getenv("CONFIG_FILE", "config.json")
+CONFIG_FILE = os.getenv("CONFIG_FILE", os.path.join(BASE_DIR, "config.json"))
 
 @dataclass
 class Config:
@@ -73,6 +91,23 @@ class Config:
 
     def load(self, filepath: str = CONFIG_FILE):
         """Load configuration from JSON file if present, respecting environment variable overrides."""
+        load_dotenv(override=False)
+
+        # Apply environment variables to fields
+        for key, env_var in ENV_KEYS.items():
+            if hasattr(self, key) and env_var in os.environ:
+                val_str = os.environ[env_var]
+                curr_val = getattr(self, key)
+                if isinstance(curr_val, bool):
+                    setattr(self, key, val_str.lower() in ("true", "1", "yes"))
+                elif isinstance(curr_val, int):
+                    try:
+                        setattr(self, key, int(val_str))
+                    except ValueError:
+                        pass
+                else:
+                    setattr(self, key, val_str)
+
         if os.path.exists(filepath):
             try:
                 with open(filepath, "r", encoding="utf-8") as f:
@@ -80,8 +115,8 @@ class Config:
                 for key, val in data.items():
                     if hasattr(self, key):
                         env_var = ENV_KEYS.get(key)
-                        # If environment variable is explicitly set and non-empty in os.environ, preserve environment value
-                        if env_var and os.environ.get(env_var):
+                        # If environment variable is set in os.environ, preserve environment value
+                        if env_var and env_var in os.environ:
                             continue
 
                         if val is not None:
@@ -152,5 +187,6 @@ class Config:
 
 config = Config()
 config.load()
+
 
 

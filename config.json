@@ -10,7 +10,7 @@
   "twitch_channel": "m_e_s_t_a_a_j_a",
   "user_template": "{user} sanoo: {text}",
   "voice_presets": "mieto, terapisti, terry, tuomo4, niilo",
-  "twitch_bot_username": "TTSBOTTIMIES",
+  "twitch_bot_username": "",
   "twitch_oauth_token": "9nwggdcu9sdjgtuemfblr0x0mq5cw6",
   "enable_chat_responses": true,
   "enable_periodic_info": true,

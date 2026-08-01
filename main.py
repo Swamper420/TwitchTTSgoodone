@@ -5,12 +5,16 @@ Twitch TTS Bot with Local TTS API Integration & Web Audio Player.
 
 import argparse
 import logging
-import sys
+import os
 
-from app.config import config
+from app.config import config, load_dotenv, BASE_DIR
 from app.server import run_server
 
 def main():
+    # Ensure .env environment variables are loaded on launch
+    env_loaded = load_dotenv(override=False)
+    config.load()
+
     parser = argparse.ArgumentParser(description="Twitch TTS Bot with Local TTS API")
     parser.add_argument("--channel", "-c", type=str, default=None, help="Twitch channel to join on startup")
     parser.add_argument("--port", "-p", type=int, default=None, help="Web server port")
@@ -50,9 +54,13 @@ def main():
         datefmt="%H:%M:%S"
     )
 
+    env_path = os.path.join(BASE_DIR, ".env")
+    env_status = f"Loaded ({env_path})" if os.path.exists(env_path) else "Not found (using defaults)"
+
     print("=" * 60)
     print(" 🎙️  TWITCH TTS BOT WITH LOCAL TTS API & WEB PLAYER")
     print("=" * 60)
+    print(f" ► Environment:     {env_status}")
     print(f" ► Web Interface:    http://localhost:{config.server_port}")
     print(f" ► Local TTS API:    {config.tts_api_url}")
     print(f" ► Twitch Channel:   #{config.twitch_channel if config.twitch_channel else '(None - enter in Web UI)'}")
