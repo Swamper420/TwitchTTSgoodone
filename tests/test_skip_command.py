@@ -70,6 +70,17 @@ class TestSkipCommand(unittest.TestCase):
             })
 
     @patch("app.server.broadcast_event")
+    def test_myvoice_random(self, mock_broadcast):
+        from app.user_voices import user_voice_manager
+        from app.config import config
+
+        process_incoming_text("RandomUser", "!myvoice random", channel="testchannel")
+        assigned = user_voice_manager.get_voice("RandomUser")
+        self.assertIsNotNone(assigned)
+        presets = [v.strip() for v in config.voice_presets.replace(';', ',').split(',') if v.strip()]
+        self.assertIn(assigned, presets)
+
+    @patch("app.server.broadcast_event")
     def test_chat_clear_command(self, mock_broadcast):
         process_incoming_text("ModUser", "!clear", channel="testchannel")
         mock_broadcast.assert_any_call("clear_audio", {

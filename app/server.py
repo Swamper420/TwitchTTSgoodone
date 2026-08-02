@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import queue
+import random
 import threading
 import time
 import uuid
@@ -79,9 +80,17 @@ def broadcast_event(event_type: str, payload: dict):
             sse_clients.remove(item)
 
 
+def get_random_preset_voice() -> str:
+    """Return a random voice from available preset voices or fallback default."""
+    presets = [v.strip() for v in config.voice_presets.replace(';', ',').split(',') if v.strip()]
+    if presets:
+        return random.choice(presets)
+    return config.tts_voice or "default"
+
+
 def send_bot_helpful_info() -> str:
     """Send helpful info about TTS bot features to chat & SSE UI."""
-    info_text = f"🎙️ Twitch TTS Bot Info: Set your default voice with '!myvoice <voice>' (e.g. !myvoice mieto) or reset with '!myvoice reset'. Preset voices: [{config.voice_presets}]. Use [voicename] tags in chat for multi-voice! Skip audio with !skip."
+    info_text = f"🎙️ Twitch TTS Bot Info: Set your default voice with '!myvoice <voice>' (e.g. !myvoice mieto or !myvoice random) or reset with '!myvoice reset'. Preset voices: [{config.voice_presets}]. Use [voicename] tags in chat for multi-voice! Skip audio with !skip."
     broadcast_event("chat_message", {"user": "System", "message": info_text, "timestamp": time.time()})
     if config.enable_chat_responses and twitch_bot:
         twitch_bot.send_chat(info_text)
@@ -211,19 +220,24 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
 
             if not raw_voice_arg:
                 curr_voice = user_voice_manager.get_voice(user_name) or config.tts_voice
-                msg_text = f"@{user_name} Usage: !myvoice <voicename> or !myvoice reset. Your active voice: '{curr_voice}'. Presets: {config.voice_presets}"
+                msg_text = f"@{user_name} Usage: !myvoice <voicename>, !myvoice random, or !myvoice reset. Your active voice: '{curr_voice}'. Presets: {config.voice_presets}"
                 broadcast_event("chat_message", {"user": "System", "message": msg_text, "channel": clean_chan, "timestamp": time.time()})
                 if config.enable_chat_responses and twitch_bot:
                     twitch_bot.send_chat(msg_text, channel=clean_chan)
                 return
 
-            clean_requested = sanitize_identifier(raw_voice_arg, max_len=100)
-            if not clean_requested or raw_voice_arg.lower() in ("reset", "clear", "default", "none"):
-                user_voice_manager.clear_user(user_name)
-                msg_text = f"Reset @{user_name}'s signature TTS voice to global default ('{config.tts_voice}')."
+            if raw_voice_arg.lower() in ("random", "rand", "rng", "satunnainen", "?"):
+                chosen_voice = get_random_preset_voice()
+                saved_voice = user_voice_manager.set_voice(user_name, chosen_voice)
+                msg_text = f"🎲 Picked random signature TTS voice for @{user_name}: '{saved_voice}'!"
             else:
-                saved_voice = user_voice_manager.set_voice(user_name, clean_requested)
-                msg_text = f"Saved signature TTS voice for @{user_name} to '{saved_voice}'!"
+                clean_requested = sanitize_identifier(raw_voice_arg, max_len=100)
+                if not clean_requested or raw_voice_arg.lower() in ("reset", "clear", "default", "none"):
+                    user_voice_manager.clear_user(user_name)
+                    msg_text = f"Reset @{user_name}'s signature TTS voice to global default ('{config.tts_voice}')."
+                else:
+                    saved_voice = user_voice_manager.set_voice(user_name, clean_requested)
+                    msg_text = f"Saved signature TTS voice for @{user_name} to '{saved_voice}'!"
 
             broadcast_event("chat_message", {"user": "System", "message": msg_text, "channel": clean_chan, "timestamp": time.time()})
             if config.enable_chat_responses and twitch_bot:
@@ -286,6 +300,8 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
         # 3. User's saved signature voice (!myvoice)
         # 4. Global default config voice
         voice_to_use = chunk.voice or override_voice or user_saved_voice or config.tts_voice
+        if voice_to_use and voice_to_use.lower() in ("random", "rand", "rng", "satunnainen"):
+            voice_to_use = get_random_preset_voice()
         model_to_use = override_model or config.tts_model
         
         try:
