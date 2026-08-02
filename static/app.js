@@ -548,6 +548,27 @@ document.addEventListener('DOMContentLoaded', () => {
             connectBtn.textContent = 'Connect';
         }
 
+        // Update OBS Overlay links display
+        const obsPort = data.config && data.config.obs_server_port ? data.config.obs_server_port : 5001;
+        const host = window.location.hostname || 'localhost';
+        const obsBaseUrl = `http://${host}:${obsPort}/obs`;
+
+        const obsLinkAll = document.getElementById('obsLinkAll');
+        if (obsLinkAll) obsLinkAll.value = obsBaseUrl;
+
+        const chan1Label = document.getElementById('chan1Label');
+        const chan2Label = document.getElementById('chan2Label');
+        const obsLinkChan1 = document.getElementById('obsLinkChan1');
+        const obsLinkChan2 = document.getElementById('obsLinkChan2');
+
+        const channels = data.channels && data.channels.length > 0 ? data.channels : (data.channel ? [data.channel] : []);
+
+        if (chan1Label) chan1Label.textContent = channels[0] ? `#${channels[0]}` : 'None';
+        if (obsLinkChan1) obsLinkChan1.value = channels[0] ? `${obsBaseUrl}?channel=${encodeURIComponent(channels[0])}` : `${obsBaseUrl}?channel=`;
+
+        if (chan2Label) chan2Label.textContent = channels[1] ? `#${channels[1]}` : 'None';
+        if (obsLinkChan2) obsLinkChan2.value = channels[1] ? `${obsBaseUrl}?channel=${encodeURIComponent(channels[1])}` : `${obsBaseUrl}?channel=`;
+
         if (authBadge && authText) {
             if (data.authenticated) {
                 authBadge.classList.add('authenticated');
@@ -944,6 +965,30 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Copy OBS Overlay Link Event Handler
+    document.addEventListener('click', (e) => {
+        if (e.target.classList.contains('copy-link-btn') || e.target.closest('.copy-link-btn')) {
+            const btn = e.target.classList.contains('copy-link-btn') ? e.target : e.target.closest('.copy-link-btn');
+            const targetId = btn.getAttribute('data-target');
+            const input = document.getElementById(targetId);
+            if (input && input.value) {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(input.value).then(() => {
+                        showToast('OBS Overlay URL copied to clipboard!', 'success');
+                    }).catch(() => {
+                        input.select();
+                        document.execCommand('copy');
+                        showToast('OBS Overlay URL copied!', 'success');
+                    });
+                } else {
+                    input.select();
+                    document.execCommand('copy');
+                    showToast('OBS Overlay URL copied!', 'success');
+                }
+            }
+        }
+    });
+
     // Chat Feed Helper
     function addChatMessage(user, msg) {
         const placeholder = chatFeed.querySelector('.chat-placeholder');
@@ -965,7 +1010,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!toastContainer) return;
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
-        const icon = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
+        const icon = type === 'error' ? '❌' : type === 'success' ? 'SUCCESS' : 'ℹ️';
         toast.innerHTML = `<span>${icon}</span> <span>${escapeHtml(message)}</span>`;
         toastContainer.appendChild(toast);
 

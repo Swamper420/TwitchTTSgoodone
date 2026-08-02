@@ -56,6 +56,42 @@
             </div>
         </header>
 
+        <!-- Multi-Stream OBS Overlay Links Banner -->
+        <section class="card obs-links-card" style="margin-bottom: 20px;">
+            <div class="card-header" style="justify-content: space-between;">
+                <h2><span class="icon">📺</span> Active Twitch Streams & OBS Overlay Links</h2>
+                <span class="badge" style="background: var(--twitch-purple);">Up to 2 Continuous Streams</span>
+            </div>
+            <div class="obs-links-content" style="padding: 16px;">
+                <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 12px;">
+                    📌 <strong>How to connect Twitch Channels:</strong> Enter 1 or 2 channel names into the input box in the top right header (e.g. <code>shroud, summit1g</code>) and click <strong>Connect</strong>.
+                </p>
+                <div class="obs-links-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px;">
+                    <div class="obs-link-box" style="background: var(--bg-input); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+                        <div style="font-size: 12px; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">ALL CHANNELS OVERLAY URL</div>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="text" id="obsLinkAll" readonly value="http://localhost:5001/obs" style="flex: 1; background: #000; border: 1px solid var(--border-color); color: var(--accent-cyan); padding: 6px 10px; border-radius: 4px; font-family: monospace; font-size: 13px;" />
+                            <button type="button" class="btn btn-small btn-secondary copy-link-btn" data-target="obsLinkAll">📋 Copy</button>
+                        </div>
+                    </div>
+                    <div class="obs-link-box" style="background: var(--bg-input); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+                        <div style="font-size: 12px; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">CHANNEL 1 (<span id="chan1Label" style="color: var(--accent-cyan);">None</span>)</div>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="text" id="obsLinkChan1" readonly value="http://localhost:5001/obs?channel=" style="flex: 1; background: #000; border: 1px solid var(--border-color); color: var(--accent-cyan); padding: 6px 10px; border-radius: 4px; font-family: monospace; font-size: 13px;" />
+                            <button type="button" class="btn btn-small btn-secondary copy-link-btn" data-target="obsLinkChan1">📋 Copy</button>
+                        </div>
+                    </div>
+                    <div class="obs-link-box" style="background: var(--bg-input); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+                        <div style="font-size: 12px; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">CHANNEL 2 (<span id="chan2Label" style="color: var(--accent-cyan);">None</span>)</div>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="text" id="obsLinkChan2" readonly value="http://localhost:5001/obs?channel=" style="flex: 1; background: #000; border: 1px solid var(--border-color); color: var(--accent-cyan); padding: 6px 10px; border-radius: 4px; font-family: monospace; font-size: 13px;" />
+                            <button type="button" class="btn btn-small btn-secondary copy-link-btn" data-target="obsLinkChan2">📋 Copy</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- Main Dashboard Layout -->
         <main class="dashboard-grid">
             <!-- Left Column: Audio Queue & Player -->
