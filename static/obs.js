@@ -287,6 +287,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function skipCurrentAudio() {
         audioPlayer.pause();
+        audioPlayer.currentTime = 0;
         onAudioEnded();
     }
 

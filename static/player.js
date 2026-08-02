@@ -331,6 +331,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function skipCurrentAudio() {
         audioPlayer.pause();
+        audioPlayer.currentTime = 0;
         onAudioEnded();
     }
 
@@ -377,6 +378,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // UI Event Listeners
     if (skipBtn) {
         skipBtn.addEventListener('click', () => {
+            try {
+                fetch('/api/queue/skip', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user: 'Player' })
+                }).catch(() => {});
+            } catch (e) {}
             skipCurrentAudio();
         });
     }

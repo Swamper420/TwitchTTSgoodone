@@ -317,7 +317,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Skip current audio track
-    skipBtn.addEventListener('click', () => {
+    skipBtn.addEventListener('click', async () => {
+        try {
+            fetch('/api/queue/skip', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user: 'Dashboard' })
+            }).catch(err => console.warn('Skip API note:', err));
+        } catch (e) {}
+
         if (isPlaying || currentItem) {
             audioPlayer.pause();
             audioPlayer.currentTime = 0;
@@ -514,6 +522,35 @@ document.addEventListener('DOMContentLoaded', () => {
         evtSource.addEventListener('counter_update', (e) => {
             const counterData = JSON.parse(e.data);
             updateCounterUI(counterData);
+        });
+
+        evtSource.addEventListener('skip_audio', () => {
+            if (isPlaying || currentItem) {
+                audioPlayer.pause();
+                audioPlayer.currentTime = 0;
+                if (visualizer) visualizer.classList.remove('playing');
+                isPlaying = false;
+                currentItem = null;
+                showToast('Skipped current audio', 'info');
+                checkAndPlayNext();
+            }
+        });
+
+        evtSource.addEventListener('clear_audio', () => {
+            if (bufferTimer) {
+                clearTimeout(bufferTimer);
+                bufferTimer = null;
+            }
+            audioQueue = [];
+            if (isPlaying || currentItem) {
+                audioPlayer.pause();
+                audioPlayer.currentTime = 0;
+                if (visualizer) visualizer.classList.remove('playing');
+                isPlaying = false;
+                currentItem = null;
+            }
+            updateQueueUI();
+            showToast('Cleared audio queue', 'info');
         });
 
         evtSource.addEventListener('error', (e) => {

@@ -81,7 +81,7 @@ def broadcast_event(event_type: str, payload: dict):
 
 def send_bot_helpful_info() -> str:
     """Send helpful info about TTS bot features to chat & SSE UI."""
-    info_text = f"🎙️ Twitch TTS Bot Info: Set your default voice with '!myvoice <voice>' (e.g. !myvoice mieto) or reset with '!myvoice reset'. Preset voices: [{config.voice_presets}]. Use [voicename] tags in chat for multi-voice!"
+    info_text = f"🎙️ Twitch TTS Bot Info: Set your default voice with '!myvoice <voice>' (e.g. !myvoice mieto) or reset with '!myvoice reset'. Preset voices: [{config.voice_presets}]. Use [voicename] tags in chat for multi-voice! Skip audio with !skip."
     broadcast_event("chat_message", {"user": "System", "message": info_text, "timestamp": time.time()})
     if config.enable_chat_responses and twitch_bot:
         twitch_bot.send_chat(info_text)
@@ -125,16 +125,32 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
     if raw_text:
         raw_lower = raw_text.strip().lower()
 
-        # Command: !skip / !clear
-        if raw_lower in ("!skip", "!next"):
+        # Command: !skip / !next / !ohita
+        is_skip_cmd = (
+            raw_lower in ("!skip", "!next", "!ohita", "!skippa", "!skippaa") or
+            raw_lower.startswith(("!skip ", "!next ", "!ohita ", "!skippa ", "!skippaa "))
+        )
+        if is_skip_cmd:
             logger.info(f"Chat command '!skip' received from user '{user}'.")
             broadcast_event("skip_audio", {"user": user, "channel": clean_chan, "timestamp": time.time()})
+            skip_msg = f"⏭️ Audio skipped by @{user}." if user else "⏭️ Audio skipped."
+            broadcast_event("chat_message", {"user": "System", "message": skip_msg, "channel": clean_chan, "timestamp": time.time()})
+            if config.enable_chat_responses and twitch_bot:
+                twitch_bot.send_chat(skip_msg, channel=clean_chan)
             return
 
-        if raw_lower in ("!clear", "!clearqueue", "!stop"):
+        is_clear_cmd = (
+            raw_lower in ("!clear", "!clearqueue", "!stop") or
+            raw_lower.startswith(("!clear ", "!clearqueue ", "!stop "))
+        )
+        if is_clear_cmd:
             logger.info(f"Chat command '!clear' received from user '{user}'.")
             audio_queue.clear()
             broadcast_event("clear_audio", {"user": user, "channel": clean_chan, "timestamp": time.time()})
+            clear_msg = f"🛑 Audio queue cleared by @{user}." if user else "🛑 Audio queue cleared."
+            broadcast_event("chat_message", {"user": "System", "message": clear_msg, "channel": clean_chan, "timestamp": time.time()})
+            if config.enable_chat_responses and twitch_bot:
+                twitch_bot.send_chat(clear_msg, channel=clean_chan)
             return
 
         # Command: !help, !tts, !botinfo, !info, !about
@@ -730,6 +746,15 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(200, {"success": True, "message": "Twitch bot reconnection triggered."})
             else:
                 self._send_json(400, {"error": "Twitch bot is not initialized."})
+            return
+
+        # Route: Skip Current Audio Track
+        if path in ("/api/queue/skip", "/api/skip"):
+            user = sanitize_string(body.get("user", "Dashboard"), max_len=50, default="Dashboard")
+            broadcast_event("skip_audio", {"user": user, "channel": config.twitch_channel, "timestamp": time.time()})
+            skip_msg = f"⏭️ Audio skipped by {user}."
+            broadcast_event("chat_message", {"user": "System", "message": skip_msg, "channel": config.twitch_channel, "timestamp": time.time()})
+            self._send_json(200, {"success": True, "message": "Audio skip triggered."})
             return
 
         # Route: Clear Audio Queue
