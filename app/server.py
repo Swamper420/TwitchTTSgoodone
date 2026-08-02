@@ -147,6 +147,7 @@ def mix_audio_with_background(tts_audio_bytes: bytes, bg_file_path: str, audio_f
         cmd = [
             "ffmpeg", "-y",
             "-i", tts_tmp,
+            "-stream_loop", "-1",
             "-i", bg_file_path,
             "-filter_complex", "[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=2[aout]",
             "-map", "[aout]",
