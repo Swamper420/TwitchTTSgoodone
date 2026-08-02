@@ -28,6 +28,13 @@ ENV_KEYS = {
     "admin_password": "ADMIN_PASSWORD",
     "twitch_client_id": "TWITCH_CLIENT_ID",
     "same_user_timeout": "SAME_USER_TIMEOUT",
+    "enable_kill_counter": "ENABLE_KILL_COUNTER",
+    "kill_counter_file": "KILL_COUNTER_FILE",
+    "kill_counter_poll_interval": "KILL_COUNTER_POLL_INTERVAL",
+    "kill_counter_voice": "KILL_COUNTER_VOICE",
+    "kill_counter_template": "KILL_COUNTER_TEMPLATE",
+    "bible_api_url": "BIBLE_API_URL",
+    "kill_counter_api_token": "KILL_COUNTER_API_TOKEN",
 }
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -94,6 +101,13 @@ class Config:
     admin_password: str = field(default_factory=lambda: os.getenv("ADMIN_PASSWORD", ""))
     twitch_client_id: str = field(default_factory=lambda: os.getenv("TWITCH_CLIENT_ID", ""))
     same_user_timeout: float = field(default_factory=lambda: float(os.getenv("SAME_USER_TIMEOUT", "10.0")))
+    enable_kill_counter: bool = field(default_factory=lambda: os.getenv("ENABLE_KILL_COUNTER", "true").lower() in ("true", "1", "yes"))
+    kill_counter_file: str = field(default_factory=lambda: os.getenv("KILL_COUNTER_FILE", "values/deaths"))
+    kill_counter_poll_interval: float = field(default_factory=lambda: float(os.getenv("KILL_COUNTER_POLL_INTERVAL", "1.0")))
+    kill_counter_voice: str = field(default_factory=lambda: os.getenv("KILL_COUNTER_VOICE", "terapisti"))
+    kill_counter_template: str = field(default_factory=lambda: os.getenv("KILL_COUNTER_TEMPLATE", "Kuolema {count}. {reference}: {text}"))
+    bible_api_url: str = field(default_factory=lambda: os.getenv("BIBLE_API_URL", "https://bible-api.com/?random=verse"))
+    kill_counter_api_token: str = field(default_factory=lambda: os.getenv("KILL_COUNTER_API_TOKEN", ""))
 
     def load(self, filepath: str = CONFIG_FILE):
         """Load configuration from JSON file if present, respecting environment variable overrides."""
@@ -203,6 +217,7 @@ class Config:
             "admin_password": self.admin_password,
             "twitch_client_id": self.twitch_client_id,
             "same_user_timeout": self.same_user_timeout,
+            "kill_counter_api_token": self.kill_counter_api_token,
         }
 
     def to_masked_dict(self) -> Dict[str, Any]:
@@ -210,6 +225,7 @@ class Config:
         d = self.to_dict()
         from app.auth import mask_token
         d["twitch_oauth_token"] = mask_token(self.twitch_oauth_token)
+        d["kill_counter_api_token"] = mask_token(self.kill_counter_api_token)
         d["has_admin_password"] = bool(self.admin_password)
         d["admin_password"] = "••••••••" if self.admin_password else ""
         return d

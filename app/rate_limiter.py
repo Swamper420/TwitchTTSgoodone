@@ -49,3 +49,4 @@ class RateLimiter:
 # Pre-configured rate limiters
 login_limiter = RateLimiter(max_attempts=5, window_seconds=60)
 tts_limiter = RateLimiter(max_attempts=30, window_seconds=60)
+counter_limiter = RateLimiter(max_attempts=30, window_seconds=60)

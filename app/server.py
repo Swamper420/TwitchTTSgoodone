@@ -14,8 +14,9 @@ from app.text_chunker import process_message_to_chunks, TTSChunk
 from app.tts_client import tts_client, TTSClient
 from app.twitch_listener import TwitchListener
 from app.user_voices import user_voice_manager
+from app.kill_counter import kill_counter_monitor
 from app.auth import dashboard_auth_manager, twitch_token_validator, mask_token, hash_password
-from app.rate_limiter import login_limiter, tts_limiter
+from app.rate_limiter import login_limiter, tts_limiter, counter_limiter
 from app.sanitizer import (
     sanitize_string,
     sanitize_username,
@@ -433,6 +434,11 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"user_voices": user_voice_manager.get_all()})
             return
 
+        # Route: Kill Counter Status
+        if path == "/api/counter":
+            self._send_json(200, kill_counter_monitor.get_status_dict())
+            return
+
         # Route: Proxy GET /api/tts
         if path == "/api/tts":
             if not tts_limiter.check_and_record(self._get_client_ip()):
@@ -534,6 +540,55 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             token = sanitize_string(body.get("oauth_token"), max_len=500)
             res = twitch_token_validator.validate_token(token)
             self._send_json(200, res)
+            return
+
+        # Route: Remote / Local Kill Counter Update
+        if path == "/api/counter":
+            if not counter_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
+
+            req_token = self._get_request_auth_token()
+            if config.kill_counter_api_token:
+                if req_token != config.kill_counter_api_token and not dashboard_auth_manager.verify_session(req_token):
+                    self._send_json(401, {"error": "Unauthorized: Invalid counter API token", "auth_required": True})
+                    return
+            elif dashboard_auth_manager.is_auth_required():
+                if not self._check_auth():
+                    return
+
+            if "increment" in body or "delta" in body:
+                amt = sanitize_int(body.get("increment", body.get("delta", 1)), default=1, min_val=-1000, max_val=1000)
+                res = kill_counter_monitor.increment(amt)
+                self._send_json(200, res)
+                return
+            if "count" in body or "set" in body:
+                cnt = sanitize_int(body.get("count", body.get("set", 0)), default=0, min_val=0, max_val=1000000)
+                trigger = sanitize_bool(body.get("trigger_tts", False), default=False)
+                res = kill_counter_monitor.set_count(cnt, trigger_tts=trigger)
+                self._send_json(200, res)
+                return
+            verse = kill_counter_monitor.trigger_bible_tts()
+            self._send_json(200, {"success": True, "count": kill_counter_monitor.current_count, "verse": verse})
+            return
+
+        # Route: Test Bible TTS Trigger
+        if path == "/api/counter/test":
+            if not counter_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
+
+            req_token = self._get_request_auth_token()
+            if config.kill_counter_api_token:
+                if req_token != config.kill_counter_api_token and not dashboard_auth_manager.verify_session(req_token):
+                    self._send_json(401, {"error": "Unauthorized: Invalid counter API token", "auth_required": True})
+                    return
+            elif dashboard_auth_manager.is_auth_required():
+                if not self._check_auth():
+                    return
+
+            verse = kill_counter_monitor.trigger_bible_tts()
+            self._send_json(200, {"success": True, "count": kill_counter_monitor.current_count, "verse": verse})
             return
 
         # Route: Admin Login
@@ -694,6 +749,24 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 config.twitch_client_id = sanitize_string(body["twitch_client_id"], max_len=200)
             if "same_user_timeout" in body:
                 config.same_user_timeout = sanitize_float(body["same_user_timeout"], default=config.same_user_timeout, min_val=0.0, max_val=300.0)
+            if "enable_kill_counter" in body:
+                config.enable_kill_counter = sanitize_bool(body["enable_kill_counter"], default=config.enable_kill_counter)
+            if "kill_counter_file" in body:
+                config.kill_counter_file = sanitize_string(body["kill_counter_file"], max_len=500, default=config.kill_counter_file)
+            if "kill_counter_poll_interval" in body:
+                config.kill_counter_poll_interval = sanitize_float(body["kill_counter_poll_interval"], default=config.kill_counter_poll_interval, min_val=0.1, max_val=60.0)
+            if "kill_counter_voice" in body:
+                config.kill_counter_voice = sanitize_identifier(body["kill_counter_voice"], max_len=100, default=config.kill_counter_voice)
+            if "kill_counter_template" in body:
+                config.kill_counter_template = sanitize_string(body["kill_counter_template"], max_len=500, default=config.kill_counter_template)
+            if "bible_api_url" in body:
+                config.bible_api_url = sanitize_url(body["bible_api_url"], default=config.bible_api_url)
+            if "kill_counter_api_token" in body:
+                raw_ctok = sanitize_string(body["kill_counter_api_token"], max_len=500)
+                if raw_ctok and not raw_ctok.startswith("••••"):
+                    config.kill_counter_api_token = raw_ctok
+                elif raw_ctok == "":
+                    config.kill_counter_api_token = ""
             
             config.save()
             if twitch_bot:
@@ -743,7 +816,8 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             "user_voices": user_voice_manager.get_all(),
             "auth_required": dashboard_auth_manager.is_auth_required(),
             "twitch_auth": twitch_bot.get_auth_info() if twitch_bot else {},
-            "bot_status": twitch_bot.get_status() if twitch_bot else {}
+            "bot_status": twitch_bot.get_status() if twitch_bot else {},
+            "counter": kill_counter_monitor.get_status_dict()
         }
 
     def _get_config_dict(self) -> dict:
@@ -930,6 +1004,11 @@ def run_server(host: str = "0.0.0.0", port: int = 5000, obs_host: str = "0.0.0.0
     p_thread = threading.Thread(target=_periodic_info_loop, daemon=True)
     p_thread.start()
 
+    # Start Kill Counter Monitor background thread
+    kill_counter_monitor.process_text_func = process_incoming_text
+    kill_counter_monitor.broadcast_func = broadcast_event
+    kill_counter_monitor.start()
+
     # Start dedicated read-only OBS Overlay HTTP Server
     obs_httpd = None
     if obs_port != port:
@@ -947,6 +1026,7 @@ def run_server(host: str = "0.0.0.0", port: int = 5000, obs_host: str = "0.0.0.0
     except KeyboardInterrupt:
         logger.info("Stopping servers...")
     finally:
+        kill_counter_monitor.stop()
         if twitch_bot:
             twitch_bot.stop()
         if obs_httpd:

@@ -386,6 +386,54 @@
                         </div>
                     </div>
 
+                    <!-- DarkCounter / Kill Counter & Bible API TTS -->
+                    <div class="form-section-title" style="margin-top: 1.5rem;">⚔️ DarkCounter & Bible API TTS Trigger</div>
+                    <div class="form-row">
+                        <div class="form-group checkbox-group">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="enableKillCounterToggle" checked>
+                                <span class="slider"></span>
+                                <span class="toggle-label">Enable DarkCounter File Listener</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="killCounterFileInput">Counter File Path <span class="hint">(e.g. values/deaths)</span></label>
+                            <input type="text" id="killCounterFileInput" placeholder="values/deaths" />
+                        </div>
+                        <div class="form-group">
+                            <label for="killCounterVoiceInput">Bible TTS Voice</label>
+                            <input type="text" id="killCounterVoiceInput" placeholder="terapisti" />
+                        </div>
+                        <div class="form-group">
+                            <label for="killCounterPollIntervalInput">Poll Interval (s)</label>
+                            <input type="number" step="0.1" id="killCounterPollIntervalInput" placeholder="1.0" min="0.1" max="60" />
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group full-width">
+                            <label for="killCounterTemplateInput">Announcement Template <span class="hint">Available tags: {count}, {reference}, {text}</span></label>
+                            <input type="text" id="killCounterTemplateInput" placeholder="Kuolema {count}. {reference}: {text}" />
+                        </div>
+                    </div>
+                    
+                    <div class="counter-live-badge">
+                        <div class="counter-stat">
+                            <span class="stat-label">Active Kill/Death Count:</span>
+                            <span class="stat-value" id="currentKillCountDisplay">0</span>
+                        </div>
+                        <div class="counter-actions">
+                            <button type="button" id="incrementKillCountBtn" class="btn btn-small btn-accent">⚔️ +1 Kill (Test)</button>
+                            <button type="button" id="resetKillCountBtn" class="btn btn-small btn-outline">🔄 Reset 0</button>
+                            <button type="button" id="triggerBibleTestBtn" class="btn btn-small btn-primary">📖 Trigger Bible Quote TTS</button>
+                        </div>
+                    </div>
+                    <div id="lastBibleVerseDisplay" class="last-verse-box" style="margin-top: 0.5rem; padding: 0.5rem 0.8rem; background: var(--bg-card-secondary, #1e222b); border-radius: 6px; font-size: 0.85rem; color: #a0aec0;">
+                        <span style="font-weight: 600; color: #e2e8f0;">Last Bible Quote:</span>
+                        <span id="lastBibleVerseText" style="font-style: italic; margin-left: 0.4rem;">None yet</span>
+                    </div>
+
                     <div class="settings-actions">
                         <button id="saveSettingsBtn" class="btn btn-secondary">Save Settings</button>
                         <button id="sendHelpfulInfoBtn" class="btn btn-primary" title="Post helpful TTS info tip directly to Twitch chat now">📢 Send Helpful Info to Chat Now</button>

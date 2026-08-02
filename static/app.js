@@ -50,6 +50,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const userVoicesList = document.getElementById('userVoicesList');
     const clearAllVoicesBtn = document.getElementById('clearAllVoicesBtn');
 
+    // DarkCounter / Kill Counter DOM Elements
+    const enableKillCounterToggle = document.getElementById('enableKillCounterToggle');
+    const killCounterFileInput = document.getElementById('killCounterFileInput');
+    const killCounterVoiceInput = document.getElementById('killCounterVoiceInput');
+    const killCounterPollIntervalInput = document.getElementById('killCounterPollIntervalInput');
+    const killCounterTemplateInput = document.getElementById('killCounterTemplateInput');
+    const currentKillCountDisplay = document.getElementById('currentKillCountDisplay');
+    const lastBibleVerseText = document.getElementById('lastBibleVerseText');
+    const incrementKillCountBtn = document.getElementById('incrementKillCountBtn');
+    const resetKillCountBtn = document.getElementById('resetKillCountBtn');
+    const triggerBibleTestBtn = document.getElementById('triggerBibleTestBtn');
+
     // Constants
     const SILENT_WAV_SRC = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
 
@@ -499,6 +511,11 @@ document.addEventListener('DOMContentLoaded', () => {
             addChatMessage(data.user, data.message);
         });
 
+        evtSource.addEventListener('counter_update', (e) => {
+            const counterData = JSON.parse(e.data);
+            updateCounterUI(counterData);
+        });
+
         evtSource.addEventListener('error', (e) => {
             if (bufferTimer) {
                 clearTimeout(bufferTimer);
@@ -655,6 +672,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (data.user_voices) {
             renderUserVoices(data.user_voices);
+        }
+
+        if (data.counter) {
+            updateCounterUI(data.counter);
+        }
+    }
+
+    function updateCounterUI(counterData) {
+        if (!counterData) return;
+        if (currentKillCountDisplay) {
+            currentKillCountDisplay.textContent = counterData.count !== undefined ? counterData.count : 0;
+        }
+        if (lastBibleVerseText) {
+            if (counterData.last_verse && counterData.last_verse.reference) {
+                lastBibleVerseText.textContent = `${counterData.last_verse.reference}: "${counterData.last_verse.text}"`;
+            } else {
+                lastBibleVerseText.textContent = 'None yet';
+            }
+        }
+        if (enableKillCounterToggle && document.activeElement !== enableKillCounterToggle) {
+            enableKillCounterToggle.checked = !!counterData.enabled;
+        }
+        if (killCounterFileInput && document.activeElement !== killCounterFileInput) {
+            killCounterFileInput.value = counterData.file || 'values/deaths';
+        }
+        if (killCounterVoiceInput && document.activeElement !== killCounterVoiceInput) {
+            killCounterVoiceInput.value = counterData.voice || 'terapisti';
+        }
+        if (killCounterTemplateInput && document.activeElement !== killCounterTemplateInput) {
+            killCounterTemplateInput.value = counterData.template || '';
         }
     }
 
@@ -977,7 +1024,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     enable_chat_responses: enableChatResponsesToggle ? enableChatResponsesToggle.checked : true,
                     enable_periodic_info: enablePeriodicInfoToggle ? enablePeriodicInfoToggle.checked : false,
                     periodic_info_interval: periodicInfoIntervalInput ? (parseInt(periodicInfoIntervalInput.value, 10) || 15) : 15,
-                    same_user_timeout: sameUserTimeoutInput ? (parseFloat(sameUserTimeoutInput.value) >= 0 ? parseFloat(sameUserTimeoutInput.value) : 10) : 10
+                    same_user_timeout: sameUserTimeoutInput ? (parseFloat(sameUserTimeoutInput.value) >= 0 ? parseFloat(sameUserTimeoutInput.value) : 10) : 10,
+                    enable_kill_counter: enableKillCounterToggle ? enableKillCounterToggle.checked : true,
+                    kill_counter_file: killCounterFileInput ? killCounterFileInput.value.trim() : 'values/deaths',
+                    kill_counter_voice: killCounterVoiceInput ? killCounterVoiceInput.value.trim() : 'terapisti',
+                    kill_counter_poll_interval: killCounterPollIntervalInput ? (parseFloat(killCounterPollIntervalInput.value) || 1.0) : 1.0,
+                    kill_counter_template: killCounterTemplateInput ? killCounterTemplateInput.value.trim() : ''
                 })
             });
             const validRes = await handleFetchResponse(res);
@@ -1005,6 +1057,66 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (e) {
                 console.error('Failed to send helpful info:', e);
                 showToast('Error connecting to backend', 'error');
+            }
+        });
+    }
+
+    // Kill Counter Action Buttons
+    if (incrementKillCountBtn) {
+        incrementKillCountBtn.addEventListener('click', async () => {
+            try {
+                const res = await fetch('/api/counter', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ increment: 1 })
+                });
+                const validRes = await handleFetchResponse(res);
+                if (validRes && validRes.ok) {
+                    const data = await validRes.json();
+                    showToast(`Incremented Kill Count to ${data.count}! Triggered Bible TTS.`, 'success');
+                }
+            } catch (e) {
+                console.error('Failed to increment counter:', e);
+                showToast('Error incrementing kill counter', 'error');
+            }
+        });
+    }
+
+    if (resetKillCountBtn) {
+        resetKillCountBtn.addEventListener('click', async () => {
+            try {
+                const res = await fetch('/api/counter', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ count: 0, trigger_tts: false })
+                });
+                const validRes = await handleFetchResponse(res);
+                if (validRes && validRes.ok) {
+                    showToast('Reset kill count to 0.', 'success');
+                }
+            } catch (e) {
+                console.error('Failed to reset counter:', e);
+                showToast('Error resetting kill counter', 'error');
+            }
+        });
+    }
+
+    if (triggerBibleTestBtn) {
+        triggerBibleTestBtn.addEventListener('click', async () => {
+            try {
+                const res = await fetch('/api/counter/test', {
+                    method: 'POST',
+                    headers: getAuthHeaders()
+                });
+                const validRes = await handleFetchResponse(res);
+                if (validRes && validRes.ok) {
+                    const data = await validRes.json();
+                    const ref = data.verse ? data.verse.reference : '';
+                    showToast(`Triggered Bible Quote TTS (${ref})!`, 'success');
+                }
+            } catch (e) {
+                console.error('Failed to trigger Bible quote test:', e);
+                showToast('Error triggering Bible quote test', 'error');
             }
         });
     }
