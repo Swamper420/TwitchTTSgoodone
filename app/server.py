@@ -219,7 +219,18 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
     logger.info(f"Processing text from '{user}' [#{clean_chan}]: '{text_to_speak[:40]}' -> {len(chunks)} chunks")
 
     user_saved_voice = user_voice_manager.get_voice(user)
-    for chunk in chunks:
+
+    def emit_chunk(item_meta: dict):
+        audio_queue.append(item_meta)
+        while len(audio_store) > 200:
+            oldest_id = next(iter(audio_store))
+            del audio_store[oldest_id]
+        broadcast_event("audio_chunk", item_meta)
+
+    pending_first_chunk = None
+    total_chunk_count = len(chunks)
+
+    for i, chunk in enumerate(chunks):
         # Determine voice override hierarchy:
         # 1. Inline per-chunk tag ([alice])
         # 2. Manual test console override parameter
@@ -250,21 +261,28 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                 "created_at": time.time()
             }
             
-            # Store audio
+            # Store audio bytes in memory store
             audio_store[chunk_id] = (audio_bytes, mime_type, item_meta)
-            audio_queue.append(item_meta)
-            
-            # Clean up old audio from store
-            while len(audio_store) > 200:
-                oldest_id = next(iter(audio_store))
-                del audio_store[oldest_id]
-                
-            # Broadcast to web audio player
-            broadcast_event("audio_chunk", item_meta)
+
+            # Hold first chunk until second chunk is ready if total_chunks >= 2
+            if i == 0 and total_chunk_count > 1:
+                pending_first_chunk = item_meta
+            else:
+                if pending_first_chunk is not None:
+                    emit_chunk(pending_first_chunk)
+                    pending_first_chunk = None
+                emit_chunk(item_meta)
             
         except Exception as e:
             logger.error(f"Failed to synthesize chunk '{chunk.text}': {e}")
+            if pending_first_chunk is not None:
+                emit_chunk(pending_first_chunk)
+                pending_first_chunk = None
             broadcast_event("error", {"message": f"TTS synthesis failed for '{chunk.text}': {str(e)}"})
+
+    if pending_first_chunk is not None:
+        emit_chunk(pending_first_chunk)
+        pending_first_chunk = None
 
 
 def on_twitch_message(user: str, message: str, channel: str = ""):
