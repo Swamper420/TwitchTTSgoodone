@@ -10,7 +10,7 @@
     <!-- Audio Element -->
     <audio id="obsAudioPlayer" preload="auto"></audio>
 
-    <!-- Floating Steam 2004 OBS Stream Overlay -->
+    <!-- Floating Compact Vertical Steam 2004 OBS Stream Overlay -->
     <div id="obsOverlayCard" class="obs-card idle">
         <!-- Steam Window Titlebar -->
         <div class="obs-header">
@@ -24,18 +24,18 @@
             </div>
         </div>
 
-        <!-- Speaker Info & Text Content -->
+        <!-- Vertical Speaker & Spoken Text Body -->
         <div class="obs-body-content">
-            <div class="obs-avatar" id="obsAvatar">TTS</div>
-            <div class="obs-text-container">
+            <div class="obs-speaker-row">
+                <div class="obs-avatar" id="obsAvatar">TTS</div>
                 <div class="obs-speaker-name" id="obsSpeaker">Waiting for TTS...</div>
-                <div class="obs-spoken-text" id="obsText">Twitch TTS Voice Overlay ready.</div>
             </div>
+            <div class="obs-spoken-text" id="obsText">Twitch TTS Voice Overlay ready.</div>
         </div>
 
         <!-- Retro Visualizer Bar -->
         <div class="obs-visualizer-bar">
-            <canvas id="obsCanvas" width="300" height="20" class="obs-canvas"></canvas>
+            <canvas id="obsCanvas" width="220" height="16" class="obs-canvas"></canvas>
             <div id="obsEqualizer" class="obs-eq-bars">
                 <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
             </div>

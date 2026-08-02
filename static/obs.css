@@ -1,4 +1,4 @@
-/* Steam 2004 Classic Green Theme - Twitch TTS OBS Overlay */
+/* Steam 2004 Classic Green Theme - Ultra-Compact Vertical OBS Overlay */
 :root {
     --steam-bg: rgba(45, 53, 41, 0.95);
     --steam-header-bg: #3c4438;
@@ -34,7 +34,7 @@ html, body.obs-body {
 /* Positioning Container */
 body.obs-body {
     display: flex;
-    padding: 20px;
+    padding: 12px;
 }
 
 body.pos-bottom-left { align-items: flex-end; justify-content: flex-start; }
@@ -49,29 +49,29 @@ body:not([class*="pos-"]) {
     justify-content: flex-start;
 }
 
-/* Steam 2004 Window Overlay Card */
+/* Ultra-Compact Vertical Steam 2004 Window Overlay Card */
 .obs-card {
     background: var(--steam-bg);
     border-top: 2px solid var(--steam-border-light);
     border-left: 2px solid var(--steam-border-light);
     border-bottom: 2px solid var(--steam-border-dark);
     border-right: 2px solid var(--steam-border-dark);
-    padding: 10px 14px;
-    width: 440px;
+    padding: 5px;
+    width: 300px;
     max-width: 90vw;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.85);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.85);
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 4px;
     position: relative;
-    transition: opacity 0.25s ease, transform 0.25s ease, visibility 0.25s ease;
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
 }
 
 /* Completely Invisible when no sound is playing (Idle) */
 .obs-card.idle {
     opacity: 0 !important;
     visibility: hidden !important;
-    transform: translateY(8px);
+    transform: translateY(6px);
     pointer-events: none;
 }
 
@@ -89,7 +89,7 @@ body:not([class*="pos-"]) {
     border-left: 1px solid var(--steam-border-light);
     border-bottom: 1px solid var(--steam-border-dark);
     border-right: 1px solid var(--steam-border-dark);
-    padding: 4px 8px;
+    padding: 3px 6px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -98,8 +98,8 @@ body:not([class*="pos-"]) {
 .obs-live-tag {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 11px;
+    gap: 5px;
+    font-size: 10px;
     font-weight: bold;
     font-family: var(--font-steam);
     color: var(--steam-highlight);
@@ -108,8 +108,8 @@ body:not([class*="pos-"]) {
 }
 
 .pulse-dot {
-    width: 7px;
-    height: 7px;
+    width: 6px;
+    height: 6px;
     background: var(--steam-highlight);
     animation: steamPulse 1s infinite alternate;
 }
@@ -130,30 +130,36 @@ body:not([class*="pos-"]) {
     border-left: 1px solid var(--steam-border-dark);
     border-bottom: 1px solid var(--steam-border-light);
     border-right: 1px solid var(--steam-border-light);
-    padding: 2px 6px;
-    font-size: 10px;
+    padding: 1px 5px;
+    font-size: 9px;
     font-family: var(--font-steam);
     font-weight: bold;
     color: var(--steam-text-sub);
     text-transform: uppercase;
 }
 
-/* Body Content Area */
+/* Body Content Area - Compact Vertical Stack */
 .obs-body-content {
     background: var(--steam-inset-bg);
     border-top: 1px solid var(--steam-border-dark);
     border-left: 1px solid var(--steam-border-dark);
     border-bottom: 1px solid var(--steam-border-light);
     border-right: 1px solid var(--steam-border-light);
-    padding: 8px 10px;
+    padding: 6px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.obs-speaker-row {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 6px;
 }
 
 .obs-avatar {
-    width: 32px;
-    height: 32px;
+    width: 20px;
+    height: 20px;
     background: var(--steam-header-bg);
     border-top: 1px solid var(--steam-border-light);
     border-left: 1px solid var(--steam-border-light);
@@ -162,33 +168,28 @@ body:not([class*="pos-"]) {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: bold;
     font-family: var(--font-mono);
     color: var(--steam-highlight);
     flex-shrink: 0;
 }
 
-.obs-text-container {
-    flex: 1;
-    overflow: hidden;
-}
-
 .obs-speaker-name {
     font-family: var(--font-steam);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: bold;
     color: var(--steam-text-bright);
-    margin-bottom: 2px;
     text-transform: uppercase;
     letter-spacing: 0.3px;
+    line-height: 1;
 }
 
 .obs-spoken-text {
     font-family: var(--font-steam);
     font-size: 12px;
     color: var(--steam-text-sub);
-    line-height: 1.3;
+    line-height: 1.25;
     word-break: break-word;
 }
 
@@ -199,26 +200,26 @@ body:not([class*="pos-"]) {
     border-left: 1px solid var(--steam-border-dark);
     border-bottom: 1px solid var(--steam-border-light);
     border-right: 1px solid var(--steam-border-light);
-    padding: 3px 6px;
+    padding: 2px 5px;
     display: flex;
     align-items: center;
     justify-content: space-between;
 }
 
 .obs-canvas {
-    width: 300px;
-    height: 18px;
+    width: 220px;
+    height: 16px;
 }
 
 .obs-eq-bars {
     display: flex;
     align-items: flex-end;
-    gap: 3px;
-    height: 18px;
+    gap: 2px;
+    height: 16px;
 }
 
 .obs-eq-bars span {
-    width: 4px;
+    width: 3px;
     height: 3px;
     background: var(--steam-accent);
 }
@@ -239,5 +240,5 @@ body:not([class*="pos-"]) {
 
 @keyframes steamEq {
     0% { height: 3px; }
-    100% { height: 16px; }
+    100% { height: 14px; }
 }
