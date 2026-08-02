@@ -18,6 +18,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Query Parameters
     const params = new URLSearchParams(window.location.search);
+    const rawChannel = params.get('channel') || params.get('ch');
+    const filterChannel = rawChannel ? rawChannel.toLowerCase().replace(/^#/, '').trim() : null;
     const isAutoHide = params.get('autohide') === '1' || params.get('autohide') === 'true' || params.get('hide_idle') === '1';
     const pos = params.get('position') || params.get('pos') || 'bottom-left';
     const customVol = params.get('volume') ? parseInt(params.get('volume'), 10) : 80;
@@ -161,10 +163,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Connect SSE Event Stream
     function initSSE() {
-        const evtSource = new EventSource('/api/events');
+        const sseUrl = filterChannel ? `/api/events?channel=${encodeURIComponent(filterChannel)}` : '/api/events';
+        const evtSource = new EventSource(sseUrl);
 
         evtSource.onopen = () => {
-            if (liveText) liveText.textContent = 'STEAM TTS';
+            if (liveText) liveText.textContent = filterChannel ? `STREAM TTS (#${filterChannel.toUpperCase()})` : 'STREAM TTS';
         };
 
         evtSource.onerror = () => {
@@ -176,6 +179,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const item = JSON.parse(e.data);
                 if (!item || !item.url) return;
                 
+                if (filterChannel && item.channel && item.channel.toLowerCase() !== filterChannel) {
+                    return; // Frontend guard for channel isolation
+                }
+
                 audioQueue.push(item);
                 checkAndPlayNext();
             } catch (err) {
@@ -183,13 +190,26 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        evtSource.addEventListener('skip_audio', () => {
-            skipCurrentAudio();
+        evtSource.addEventListener('skip_audio', (e) => {
+            try {
+                const data = e.data ? JSON.parse(e.data) : {};
+                if (filterChannel && data.channel && data.channel.toLowerCase() !== filterChannel) return;
+                skipCurrentAudio();
+            } catch (err) {
+                skipCurrentAudio();
+            }
         });
 
-        evtSource.addEventListener('clear_audio', () => {
-            audioQueue = [];
-            skipCurrentAudio();
+        evtSource.addEventListener('clear_audio', (e) => {
+            try {
+                const data = e.data ? JSON.parse(e.data) : {};
+                if (filterChannel && data.channel && data.channel.toLowerCase() !== filterChannel) return;
+                audioQueue = [];
+                skipCurrentAudio();
+            } catch (err) {
+                audioQueue = [];
+                skipCurrentAudio();
+            }
         });
     }
 
@@ -207,7 +227,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Update Overlay UI
         if (obsSpeaker) obsSpeaker.textContent = currentItem.user || 'Chatter';
         if (obsText) obsText.textContent = currentItem.text || '';
-        if (obsVoiceTag) obsVoiceTag.textContent = `VOICE: ${(currentItem.voice || 'DEFAULT').toUpperCase()}`;
+        const chanLabel = currentItem.channel ? ` • #${currentItem.channel.toUpperCase()}` : '';
+        if (obsVoiceTag) obsVoiceTag.textContent = `VOICE: ${(currentItem.voice || 'DEFAULT').toUpperCase()}${chanLabel}`;
         if (obsChunkTag) obsChunkTag.textContent = `CHUNK ${currentItem.chunk_index || 1}/${currentItem.total_chunks || 1}`;
 
         overlayCard.classList.remove('idle');

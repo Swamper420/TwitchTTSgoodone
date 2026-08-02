@@ -167,6 +167,18 @@ class Config:
         except Exception:
             pass
 
+    @property
+    def channels(self) -> List[str]:
+        """Returns up to 2 cleaned Twitch channel names from twitch_channel."""
+        if not self.twitch_channel:
+            return []
+        raw_list = [c.strip().lstrip("#").lower() for c in self.twitch_channel.replace(";", ",").split(",") if c.strip()]
+        unique_channels = []
+        for ch in raw_list:
+            if ch and ch not in unique_channels:
+                unique_channels.append(ch)
+        return unique_channels[:2]
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "tts_api_url": self.tts_api_url,
@@ -180,6 +192,7 @@ class Config:
             "obs_server_host": self.obs_server_host,
             "obs_server_port": self.obs_server_port,
             "twitch_channel": self.twitch_channel,
+            "channels": self.channels,
             "user_template": self.user_template,
             "voice_presets": self.voice_presets,
             "twitch_bot_username": self.twitch_bot_username,

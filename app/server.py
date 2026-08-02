@@ -19,6 +19,7 @@ from app.rate_limiter import login_limiter, tts_limiter
 from app.sanitizer import (
     sanitize_string,
     sanitize_username,
+    sanitize_channels_list,
     sanitize_identifier,
     sanitize_int,
     sanitize_bool,
@@ -35,8 +36,8 @@ logger = logging.getLogger("Server")
 audio_store: Dict[str, Tuple[bytes, str, dict]] = {}
 audio_queue: List[dict] = []
 
-# Event subscriptions (SSE)
-sse_clients: List[queue.Queue] = []
+# Event subscriptions (SSE): list of (queue, filter_channel) tuples
+sse_clients: List[Tuple[queue.Queue, Optional[str]]] = []
 
 # Twitch Listener instance
 twitch_bot: Optional[TwitchListener] = None
@@ -45,17 +46,30 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 
 
 def broadcast_event(event_type: str, payload: dict):
-    """Send SSE event to all connected web clients."""
+    """Send SSE event to all connected web clients, optionally filtered by target channel."""
     msg = f"event: {event_type}\ndata: {json.dumps(payload)}\n\n"
+    event_chan = payload.get("channel")
+    event_chan_clean = str(event_chan).strip().lstrip("#").lower() if event_chan else None
+
     to_remove = []
-    for q in sse_clients:
+    for item in sse_clients:
+        if isinstance(item, tuple):
+            q, filter_chan = item
+        else:
+            q, filter_chan = item, None
+
+        if filter_chan and event_chan_clean and filter_chan != event_chan_clean:
+            # Skip delivering channel-specific event to a client listening to another channel
+            continue
+
         try:
             q.put_nowait(msg)
         except Exception:
-            to_remove.append(q)
-    for q in to_remove:
-        if q in sse_clients:
-            sse_clients.remove(q)
+            to_remove.append(item)
+
+    for item in to_remove:
+        if item in sse_clients:
+            sse_clients.remove(item)
 
 
 def send_bot_helpful_info() -> str:
@@ -88,7 +102,7 @@ last_command_broadcast_time = 0.0
 last_speaker: Optional[str] = None
 last_speaker_time: float = 0.0
 
-def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str] = None, override_model: Optional[str] = None):
+def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str] = None, override_model: Optional[str] = None, channel: str = ""):
     """
     Process incoming chat or test message:
     1. Intercept chat commands (!help, !tts, !botinfo, !voices, !myvoice, !skip, !clear).
@@ -99,19 +113,21 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
     """
     global last_command_broadcast_time, last_speaker, last_speaker_time
 
+    clean_chan = channel.strip().lstrip('#').lower() if channel else (config.channels[0] if config.channels else "")
+
     if raw_text:
         raw_lower = raw_text.strip().lower()
 
         # Command: !skip / !clear
         if raw_lower in ("!skip", "!next"):
             logger.info(f"Chat command '!skip' received from user '{user}'.")
-            broadcast_event("skip_audio", {"user": user, "timestamp": time.time()})
+            broadcast_event("skip_audio", {"user": user, "channel": clean_chan, "timestamp": time.time()})
             return
 
         if raw_lower in ("!clear", "!clearqueue", "!stop"):
             logger.info(f"Chat command '!clear' received from user '{user}'.")
             audio_queue.clear()
-            broadcast_event("clear_audio", {"user": user, "timestamp": time.time()})
+            broadcast_event("clear_audio", {"user": user, "channel": clean_chan, "timestamp": time.time()})
             return
 
         # Command: !help, !tts, !botinfo, !info, !about
@@ -128,9 +144,9 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
             if now - last_command_broadcast_time > 3.0:
                 last_command_broadcast_time = now
                 voices_msg = f"🎙️ Available TTS Voice Presets: [{config.voice_presets}]. Type !myvoice <voicename> to set your signature voice!"
-                broadcast_event("chat_message", {"user": "System", "message": voices_msg, "timestamp": time.time()})
+                broadcast_event("chat_message", {"user": "System", "message": voices_msg, "channel": clean_chan, "timestamp": time.time()})
                 if config.enable_chat_responses and twitch_bot:
-                    twitch_bot.send_chat(voices_msg)
+                    twitch_bot.send_chat(voices_msg, channel=clean_chan)
             return
 
         # Command: !myvoice / !voice
@@ -142,9 +158,9 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
             if not raw_voice_arg:
                 curr_voice = user_voice_manager.get_voice(user_name) or config.tts_voice
                 msg_text = f"@{user_name} Usage: !myvoice <voicename> or !myvoice reset. Your active voice: '{curr_voice}'. Presets: {config.voice_presets}"
-                broadcast_event("chat_message", {"user": "System", "message": msg_text, "timestamp": time.time()})
+                broadcast_event("chat_message", {"user": "System", "message": msg_text, "channel": clean_chan, "timestamp": time.time()})
                 if config.enable_chat_responses and twitch_bot:
-                    twitch_bot.send_chat(msg_text)
+                    twitch_bot.send_chat(msg_text, channel=clean_chan)
                 return
 
             clean_requested = sanitize_identifier(raw_voice_arg, max_len=100)
@@ -155,13 +171,14 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                 saved_voice = user_voice_manager.set_voice(user_name, clean_requested)
                 msg_text = f"Saved signature TTS voice for @{user_name} to '{saved_voice}'!"
 
-            broadcast_event("chat_message", {"user": "System", "message": msg_text, "timestamp": time.time()})
+            broadcast_event("chat_message", {"user": "System", "message": msg_text, "channel": clean_chan, "timestamp": time.time()})
             if config.enable_chat_responses and twitch_bot:
-                twitch_bot.send_chat(msg_text)
+                twitch_bot.send_chat(msg_text, channel=clean_chan)
 
             broadcast_event("status", {
                 "channel": config.twitch_channel,
-                "connected": bool(twitch_bot and twitch_bot.running and twitch_bot.channel),
+                "channels": config.channels,
+                "connected": bool(twitch_bot and twitch_bot.running and (twitch_bot.channels or twitch_bot.channel)),
                 "authenticated": bool(twitch_bot and twitch_bot.is_authenticated),
                 "config": config.to_dict(),
                 "user_voices": user_voice_manager.get_all()
@@ -194,7 +211,7 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
     if not chunks:
         return
 
-    logger.info(f"Processing text from '{user}': '{text_to_speak[:40]}' -> {len(chunks)} chunks")
+    logger.info(f"Processing text from '{user}' [#{clean_chan}]: '{text_to_speak[:40]}' -> {len(chunks)} chunks")
 
     user_saved_voice = user_voice_manager.get_voice(user)
     for chunk in chunks:
@@ -220,6 +237,7 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                 "user": user,
                 "text": chunk.text,
                 "voice": voice_to_use or "default",
+                "channel": clean_chan,
                 "chunk_index": chunk.chunk_index + 1,
                 "total_chunks": chunk.total_chunks,
                 "url": f"/api/audio/{chunk_id}",
@@ -244,10 +262,11 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
             broadcast_event("error", {"message": f"TTS synthesis failed for '{chunk.text}': {str(e)}"})
 
 
-def on_twitch_message(user: str, message: str):
+def on_twitch_message(user: str, message: str, channel: str = ""):
     """Callback triggered by Twitch IRC listener."""
-    broadcast_event("chat_message", {"user": user, "message": message, "timestamp": time.time()})
-    process_incoming_text(user=user, raw_text=message)
+    clean_chan = channel.strip().lstrip('#').lower() if channel else (config.channels[0] if config.channels else "")
+    broadcast_event("chat_message", {"user": user, "message": message, "channel": clean_chan, "timestamp": time.time()})
+    process_incoming_text(user=user, raw_text=message, channel=clean_chan)
 
 
 class TTSRequestHandler(BaseHTTPRequestHandler):
@@ -311,6 +330,9 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
 
         # Route: SSE Event Stream
         if path == "/api/events":
+            req_chan = query.get("channel", [None])[0] or query.get("ch", [None])[0]
+            filter_chan = req_chan.strip().lstrip('#').lower() if req_chan else None
+
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
@@ -319,7 +341,8 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
             client_q = queue.Queue()
-            sse_clients.append(client_q)
+            client_item = (client_q, filter_chan)
+            sse_clients.append(client_item)
 
             # Send initial status
             init_payload = f"event: status\ndata: {json.dumps(self._get_status_dict())}\n\n"
@@ -327,8 +350,8 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 self.wfile.write(init_payload.encode("utf-8"))
                 self.wfile.flush()
             except Exception:
-                if client_q in sse_clients:
-                    sse_clients.remove(client_q)
+                if client_item in sse_clients:
+                    sse_clients.remove(client_item)
                 return
 
             try:
@@ -344,8 +367,8 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             except (ConnectionResetError, BrokenPipeError):
                 pass
             finally:
-                if client_q in sse_clients:
-                    sse_clients.remove(client_q)
+                if client_item in sse_clients:
+                    sse_clients.remove(client_item)
             return
 
         # Route: Stream Audio File
@@ -550,16 +573,17 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
 
         # Route: Connect Twitch Channel
         if path == "/api/connect":
-            channel = sanitize_username(body.get("channel"))
-            if not channel:
-                self._send_json(400, {"error": "Valid Twitch channel name is required (1-25 alphanumeric/underscore characters)"})
+            raw_chan = body.get("channel")
+            sanitized = sanitize_channels_list(raw_chan)
+            if not sanitized:
+                self._send_json(400, {"error": "Valid Twitch channel name(s) required (up to 2 alphanumeric/underscore channels)"})
                 return
-            config.twitch_channel = channel
+            config.twitch_channel = sanitized
             config.save()
             if twitch_bot:
-                twitch_bot.set_channel(channel)
+                twitch_bot.set_channel(sanitized)
             broadcast_event("status", self._get_status_dict())
-            self._send_json(200, {"success": True, "channel": channel})
+            self._send_json(200, {"success": True, "channel": config.twitch_channel, "channels": config.channels})
             return
 
         # Route: Send Helpful Info Now to Chat
@@ -689,7 +713,8 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
     def _get_status_dict(self) -> dict:
         return {
             "channel": config.twitch_channel,
-            "connected": bool(twitch_bot and twitch_bot.running and twitch_bot.channel),
+            "channels": config.channels,
+            "connected": bool(twitch_bot and twitch_bot.running and (twitch_bot.channels or twitch_bot.channel)),
             "authenticated": bool(twitch_bot and twitch_bot.is_authenticated),
             "config": self._get_config_dict(),
             "user_voices": user_voice_manager.get_all(),
@@ -772,6 +797,10 @@ class OBSRequestHandler(BaseHTTPRequestHandler):
 
         # Whitelist 1: Read-Only SSE Event Stream for OBS Audio Player
         if path == "/api/events":
+            query = urllib.parse.parse_qs(parsed.query)
+            req_chan = query.get("channel", [None])[0] or query.get("ch", [None])[0]
+            filter_chan = req_chan.strip().lstrip('#').lower() if req_chan else None
+
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
@@ -780,16 +809,17 @@ class OBSRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
             client_q = queue.Queue()
-            sse_clients.append(client_q)
+            client_item = (client_q, filter_chan)
+            sse_clients.append(client_item)
 
             # Send minimal status payload (no admin tokens, passwords, or configs)
-            init_payload = f"event: status\ndata: {json.dumps({'obs_ready': True})}\n\n"
+            init_payload = f"event: status\ndata: {json.dumps({'obs_ready': True, 'channel': filter_chan})}\n\n"
             try:
                 self.wfile.write(init_payload.encode("utf-8"))
                 self.wfile.flush()
             except Exception:
-                if client_q in sse_clients:
-                    sse_clients.remove(client_q)
+                if client_item in sse_clients:
+                    sse_clients.remove(client_item)
                 return
 
             try:
@@ -804,8 +834,8 @@ class OBSRequestHandler(BaseHTTPRequestHandler):
             except (ConnectionResetError, BrokenPipeError):
                 pass
             finally:
-                if client_q in sse_clients:
-                    sse_clients.remove(client_q)
+                if client_item in sse_clients:
+                    sse_clients.remove(client_item)
             return
 
         # Whitelist 2: Stream Synthesized Audio Chunk

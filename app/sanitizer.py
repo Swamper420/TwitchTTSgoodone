@@ -28,6 +28,20 @@ def sanitize_username(val: Any, max_len: int = 25) -> str:
     return s
 
 
+def sanitize_channels_list(val: Any, max_channels: int = 2) -> str:
+    """Sanitize input string containing 1 or 2 Twitch channel names separated by comma or space."""
+    s = sanitize_string(val, max_len=100)
+    if not s:
+        return ""
+    parts = re.split(r'[,;\s]+', s)
+    valid_channels = []
+    for p in parts:
+        cleaned = sanitize_username(p)
+        if cleaned and cleaned not in valid_channels:
+            valid_channels.append(cleaned)
+    return ", ".join(valid_channels[:max_channels])
+
+
 def sanitize_speaker_name_for_tts(val: Any) -> str:
     r"""Strip symbols (.:_/\- etc) from speaker username so TTS pronounces it cleanly."""
     s = sanitize_string(val, max_len=100)

@@ -109,7 +109,9 @@ class TwitchListener:
 
     def __init__(self, on_message: Callable[[str, str], None], bot_username: str = "", oauth_token: str = ""):
         self.on_message = on_message
+        self.on_message = on_message
         self.channel: str = ""
+        self.channels: List[str] = []
         self.bot_username: str = bot_username.strip()
         self.oauth_token: str = oauth_token.strip()
         self.running: bool = False
@@ -166,13 +168,21 @@ class TwitchListener:
                     self._disconnect_socket()
 
     def set_channel(self, channel: str):
-        """Set or switch Twitch channel."""
-        channel_clean = channel.strip().lstrip('#').lower()
+        """Set or switch Twitch channel(s). Supports up to 2 comma-separated channels."""
+        raw_list = [c.strip().lstrip('#').lower() for c in channel.replace(';', ',').split(',') if c.strip()]
+        unique_channels = []
+        for ch in raw_list:
+            if ch and ch not in unique_channels:
+                unique_channels.append(ch)
+        new_channels = unique_channels[:2]
+
         with self._lock:
-            if self.channel != channel_clean:
-                self.channel = channel_clean
+            if self.channels != new_channels:
+                self.channels = new_channels
+                self.channel = new_channels[0] if new_channels else ""
                 self._force_reconnect = True
-                logger.info(f"Twitch channel set to: #{self.channel}")
+                ch_str = ", #".join(self.channels)
+                logger.info(f"Twitch channels set to: #{ch_str}")
                 if self.running:
                     self._disconnect_socket()
 
@@ -190,6 +200,7 @@ class TwitchListener:
                 "is_authenticated": self.is_authenticated,
                 "bot_username": self.bot_username,
                 "channel": self.channel,
+                "channels": list(self.channels),
                 "queue_size": self._send_queue.qsize(),
                 "auth_info": dict(self.auth_info)
             }
@@ -227,20 +238,25 @@ class TwitchListener:
             self._disconnect_socket()
         logger.info("TwitchListener reconnect requested.")
 
-    def send_chat(self, message: str) -> bool:
+    def send_chat(self, message: str, channel: Optional[str] = None) -> bool:
         """
-        Queue a text PRIVMSG message to send to the current Twitch channel.
-        Returns False immediately if message is empty, no channel set, or bot is not authenticated.
+        Queue a text PRIVMSG message to send to a target Twitch channel.
+        Defaults to primary channel if unspecified.
         """
         if not message or not message.strip():
             return False
 
         with self._lock:
-            curr_channel = self.channel
+            curr_channels = list(self.channels)
+            primary_channel = self.channel
             authenticated = self.is_authenticated
             is_running = self.running
 
-        if not curr_channel:
+        target_ch = channel.strip().lstrip('#').lower() if channel else primary_channel
+        if not target_ch and curr_channels:
+            target_ch = curr_channels[0]
+
+        if not target_ch:
             logger.warning("Cannot send Twitch chat message: No channel configured.")
             return False
 
@@ -260,8 +276,8 @@ class TwitchListener:
         if len(clean_msg) > 480:
             clean_msg = clean_msg[:477] + "..."
 
-        self._send_queue.put((curr_channel, clean_msg))
-        logger.info(f"Queued Twitch chat message for #{curr_channel}: '{clean_msg[:30]}...'")
+        self._send_queue.put((target_ch, clean_msg))
+        logger.info(f"Queued Twitch chat message for #{target_ch}: '{clean_msg[:30]}...'")
         return True
 
     def _send_worker(self):
@@ -313,7 +329,7 @@ class TwitchListener:
         last_creds = None
 
         while self.running:
-            if not self.channel:
+            if not self.channels and not self.channel:
                 time.sleep(1.0)
                 continue
 
@@ -332,12 +348,13 @@ class TwitchListener:
                     last_creds = current_creds
 
                 use_auth = bool(bot_user and clean_tok) and not fallback_anon
+                ch_display = ", #".join(self.channels) if self.channels else (f"#{self.channel}" if self.channel else "")
 
                 if use_auth:
                     nick = bot_user.lower()
                     pass_str = f"oauth:{clean_tok}"
                     self.is_authenticated = False
-                    logger.info(f"Connecting to Twitch IRC ({self.IRC_HOST}:{self.IRC_PORT_SSL} SSL) as BOT '{nick}' for channel #{self.channel}...")
+                    logger.info(f"Connecting to Twitch IRC ({self.IRC_HOST}:{self.IRC_PORT_SSL} SSL) as BOT '{nick}' for channels: #{ch_display}...")
                 else:
                     nick = f"justinfan{random.randint(10000, 99999)}"
                     pass_str = "SCHMOOPIIE"
@@ -345,7 +362,7 @@ class TwitchListener:
                     if bot_user and clean_tok and fallback_anon:
                         logger.warning(f"Connecting to Twitch IRC as ANONYMOUS reader {nick} (Auth failed for BOT '{bot_user}'). Chat TTS active, bot replies disabled.")
                     else:
-                        logger.info(f"Connecting to Twitch IRC as ANONYMOUS reader {nick} for channel #{self.channel}...")
+                        logger.info(f"Connecting to Twitch IRC as ANONYMOUS reader {nick} for channels: #{ch_display}...")
 
                 try:
                     raw_sock = socket.create_connection((self.IRC_HOST, self.IRC_PORT_SSL), timeout=10)
@@ -359,7 +376,10 @@ class TwitchListener:
                 self.sock.sendall(b"CAP REQ :twitch.tv/membership twitch.tv/tags twitch.tv/commands\r\n")
                 self.sock.sendall(f"PASS {pass_str}\r\n".encode("utf-8"))
                 self.sock.sendall(f"NICK {nick}\r\n".encode("utf-8"))
-                self.sock.sendall(f"JOIN #{self.channel}\r\n".encode("utf-8"))
+                
+                target_channels = self.channels if self.channels else ([self.channel] if self.channel else [])
+                for ch in target_channels:
+                    self.sock.sendall(f"JOIN #{ch}\r\n".encode("utf-8"))
 
                 buffer = ""
                 self.sock.settimeout(2.0)
@@ -439,23 +459,29 @@ class TwitchListener:
 
         # Welcome message (001) confirms successful authentication / connection
         if cmd == "001" or " 001 " in line:
+            ch_display = ", #".join(self.channels) if self.channels else f"#{self.channel}"
             if expected_auth:
                 with self._lock:
                     self.is_authenticated = True
-                logger.info(f"Twitch IRC Authentication SUCCESSFUL for BOT '{self.bot_username}'. Joined chat: #{self.channel}")
+                logger.info(f"Twitch IRC Authentication SUCCESSFUL for BOT '{self.bot_username}'. Joined chat: #{ch_display}")
             else:
                 with self._lock:
                     self.is_authenticated = False
-                logger.info(f"Twitch IRC successfully joined chat anonymously as reader: #{self.channel}")
+                logger.info(f"Twitch IRC successfully joined chat anonymously as reader: #{ch_display}")
 
         # PRIVMSG chat messages
         if cmd == "PRIVMSG":
             # Prefer display-name tag if present, else fallback to IRC nick
             user_display = parsed["tags"].get("display-name") or nick or "Chatter"
+            raw_target = parsed["target"].strip().lstrip('#').lower() if parsed["target"] else ""
+            target_chan = raw_target or self.channel
             chat_text = msg
-            logger.info(f"Twitch Chat [{self.channel}] {user_display}: {chat_text}")
+            logger.info(f"Twitch Chat [#{target_chan}] {user_display}: {chat_text}")
             try:
-                self.on_message(user_display, chat_text)
+                try:
+                    self.on_message(user_display, chat_text, target_chan)
+                except TypeError:
+                    self.on_message(user_display, chat_text)
             except Exception as e:
                 logger.error(f"Error processing chat message from {user_display}: {e}")
 

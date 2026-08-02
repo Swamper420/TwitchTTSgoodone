@@ -537,9 +537,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (data.channel) {
             channelInput.value = data.channel;
         }
-        if (data.connected && data.channel) {
+        if (data.connected && (data.channels ? data.channels.length > 0 : data.channel)) {
             statusPill.classList.add('connected');
-            statusText.textContent = `Connected: #${data.channel}`;
+            const chList = data.channels && data.channels.length > 0 ? data.channels.map(c => '#' + c).join(', ') : `#${data.channel}`;
+            statusText.textContent = `Connected: ${chList}`;
             connectBtn.textContent = 'Disconnect';
         } else {
             statusPill.classList.remove('connected');
@@ -872,7 +873,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             const validRes = await handleFetchResponse(res);
             if (validRes && validRes.ok) {
-                showToast(`Connecting to Twitch channel #${targetChannel}...`, 'success');
+                const data = await validRes.json();
+                const connStr = data.channels && data.channels.length > 0 ? data.channels.map(c => '#' + c).join(', ') : `#${targetChannel}`;
+                showToast(`Connecting to Twitch channel(s) ${connStr}...`, 'success');
                 fetchStatus();
             }
         } catch (e) {
