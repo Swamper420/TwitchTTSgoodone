@@ -65,6 +65,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let audioSource = null;
     let animFrameId = null;
 
+    // Initialize audio player as muted by default on the main page
+    if (audioPlayer) {
+        audioPlayer.muted = true;
+    }
+    if (muteBtn) {
+        muteBtn.textContent = '🔇';
+    }
+
     // Load initial settings & status
     fetchStatus();
 
@@ -306,18 +314,33 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Volume & Mute Controls
-    volumeSlider.addEventListener('input', () => {
-        const val = volumeSlider.value;
-        audioPlayer.volume = val / 100;
-        volumeValue.textContent = `${val}%`;
-        audioPlayer.muted = false;
-        muteBtn.textContent = val == 0 ? '🔇' : '🔊';
-    });
+    if (volumeSlider) {
+        volumeSlider.addEventListener('input', () => {
+            const val = parseInt(volumeSlider.value, 10);
+            if (audioPlayer) {
+                audioPlayer.volume = val / 100;
+            }
+            if (volumeValue) {
+                volumeValue.textContent = `${val}%`;
+            }
+            if (val === 0) {
+                if (audioPlayer) audioPlayer.muted = true;
+                if (muteBtn) muteBtn.textContent = '🔇';
+            } else {
+                // If user turns volume up, unmute automatically
+                if (audioPlayer) audioPlayer.muted = false;
+                if (muteBtn) muteBtn.textContent = '🔊';
+            }
+        });
+    }
 
-    muteBtn.addEventListener('click', () => {
-        audioPlayer.muted = !audioPlayer.muted;
-        muteBtn.textContent = audioPlayer.muted ? '🔇' : '🔊';
-    });
+    if (muteBtn) {
+        muteBtn.addEventListener('click', () => {
+            if (!audioPlayer) return;
+            audioPlayer.muted = !audioPlayer.muted;
+            muteBtn.textContent = audioPlayer.muted ? '🔇' : '🔊';
+        });
+    }
 
     audioPlayer.addEventListener('ended', () => {
         if (visualizer) visualizer.classList.remove('playing');
