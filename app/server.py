@@ -181,7 +181,7 @@ def mix_audio_with_background(tts_audio_bytes: bytes, bg_file_path: str, audio_f
                 pass
 
 
-def apply_8d_audio_effect(audio_bytes: bytes, audio_format: str = "wav") -> Tuple[bytes, str]:
+def apply_8d_audio_effect(audio_bytes: bytes, audio_format: str = "wav", speed: Optional[float] = None) -> Tuple[bytes, str]:
     """
     Applies an 8D spatial panning and audio atmosphere effect using ffmpeg apulsator and aecho filters.
     Returns tuple of (processed_audio_bytes, mime_type).
@@ -190,6 +190,14 @@ def apply_8d_audio_effect(audio_bytes: bytes, audio_format: str = "wav") -> Tupl
         fmt = audio_format or "wav"
         mime = "audio/mpeg" if fmt == "mp3" else f"audio/{fmt}"
         return audio_bytes, mime
+
+    if speed is None:
+        speed = getattr(config, "effect_8d_speed", 0.15)
+    try:
+        speed_val = float(speed)
+    except (ValueError, TypeError):
+        speed_val = 0.15
+    speed_val = max(0.01, min(5.0, speed_val))
 
     fmt = audio_format or "wav"
     out_fmt = "wav" if fmt not in ("mp3", "wav", "ogg") else fmt
@@ -204,7 +212,7 @@ def apply_8d_audio_effect(audio_bytes: bytes, audio_format: str = "wav") -> Tupl
 
         out_tmp = in_tmp + f"_8d.{out_fmt}"
 
-        filter_str = "apulsator=hz=0.15:mode=sine:offset_l=0:offset_r=0.5:amount=1,aecho=0.8:0.88:40:0.2"
+        filter_str = f"apulsator=hz={speed_val}:mode=sine:offset_l=0:offset_r=0.5:amount=1,aecho=0.8:0.88:40:0.2"
 
         cmd = [
             "ffmpeg", "-y",
@@ -1054,6 +1062,12 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 config.shouting_voices = sanitize_string(body["shouting_voices"], max_len=1000, default=config.shouting_voices)
             elif "shoutingvoices" in body:
                 config.shouting_voices = sanitize_string(body["shoutingvoices"], max_len=1000, default=config.shouting_voices)
+            if "effect_8d_speed" in body:
+                config.effect_8d_speed = sanitize_float(body["effect_8d_speed"], default=config.effect_8d_speed, min_val=0.01, max_val=5.0)
+            elif "eight_d_speed" in body:
+                config.effect_8d_speed = sanitize_float(body["eight_d_speed"], default=config.effect_8d_speed, min_val=0.01, max_val=5.0)
+            elif "8d_speed" in body:
+                config.effect_8d_speed = sanitize_float(body["8d_speed"], default=config.effect_8d_speed, min_val=0.01, max_val=5.0)
             if "twitch_bot_username" in body:
                 cleaned_bot_user = sanitize_username(body["twitch_bot_username"])
                 if cleaned_bot_user:

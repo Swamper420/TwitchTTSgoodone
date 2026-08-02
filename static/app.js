@@ -729,6 +729,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (userTemplateInput) userTemplateInput.value = data.config.user_template || '';
             if (sameUserTimeoutInput) sameUserTimeoutInput.value = data.config.same_user_timeout !== undefined ? data.config.same_user_timeout : 10;
             if (voicePresetsInput) voicePresetsInput.value = data.config.voice_presets || '';
+            const effect8dSpeedInput = document.getElementById('effect8dSpeedInput');
+            if (effect8dSpeedInput) effect8dSpeedInput.value = data.config.effect_8d_speed !== undefined ? data.config.effect_8d_speed : 0.15;
 
             if (botUsernameInput) botUsernameInput.value = data.config.twitch_bot_username || '';
             if (botOauthInput && data.config.twitch_oauth_token) {
@@ -1078,6 +1080,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const enableChatResponsesToggle = document.getElementById('enableChatResponsesToggle');
         const enablePeriodicInfoToggle = document.getElementById('enablePeriodicInfoToggle');
         const periodicInfoIntervalInput = document.getElementById('periodicInfoIntervalInput');
+        const effect8dSpeedInput = document.getElementById('effect8dSpeedInput');
 
         try {
             const res = await fetch('/api/settings', {
@@ -1092,6 +1095,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     min_chunk_chars: minChunkInput ? (parseInt(minChunkInput.value, 10) || 10) : 10,
                     user_template: userTemplateInput ? userTemplateInput.value.trim() : '',
                     voice_presets: voicePresetsInput ? voicePresetsInput.value.trim() : '',
+                    effect_8d_speed: effect8dSpeedInput ? (parseFloat(effect8dSpeedInput.value) || 0.15) : 0.15,
                     twitch_bot_username: botUsernameInput ? botUsernameInput.value.trim() : '',
                     twitch_oauth_token: botOauthInput ? botOauthInput.value.trim() : '',
                     admin_password: adminPasswordInput ? adminPasswordInput.value.trim() : '',

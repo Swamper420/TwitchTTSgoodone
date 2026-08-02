@@ -51,10 +51,21 @@ class Test8DAudioEffect(unittest.TestCase):
     def test_apply_8d_audio_effect_runs_without_error(self):
         # Create small dummy audio bytes (WAV header + 0s)
         dummy_wav = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x44\xac\x00\x00\x88\x58\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00"
-        processed_bytes, mime = apply_8d_audio_effect(dummy_wav, audio_format="wav")
+        processed_bytes, mime = apply_8d_audio_effect(dummy_wav, audio_format="wav", speed=0.25)
         self.assertTrue(isinstance(processed_bytes, bytes))
         self.assertTrue(len(processed_bytes) > 0)
         self.assertIn("audio", mime)
+
+    @patch("subprocess.run")
+    def test_apply_8d_audio_effect_uses_configured_speed(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout=b"", stderr=b"")
+        dummy_wav = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x44\xac\x00\x00\x88\x58\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00"
+        apply_8d_audio_effect(dummy_wav, audio_format="wav", speed=0.45)
+        
+        self.assertTrue(mock_run.called)
+        cmd_args = mock_run.call_args[0][0]
+        cmd_str = " ".join(cmd_args)
+        self.assertIn("apulsator=hz=0.45", cmd_str)
 
     @patch("app.server.tts_client.synthesize")
     def test_process_incoming_text_8d_tag_detection_and_metadata(self, mock_synth):
