@@ -8,6 +8,9 @@ class TTSChunk:
     voice: Optional[str] = None
     chunk_index: int = 0
     total_chunks: int = 1
+    is_soundboard: bool = False
+    sound_file: Optional[str] = None
+    sound_name: Optional[str] = None
 
 
 from app.config import config
@@ -143,35 +146,60 @@ def process_message_to_chunks(text: str, max_chars: Optional[int] = None, min_ch
     """
     Full message processing pipeline:
     1. Parse [voice] tags
-    2. Sanitize and chunk each voice segment
-    3. Ensure minimum characters per chunk
-    4. Return TTSChunk objects with index tracking
+    2. Parse soundboard (soundname) triggers within each voice section
+    3. Sanitize and chunk each voice segment
+    4. Ensure minimum characters per chunk
+    5. Return TTSChunk objects with index tracking
     """
     if max_chars is None:
         max_chars = config.max_chunk_chars
     if min_chars is None:
         min_chars = config.min_chunk_chars
 
+    from app.soundboard import soundboard_manager
+
     voice_segments = parse_voice_tags(text)
+    raw_chunks: List[dict] = []
+
+    for voice, voice_text in voice_segments:
+        sb_segments = soundboard_manager.parse_soundboard_text(voice_text)
+        for sb_seg in sb_segments:
+            if sb_seg["type"] == "soundboard":
+                raw_chunks.append({
+                    "is_soundboard": True,
+                    "text": sb_seg["raw_trigger"],
+                    "voice": voice,
+                    "sound_file": sb_seg["file_path"],
+                    "sound_name": sb_seg["sound_name"]
+                })
+            else:
+                seg_text = sb_seg["content"]
+                sub_chunks = split_text_into_chunks(seg_text, max_chars=max_chars)
+                for sub in sub_chunks:
+                    padded_sub = ensure_min_length(sub, min_length=min_chars)
+                    raw_chunks.append({
+                        "is_soundboard": False,
+                        "text": padded_sub,
+                        "voice": voice,
+                        "sound_file": None,
+                        "sound_name": None
+                    })
+
+    total = len(raw_chunks)
     all_chunks: List[TTSChunk] = []
-    
-    temp_chunks: List[Tuple[Optional[str], str]] = []
-    for voice, seg_text in voice_segments:
-        sub_chunks = split_text_into_chunks(seg_text, max_chars=max_chars)
-        for sub in sub_chunks:
-            padded_sub = ensure_min_length(sub, min_length=min_chars)
-            temp_chunks.append((voice, padded_sub))
-            
-    total = len(temp_chunks)
-    for idx, (voice, chunk_text_val) in enumerate(temp_chunks):
+
+    for idx, item in enumerate(raw_chunks):
         all_chunks.append(
             TTSChunk(
-                text=chunk_text_val,
-                voice=voice,
+                text=item["text"],
+                voice=item["voice"],
                 chunk_index=idx,
-                total_chunks=total
+                total_chunks=total,
+                is_soundboard=item["is_soundboard"],
+                sound_file=item["sound_file"],
+                sound_name=item["sound_name"]
             )
         )
-        
+
     return all_chunks
 

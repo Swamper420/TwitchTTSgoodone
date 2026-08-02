@@ -14,6 +14,7 @@ from app.text_chunker import process_message_to_chunks, TTSChunk
 from app.tts_client import tts_client, TTSClient
 from app.twitch_listener import TwitchListener
 from app.user_voices import user_voice_manager
+from app.soundboard import soundboard_manager
 from app.kill_counter import kill_counter_monitor
 from app.auth import dashboard_auth_manager, twitch_token_validator, mask_token, hash_password
 from app.rate_limiter import login_limiter, tts_limiter, counter_limiter
@@ -155,6 +156,22 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                     twitch_bot.send_chat(voices_msg, channel=clean_chan)
             return
 
+        # Command: !soundboard / !sounds
+        if raw_lower in ("!soundboard", "!sounds", "!sound"):
+            now = time.time()
+            if now - last_command_broadcast_time > 3.0:
+                last_command_broadcast_time = now
+                available_sounds = list(soundboard_manager.get_available_sounds().keys())
+                if available_sounds:
+                    sounds_str = ", ".join(available_sounds[:20])
+                    sb_msg = f"🔊 Available Soundboard sounds: [{sounds_str}]. Type (soundname) in chat to play!"
+                else:
+                    sb_msg = f"🔊 Soundboard is active! Add soundboard .mp3 files into {soundboard_manager.directory} to play them using (soundname) in chat."
+                broadcast_event("chat_message", {"user": "System", "message": sb_msg, "channel": clean_chan, "timestamp": time.time()})
+                if config.enable_chat_responses and twitch_bot:
+                    twitch_bot.send_chat(sb_msg, channel=clean_chan)
+            return
+
         # Command: !myvoice / !voice
         if raw_lower.startswith("!myvoice") or raw_lower.startswith("!voice"):
             parts = raw_text.strip().split(maxsplit=1)
@@ -241,19 +258,28 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
         model_to_use = override_model or config.tts_model
         
         try:
-            audio_bytes, mime_type = tts_client.synthesize(
-                text=chunk.text,
-                voice=voice_to_use,
-                model=model_to_use,
-                audio_format=config.tts_format
-            )
+            if chunk.is_soundboard and chunk.sound_file and os.path.exists(chunk.sound_file):
+                with open(chunk.sound_file, "rb") as f:
+                    audio_bytes = f.read()
+                mime_type = soundboard_manager.get_mime_type(chunk.sound_file)
+                voice_used = "soundboard"
+            else:
+                audio_bytes, mime_type = tts_client.synthesize(
+                    text=chunk.text,
+                    voice=voice_to_use,
+                    model=model_to_use,
+                    audio_format=config.tts_format
+                )
+                voice_used = voice_to_use or "default"
             
             chunk_id = f"chunk_{uuid.uuid4().hex[:12]}"
             item_meta = {
                 "id": chunk_id,
                 "user": user,
                 "text": chunk.text,
-                "voice": voice_to_use or "default",
+                "voice": voice_used,
+                "is_soundboard": chunk.is_soundboard,
+                "sound_name": chunk.sound_name,
                 "channel": clean_chan,
                 "chunk_index": chunk.chunk_index + 1,
                 "total_chunks": chunk.total_chunks,
@@ -432,6 +458,17 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         # Route: User Voices List
         if path == "/api/user_voices":
             self._send_json(200, {"user_voices": user_voice_manager.get_all()})
+            return
+
+        # Route: Soundboard List
+        if path == "/api/soundboard":
+            sounds = soundboard_manager.get_available_sounds()
+            self._send_json(200, {
+                "directory": soundboard_manager.directory,
+                "enabled": config.enable_soundboard,
+                "sounds": list(sounds.keys()),
+                "sound_files": sounds
+            })
             return
 
         # Route: Kill Counter Status
