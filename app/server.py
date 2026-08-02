@@ -778,6 +778,10 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 config.user_template = sanitize_string(body["user_template"], max_len=500, default=config.user_template)
             if "voice_presets" in body:
                 config.voice_presets = sanitize_string(body["voice_presets"], max_len=1000, default=config.voice_presets)
+            if "shouting_voices" in body:
+                config.shouting_voices = sanitize_string(body["shouting_voices"], max_len=1000, default=config.shouting_voices)
+            elif "shoutingvoices" in body:
+                config.shouting_voices = sanitize_string(body["shoutingvoices"], max_len=1000, default=config.shouting_voices)
             if "twitch_bot_username" in body:
                 cleaned_bot_user = sanitize_username(body["twitch_bot_username"])
                 if cleaned_bot_user:

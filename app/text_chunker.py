@@ -142,14 +142,119 @@ def ensure_min_length(text: str, min_length: Optional[int] = None) -> str:
     return text
 
 
+import random
+
+
+def parse_shouting_segments(text: str) -> List[Tuple[bool, str]]:
+    """
+    Parse text into segments of (is_shouting, segment_text).
+    Identifies contiguous ALLCAPS words and assigns True to is_shouting.
+    """
+    if not text:
+        return []
+
+    tokens = [t for t in re.split(r'(\s+|[^\w\s]+)', text) if t]
+    if not tokens:
+        return []
+
+    token_types = []
+    has_normal_words = False
+
+    for t in tokens:
+        if any(c.isalpha() for c in t):
+            if t.isupper():
+                n_alpha = sum(1 for c in t if c.isalpha())
+                if n_alpha >= 2:
+                    token_types.append("ALLCAPS")
+                else:
+                    token_types.append("SINGLE_UPPER")
+            else:
+                token_types.append("NORMAL")
+                has_normal_words = True
+        else:
+            token_types.append("DELIMITER")
+
+    has_allcaps = "ALLCAPS" in token_types
+
+    is_shouting_word = []
+    for idx, ttype in enumerate(token_types):
+        if ttype == "ALLCAPS":
+            is_shouting_word.append(True)
+        elif ttype == "NORMAL":
+            is_shouting_word.append(False)
+        elif ttype == "SINGLE_UPPER":
+            if not has_normal_words or has_allcaps:
+                is_shouting_word.append(True)
+            else:
+                is_shouting_word.append(False)
+        else:
+            is_shouting_word.append(None)
+
+    if not any(sw is True for sw in is_shouting_word):
+        return [(False, text)]
+
+    final_shouting = [False] * len(tokens)
+    for idx, ttype in enumerate(token_types):
+        if is_shouting_word[idx] is True:
+            final_shouting[idx] = True
+        elif is_shouting_word[idx] is False:
+            final_shouting[idx] = False
+
+    for idx, ttype in enumerate(token_types):
+        if ttype == "DELIMITER":
+            left_shouting = False
+            for l in range(idx - 1, -1, -1):
+                if token_types[l] != "DELIMITER":
+                    left_shouting = final_shouting[l]
+                    break
+            right_shouting = False
+            for r in range(idx + 1, len(tokens)):
+                if token_types[r] != "DELIMITER":
+                    right_shouting = final_shouting[r]
+                    break
+
+            if left_shouting and right_shouting:
+                final_shouting[idx] = True
+            elif left_shouting and not right_shouting:
+                if re.search(r'[^\s]', tokens[idx]):
+                    final_shouting[idx] = True
+                else:
+                    final_shouting[idx] = False
+            else:
+                final_shouting[idx] = False
+
+    segments: List[Tuple[bool, str]] = []
+    curr_shouting = final_shouting[0]
+    curr_text = []
+
+    for idx, token in enumerate(tokens):
+        sh = final_shouting[idx]
+        if sh == curr_shouting:
+            curr_text.append(token)
+        else:
+            seg_str = "".join(curr_text)
+            if seg_str:
+                segments.append((curr_shouting, seg_str))
+            curr_shouting = sh
+            curr_text = [token]
+
+    if curr_text:
+        seg_str = "".join(curr_text)
+        if seg_str:
+            segments.append((curr_shouting, seg_str))
+
+    return segments
+
+
 def process_message_to_chunks(text: str, max_chars: Optional[int] = None, min_chars: Optional[int] = None) -> List[TTSChunk]:
     """
     Full message processing pipeline:
     1. Parse [voice] tags
     2. Parse soundboard (soundname) triggers within each voice section
-    3. Sanitize and chunk each voice segment
-    4. Ensure minimum characters per chunk
-    5. Return TTSChunk objects with index tracking
+    3. Parse ALLCAPS shouting segments and assign randomly selected shouting voice
+    4. Sanitize and chunk each segment
+    5. Ensure minimum characters per chunk
+    6. Return TTSChunk objects with index tracking
     """
     if max_chars is None:
         max_chars = config.max_chunk_chars
@@ -174,16 +279,20 @@ def process_message_to_chunks(text: str, max_chars: Optional[int] = None, min_ch
                 })
             else:
                 seg_text = sb_seg["content"]
-                sub_chunks = split_text_into_chunks(seg_text, max_chars=max_chars)
-                for sub in sub_chunks:
-                    padded_sub = ensure_min_length(sub, min_length=min_chars)
-                    raw_chunks.append({
-                        "is_soundboard": False,
-                        "text": padded_sub,
-                        "voice": voice,
-                        "sound_file": None,
-                        "sound_name": None
-                    })
+                shout_segments = parse_shouting_segments(seg_text)
+                for is_shout, shout_text in shout_segments:
+                    shout_voices = config.shouting_voices_list
+                    chunk_voice = random.choice(shout_voices) if is_shout and shout_voices else voice
+                    sub_chunks = split_text_into_chunks(shout_text, max_chars=max_chars)
+                    for sub in sub_chunks:
+                        padded_sub = ensure_min_length(sub, min_length=min_chars)
+                        raw_chunks.append({
+                            "is_soundboard": False,
+                            "text": padded_sub,
+                            "voice": chunk_voice,
+                            "sound_file": None,
+                            "sound_name": None
+                        })
 
     total = len(raw_chunks)
     all_chunks: List[TTSChunk] = []
@@ -202,4 +311,5 @@ def process_message_to_chunks(text: str, max_chars: Optional[int] = None, min_ch
         )
 
     return all_chunks
+
 

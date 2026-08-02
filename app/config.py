@@ -37,6 +37,8 @@ ENV_KEYS = {
     "kill_counter_api_token": "KILL_COUNTER_API_TOKEN",
     "soundboard_dir": "SOUNDBOARD_DIR",
     "enable_soundboard": "ENABLE_SOUNDBOARD",
+    "shouting_voices": "SHOUTING_VOICES",
+    "shoutingvoices": "SHOUTING_VOICES",
 }
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -112,6 +114,7 @@ class Config:
     kill_counter_api_token: str = field(default_factory=lambda: os.getenv("KILL_COUNTER_API_TOKEN", ""))
     soundboard_dir: str = field(default_factory=lambda: os.getenv("SOUNDBOARD_DIR", os.path.join(BASE_DIR, "storage", "soundboard")))
     enable_soundboard: bool = field(default_factory=lambda: os.getenv("ENABLE_SOUNDBOARD", "true").lower() in ("true", "1", "yes"))
+    shouting_voices: str = field(default_factory=lambda: os.getenv("SHOUTING_VOICES", "dracula"))
 
     def load(self, filepath: str = CONFIG_FILE):
         """Load configuration from JSON file if present, respecting environment variable overrides."""
@@ -142,25 +145,26 @@ class Config:
                 with open(filepath, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 for key, val in data.items():
-                    if hasattr(self, key):
+                    target_key = "shouting_voices" if key in ("shouting_voices", "shoutingvoices") else key
+                    if hasattr(self, target_key):
                         env_var = ENV_KEYS.get(key)
                         # If environment variable is set in os.environ, preserve environment value
                         if env_var and env_var in os.environ:
                             continue
 
                         if val is not None:
-                            curr_val = getattr(self, key)
+                            curr_val = getattr(self, target_key)
                             if isinstance(curr_val, bool):
                                 if isinstance(val, bool):
-                                    setattr(self, key, val)
+                                    setattr(self, target_key, val)
                                 else:
-                                    setattr(self, key, str(val).lower() in ("true", "1", "yes"))
+                                    setattr(self, target_key, str(val).lower() in ("true", "1", "yes"))
                             elif isinstance(curr_val, int):
-                                setattr(self, key, int(val))
+                                setattr(self, target_key, int(val))
                             elif isinstance(curr_val, float):
-                                setattr(self, key, float(val))
+                                setattr(self, target_key, float(val))
                             else:
-                                setattr(self, key, str(val))
+                                setattr(self, target_key, str(val))
                 logger.info(f"Loaded configuration from {filepath}")
             except Exception as e:
                 logger.error(f"Failed to load config from {filepath}: {e}")
@@ -184,6 +188,17 @@ class Config:
             dashboard_auth_manager.update_admin_password(self.admin_password)
         except Exception:
             pass
+
+    @property
+    def shouting_voices_list(self) -> List[str]:
+        """Returns list of preset shouting voice names from shouting_voices config."""
+        if not self.shouting_voices:
+            return ["dracula"]
+        if isinstance(self.shouting_voices, list):
+            voices = [str(v).strip() for v in self.shouting_voices if str(v).strip()]
+        else:
+            voices = [v.strip() for v in str(self.shouting_voices).replace(";", ",").split(",") if v.strip()]
+        return voices if voices else ["dracula"]
 
     @property
     def channels(self) -> List[str]:
@@ -224,6 +239,7 @@ class Config:
             "kill_counter_api_token": self.kill_counter_api_token,
             "soundboard_dir": self.soundboard_dir,
             "enable_soundboard": self.enable_soundboard,
+            "shouting_voices": self.shouting_voices,
         }
 
     def to_masked_dict(self) -> Dict[str, Any]:
