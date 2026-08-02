@@ -110,7 +110,7 @@ class Config:
     kill_counter_template: str = field(default_factory=lambda: os.getenv("KILL_COUNTER_TEMPLATE", "Kuolema {count}. {reference}: {text}"))
     bible_api_url: str = field(default_factory=lambda: os.getenv("BIBLE_API_URL", "https://bible-api.com/?random=verse"))
     kill_counter_api_token: str = field(default_factory=lambda: os.getenv("KILL_COUNTER_API_TOKEN", ""))
-    soundboard_dir: str = field(default_factory=lambda: os.getenv("SOUNDBOARD_DIR", "/storage/soundboard"))
+    soundboard_dir: str = field(default_factory=lambda: os.getenv("SOUNDBOARD_DIR", os.path.join(BASE_DIR, "storage", "soundboard")))
     enable_soundboard: bool = field(default_factory=lambda: os.getenv("ENABLE_SOUNDBOARD", "true").lower() in ("true", "1", "yes"))
 
     def load(self, filepath: str = CONFIG_FILE):

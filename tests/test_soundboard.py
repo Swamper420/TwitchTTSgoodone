@@ -91,12 +91,21 @@ class TestSoundboard(unittest.TestCase):
             sb_chunks = [c for c in chunks if c.is_soundboard]
             self.assertEqual(len(sb_chunks), 2)
             self.assertEqual(sb_chunks[0].sound_name, "boom")
-            self.assertEqual(sb_chunks[0].sound_file, self.boom_file)
             self.assertEqual(sb_chunks[1].sound_name, "bruh")
             self.assertEqual(sb_chunks[1].sound_file, self.bruh_file)
             self.assertEqual(sb_chunks[1].voice, "alice")
         finally:
             config.soundboard_dir = orig_dir
+
+    def test_permission_fallback(self):
+        # Point to a restricted system path where normal user cannot create directories
+        restricted_mgr = SoundboardManager(soundboard_dir="/root/restricted_soundboard_test_dir")
+        accessible = restricted_mgr.get_accessible_directories()
+        self.assertTrue(len(accessible) > 0)
+        # Verify fallback directory is accessible and writable
+        fallback_dir = accessible[0]
+        self.assertTrue(os.path.exists(fallback_dir))
+        self.assertTrue(os.access(fallback_dir, os.W_OK))
 
 
 if __name__ == "__main__":

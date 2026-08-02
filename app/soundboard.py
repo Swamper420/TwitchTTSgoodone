@@ -9,7 +9,7 @@ try:
 except ImportError:
     HAS_RAPIDFUZZ = False
 
-from app.config import config
+from app.config import config, BASE_DIR
 
 logger = logging.getLogger("Soundboard")
 
@@ -25,45 +25,82 @@ MIME_TYPES = {
 
 
 class SoundboardManager:
-    """Manages soundboard directory scanning, fuzzy matching via rapidfuzz, and trigger parsing."""
+    """Manages soundboard directory scanning, fuzzy matching via rapidfuzz, and trigger parsing with permission fallback."""
 
     def __init__(self, soundboard_dir: Optional[str] = None):
         self._custom_dir = soundboard_dir
 
+    def get_candidate_directories(self) -> List[str]:
+        """Returns list of candidate soundboard directories in order of preference."""
+        candidates = []
+        primary = self._custom_dir or config.soundboard_dir or "/storage/soundboard"
+        if primary:
+            candidates.append(primary)
+
+        local_storage = os.path.join(BASE_DIR, "storage", "soundboard")
+        if local_storage not in candidates:
+            candidates.append(local_storage)
+
+        user_storage = os.path.expanduser("~/storage/soundboard")
+        if user_storage not in candidates:
+            candidates.append(user_storage)
+
+        local_sb = os.path.join(BASE_DIR, "soundboard")
+        if local_sb not in candidates:
+            candidates.append(local_sb)
+
+        return candidates
+
     @property
     def directory(self) -> str:
-        return self._custom_dir or config.soundboard_dir or "/storage/soundboard"
+        """Returns the primary accessible soundboard directory."""
+        accessible = self.get_accessible_directories()
+        if accessible:
+            return accessible[0]
+        return self.get_candidate_directories()[0]
+
+    def get_accessible_directories(self) -> List[str]:
+        """Ensure candidate directories exist if possible and return list of all readable soundboard directories."""
+        valid_dirs = []
+        for d in self.get_candidate_directories():
+            try:
+                if not os.path.exists(d):
+                    os.makedirs(d, exist_ok=True)
+                if os.path.isdir(d) and os.access(d, os.R_OK):
+                    valid_dirs.append(d)
+                else:
+                    logger.warning(f"Soundboard directory '{d}' exists but is not readable by current user.")
+            except (PermissionError, OSError) as e:
+                logger.warning(f"Could not create/access soundboard directory '{d}': {e}")
+        return valid_dirs
 
     def ensure_directory(self) -> str:
-        target_dir = self.directory
-        try:
-            os.makedirs(target_dir, exist_ok=True)
-        except Exception as e:
-            logger.warning(f"Could not create soundboard directory '{target_dir}': {e}")
-        return target_dir
+        """Ensure at least one soundboard directory exists and return the primary valid directory."""
+        accessible = self.get_accessible_directories()
+        if accessible:
+            return accessible[0]
+        return self.get_candidate_directories()[0]
 
     def get_available_sounds(self) -> Dict[str, str]:
         """
-        Scan soundboard directory and return map of normalized_sound_name -> file_path.
+        Scan all accessible soundboard directories and return map of normalized_sound_name -> file_path.
         Example: {'boom': '/storage/soundboard/boom.mp3'}
         """
-        target_dir = self.ensure_directory()
         sounds: Dict[str, str] = {}
+        dirs = self.get_accessible_directories()
 
-        if not os.path.exists(target_dir) or not os.path.isdir(target_dir):
-            return sounds
-
-        try:
-            for entry in os.listdir(target_dir):
-                full_path = os.path.join(target_dir, entry)
-                if os.path.isfile(full_path):
-                    ext = os.path.splitext(entry)[1].lower()
-                    if ext in SUPPORTED_AUDIO_EXTENSIONS:
-                        base_name = os.path.splitext(entry)[0].strip().lower()
-                        if base_name:
-                            sounds[base_name] = full_path
-        except Exception as e:
-            logger.error(f"Error scanning soundboard directory '{target_dir}': {e}")
+        for target_dir in dirs:
+            try:
+                for entry in os.listdir(target_dir):
+                    full_path = os.path.join(target_dir, entry)
+                    if os.path.isfile(full_path) and os.access(full_path, os.R_OK):
+                        ext = os.path.splitext(entry)[1].lower()
+                        if ext in SUPPORTED_AUDIO_EXTENSIONS:
+                            base_name = os.path.splitext(entry)[0].strip().lower()
+                            if base_name and base_name not in sounds:
+                                sounds[base_name] = full_path
+            except (PermissionError, OSError) as e:
+                logger.warning(f"Error scanning soundboard directory '{target_dir}': {e}")
 
         return sounds
 
