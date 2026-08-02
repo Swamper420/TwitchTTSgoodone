@@ -244,6 +244,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    let currentFartBgAudio = null;
+
     // Sequential Audio Playback
     function checkAndPlayNext() {
         if (isPlaying || audioQueue.length === 0) return;
@@ -262,7 +264,24 @@ document.addEventListener('DOMContentLoaded', () => {
         overlayCard.classList.remove('idle');
         overlayCard.classList.add('speaking');
 
-        // Play Audio
+        // Parallel Fart Background Audio Playback
+        if (currentItem && currentItem.has_fart_bg) {
+            try {
+                if (currentFartBgAudio) {
+                    currentFartBgAudio.pause();
+                    currentFartBgAudio = null;
+                }
+                const fartUrl = currentItem.fart_bg_url || '/api/soundboard/fartbackground';
+                currentFartBgAudio = new Audio(fartUrl);
+                currentFartBgAudio.play().catch((err) => {
+                    console.warn('OBS Overlay fart background audio playback note:', err);
+                });
+            } catch (err) {
+                console.error('Failed to initialize OBS fart background audio:', err);
+            }
+        }
+
+        // Play Main Audio
         audioPlayer.src = currentItem.url;
         audioPlayer.play().catch((err) => {
             console.warn('OBS Overlay playback note:', err);
@@ -270,9 +289,20 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function stopFartBgAudio() {
+        if (currentFartBgAudio) {
+            try {
+                currentFartBgAudio.pause();
+                currentFartBgAudio.currentTime = 0;
+            } catch (e) {}
+            currentFartBgAudio = null;
+        }
+    }
+
     function onAudioEnded() {
         isPlaying = false;
         currentItem = null;
+        stopFartBgAudio();
 
         overlayCard.classList.remove('speaking');
         overlayCard.classList.add('idle');
@@ -288,6 +318,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function skipCurrentAudio() {
         audioPlayer.pause();
         audioPlayer.currentTime = 0;
+        stopFartBgAudio();
         onAudioEnded();
     }
 

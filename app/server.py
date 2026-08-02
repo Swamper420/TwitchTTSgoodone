@@ -117,6 +117,7 @@ def _periodic_info_loop():
 last_command_broadcast_time = 0.0
 last_speaker: Optional[str] = None
 last_speaker_time: float = 0.0
+pieruta_targets: Dict[str, bool] = {}
 
 def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str] = None, override_model: Optional[str] = None, channel: str = ""):
     """
@@ -133,6 +134,26 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
 
     if raw_text:
         raw_lower = raw_text.strip().lower()
+
+        # Command: !pieruta <username>
+        if raw_lower.startswith("!pieruta"):
+            parts = raw_text.strip().split(maxsplit=1)
+            raw_target_arg = parts[1].strip() if len(parts) > 1 else ""
+            if not raw_target_arg:
+                msg_text = "💨 Usage: !pieruta <username>"
+            else:
+                target_user = sanitize_identifier(raw_target_arg.lstrip('@'), max_len=100)
+                if target_user:
+                    pieruta_targets[target_user.lower()] = True
+                    msg_text = f"💨 Fart background sound queued for @{target_user}'s next TTS message!"
+                    logger.info(f"Chat command '!pieruta' set fartbackground target for user '{target_user}'.")
+                else:
+                    msg_text = "💨 Invalid username specified."
+
+            broadcast_event("chat_message", {"user": "System", "message": msg_text, "channel": clean_chan, "timestamp": time.time()})
+            if config.enable_chat_responses and twitch_bot:
+                twitch_bot.send_chat(msg_text, channel=clean_chan)
+            return
 
         # Command: !skip / !next / !ohita
         is_skip_cmd = (
@@ -279,6 +300,14 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
     if not chunks:
         return
 
+    # Check for pending fartbackground trigger for this speaker
+    has_fart_bg = False
+    if user:
+        clean_user_key = user.strip().lower()
+        if pieruta_targets.pop(clean_user_key, False):
+            has_fart_bg = True
+            logger.info(f"💨 Applying fartbackground audio effect for target user '{user}'.")
+
     logger.info(f"Processing text from '{user}' [#{clean_chan}]: '{text_to_speak[:40]}' -> {len(chunks)} chunks")
 
     user_saved_voice = user_voice_manager.get_voice(user)
@@ -327,6 +356,8 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                 "voice": voice_used,
                 "is_soundboard": chunk.is_soundboard,
                 "sound_name": chunk.sound_name,
+                "has_fart_bg": has_fart_bg,
+                "fart_bg_url": "/api/soundboard/fartbackground" if has_fart_bg else None,
                 "channel": clean_chan,
                 "chunk_index": chunk.chunk_index + 1,
                 "total_chunks": chunk.total_chunks,
@@ -518,6 +549,37 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             })
             return
 
+        # Route: Stream Soundboard Raw Audio File
+        if path.startswith("/api/soundboard/"):
+            raw_sound_name = path.split("/api/soundboard/", 1)[-1]
+            match = soundboard_manager.find_sound(raw_sound_name)
+            if match and os.path.exists(match[1]):
+                file_path = match[1]
+                mime_type = soundboard_manager.get_mime_type(file_path)
+                try:
+                    with open(file_path, "rb") as f:
+                        audio_bytes = f.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", mime_type)
+                    self.send_header("Content-Length", str(len(audio_bytes)))
+                    self.send_header("Cache-Control", "public, max-age=3600")
+                    self._send_cors_headers()
+                    self.end_headers()
+                    self.wfile.write(audio_bytes)
+                    return
+                except Exception as e:
+                    logger.error(f"Error serving soundboard file '{file_path}': {e}")
+                    self.send_error(500, "Error reading soundboard file")
+                    return
+            else:
+                self.send_error(404, "Sound effect not found")
+                return
+
+        # Route: Pieruta Targets List
+        if path == "/api/pieruta":
+            self._send_json(200, {"pieruta_targets": list(pieruta_targets.keys())})
+            return
+
         # Route: Kill Counter Status
         if path == "/api/counter":
             self._send_json(200, kill_counter_monitor.get_status_dict())
@@ -624,6 +686,17 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             token = sanitize_string(body.get("oauth_token"), max_len=500)
             res = twitch_token_validator.validate_token(token)
             self._send_json(200, res)
+            return
+
+        # Route: Set Pieruta Target
+        if path == "/api/pieruta":
+            raw_user = body.get("user") or body.get("username") or ""
+            target_user = sanitize_identifier(raw_user.lstrip('@'), max_len=100) if raw_user else ""
+            if not target_user:
+                self._send_json(400, {"error": "Missing or invalid 'user' parameter"})
+                return
+            pieruta_targets[target_user.lower()] = True
+            self._send_json(200, {"success": True, "target": target_user, "message": f"Fart background queued for @{target_user}'s next message"})
             return
 
         # Route: Remote / Local Kill Counter Update

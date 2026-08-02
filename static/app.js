@@ -257,6 +257,18 @@ document.addEventListener('DOMContentLoaded', () => {
         playNextChunk();
     }
 
+    let currentFartBgAudio = null;
+
+    function stopFartBgAudio() {
+        if (currentFartBgAudio) {
+            try {
+                currentFartBgAudio.pause();
+                currentFartBgAudio.currentTime = 0;
+            } catch (e) {}
+            currentFartBgAudio = null;
+        }
+    }
+
     async function playNextChunk() {
         if (bufferTimer) {
             clearTimeout(bufferTimer);
@@ -266,6 +278,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (audioQueue.length === 0) {
             isPlaying = false;
             currentItem = null;
+            stopFartBgAudio();
             if (visualizer) visualizer.classList.remove('playing');
             updateNowPlayingUI(null);
             updateQueueUI();
@@ -288,6 +301,20 @@ document.addEventListener('DOMContentLoaded', () => {
             await playChimeSound();
         }
 
+        // Parallel Fart Background Audio Playback
+        if (currentItem && currentItem.has_fart_bg) {
+            try {
+                stopFartBgAudio();
+                const fartUrl = currentItem.fart_bg_url || '/api/soundboard/fartbackground';
+                currentFartBgAudio = new Audio(fartUrl);
+                currentFartBgAudio.play().catch((err) => {
+                    console.warn('Dashboard fart background audio playback note:', err);
+                });
+            } catch (err) {
+                console.error('Failed to initialize dashboard fart background audio:', err);
+            }
+        }
+
         audioPlayer.src = currentItem.url;
         audioPlayer.volume = volumeSlider.value / 100;
         audioPlayer.load();
@@ -299,6 +326,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }).catch(err => {
             console.error('Audio playback error / Autoplay blocked:', err);
             if (visualizer) visualizer.classList.remove('playing');
+            stopFartBgAudio();
             
             // Re-queue item so it isn't lost if autoplay was blocked
             if (currentItem) {
@@ -326,6 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }).catch(err => console.warn('Skip API note:', err));
         } catch (e) {}
 
+        stopFartBgAudio();
         if (isPlaying || currentItem) {
             audioPlayer.pause();
             audioPlayer.currentTime = 0;
@@ -343,6 +372,7 @@ document.addEventListener('DOMContentLoaded', () => {
             clearTimeout(bufferTimer);
             bufferTimer = null;
         }
+        stopFartBgAudio();
         audioQueue = [];
         audioPlayer.pause();
         audioPlayer.currentTime = 0;

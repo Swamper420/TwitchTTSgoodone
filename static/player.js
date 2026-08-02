@@ -278,6 +278,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    let currentFartBgAudio = null;
+
     // Sequential Audio Player Logic
     function checkAndPlayNext() {
         if (isPlaying || audioQueue.length === 0) return;
@@ -300,6 +302,23 @@ document.addEventListener('DOMContentLoaded', () => {
         // Add to voice history log
         addHistoryItem(currentItem);
 
+        // Parallel Fart Background Audio Playback
+        if (currentItem && currentItem.has_fart_bg) {
+            try {
+                if (currentFartBgAudio) {
+                    currentFartBgAudio.pause();
+                    currentFartBgAudio = null;
+                }
+                const fartUrl = currentItem.fart_bg_url || '/api/soundboard/fartbackground';
+                currentFartBgAudio = new Audio(fartUrl);
+                currentFartBgAudio.play().catch((err) => {
+                    console.warn('Player page fart background audio playback note:', err);
+                });
+            } catch (err) {
+                console.error('Failed to initialize player page fart background audio:', err);
+            }
+        }
+
         // Load & Play Audio
         audioPlayer.src = currentItem.url;
         audioPlayer.play().catch((err) => {
@@ -311,9 +330,20 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function stopFartBgAudio() {
+        if (currentFartBgAudio) {
+            try {
+                currentFartBgAudio.pause();
+                currentFartBgAudio.currentTime = 0;
+            } catch (e) {}
+            currentFartBgAudio = null;
+        }
+    }
+
     function onAudioEnded() {
         isPlaying = false;
         currentItem = null;
+        stopFartBgAudio();
 
         if (speakerAvatar) speakerAvatar.classList.remove('active');
         if (equalizerVisualizer) equalizerVisualizer.classList.remove('playing');
@@ -332,6 +362,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function skipCurrentAudio() {
         audioPlayer.pause();
         audioPlayer.currentTime = 0;
+        stopFartBgAudio();
         onAudioEnded();
     }
 
