@@ -117,14 +117,23 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) {}
     }
 
-    // Real-time Canvas Spectrum Visualizer
+    // Real-time Canvas Spectrum Visualizer (Runs only during audio playback)
+    let isDrawing = false;
     function renderSpectrum() {
-        if (!canvasCtx || !analyser) return;
+        if (!canvasCtx || !analyser || isDrawing) return;
+        isDrawing = true;
 
         const bufferLength = analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
 
         function draw() {
+            if (!isPlaying && audioQueue.length === 0) {
+                canvasCtx.clearRect(0, 0, obsCanvas.width, obsCanvas.height);
+                isDrawing = false;
+                animFrameId = null;
+                return;
+            }
+
             animFrameId = requestAnimationFrame(draw);
             analyser.getByteFrequencyData(dataArray);
 
@@ -193,6 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         silentUnlock();
         playChimeSound();
+        renderSpectrum();
 
         // Update Overlay UI
         if (obsSpeaker) obsSpeaker.textContent = currentItem.user || 'Chatter';

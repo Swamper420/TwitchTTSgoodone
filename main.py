@@ -18,6 +18,7 @@ def main():
     parser = argparse.ArgumentParser(description="Twitch TTS Bot with Local TTS API")
     parser.add_argument("--channel", "-c", type=str, default=None, help="Twitch channel to join on startup")
     parser.add_argument("--port", "-p", type=int, default=None, help="Web server port")
+    parser.add_argument("--obs-port", type=int, default=None, help="Dedicated read-only OBS server port")
     parser.add_argument("--tts-url", type=str, default=None, help="Local TTS API endpoint")
     parser.add_argument("--voice", type=str, default=None, help="Default voice override")
     parser.add_argument("--model", type=str, default=None, help="Default model override")
@@ -31,6 +32,9 @@ def main():
         cli_updated = True
     if args.port is not None:
         config.server_port = args.port
+        cli_updated = True
+    if args.obs_port is not None:
+        config.obs_server_port = args.obs_port
         cli_updated = True
     if args.tts_url is not None:
         config.tts_api_url = args.tts_url
@@ -60,15 +64,16 @@ def main():
     print("=" * 60)
     print(" 🎙️  TWITCH TTS BOT WITH LOCAL TTS API & WEB PLAYER")
     print("=" * 60)
-    print(f" ► Environment:     {env_status}")
-    print(f" ► Web Interface:    http://localhost:{config.server_port}")
-    print(f" ► Local TTS API:    {config.tts_api_url}")
-    print(f" ► Twitch Channel:   #{config.twitch_channel if config.twitch_channel else '(None - enter in Web UI)'}")
-    print(f" ► Max Chunk Chars:  {config.max_chunk_chars}")
+    print(f" ► Environment:        {env_status}")
+    print(f" ► Admin Web Interface:{' http://localhost:' + str(config.server_port)}")
+    print(f" ► External OBS Overlay:{' http://localhost:' + str(config.obs_server_port) + '/obs (Read-Only)'}")
+    print(f" ► Local TTS API:       {config.tts_api_url}")
+    print(f" ► Twitch Channel:      #{config.twitch_channel if config.twitch_channel else '(None - enter in Web UI)'}")
+    print(f" ► Max Chunk Chars:     {config.max_chunk_chars}")
     print("=" * 60)
 
     try:
-        run_server(host=config.server_host, port=config.server_port)
+        run_server(host=config.server_host, port=config.server_port, obs_host=config.obs_server_host, obs_port=config.obs_server_port)
     except KeyboardInterrupt:
         print("\nExiting Twitch TTS Bot. Goodbye!")
         sys.exit(0)

@@ -725,7 +725,144 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             self.send_error(500, "Internal server error")
 
 
-def run_server(host: str = "0.0.0.0", port: int = 5000):
+class OBSRequestHandler(BaseHTTPRequestHandler):
+    """
+    Dedicated, read-only HTTP request handler for the OBS Overlay server port.
+    Security Maxxing:
+    - Rejects all mutating methods (POST, PUT, DELETE, OPTIONS, etc.) with HTTP 405.
+    - Whitelists only OBS static files (obs.html, obs.css, obs.js), /api/events (SSE), and /api/audio/<chunk_id>.
+    - Does NOT leak administrative pages, configuration tokens, or Twitch credentials.
+    """
+
+    def log_message(self, format, *args):
+        pass
+
+    def _send_security_headers(self):
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Frame-Options", "ALLOWALL")
+        self.send_header("Content-Security-Policy", "default-src 'self' 'unsafe-inline' data:; media-src 'self' blob: data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self';")
+        self.send_header("Access-Control-Allow-Origin", "*")
+
+    def _reject_method(self):
+        self.send_response(405)
+        self.send_header("Content-Type", "application/json")
+        self._send_security_headers()
+        self.end_headers()
+        self.wfile.write(json.dumps({"error": "Method Not Allowed - OBS Overlay server is read-only"}).encode("utf-8"))
+
+    def do_POST(self):
+        self._reject_method()
+
+    def do_PUT(self):
+        self._reject_method()
+
+    def do_DELETE(self):
+        self._reject_method()
+
+    def do_PATCH(self):
+        self._reject_method()
+
+    def do_OPTIONS(self):
+        self._reject_method()
+
+    def do_GET(self):
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+
+        # Whitelist 1: Read-Only SSE Event Stream for OBS Audio Player
+        if path == "/api/events":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self._send_security_headers()
+            self.end_headers()
+
+            client_q = queue.Queue()
+            sse_clients.append(client_q)
+
+            # Send minimal status payload (no admin tokens, passwords, or configs)
+            init_payload = f"event: status\ndata: {json.dumps({'obs_ready': True})}\n\n"
+            try:
+                self.wfile.write(init_payload.encode("utf-8"))
+                self.wfile.flush()
+            except Exception:
+                if client_q in sse_clients:
+                    sse_clients.remove(client_q)
+                return
+
+            try:
+                while True:
+                    try:
+                        msg = client_q.get(timeout=450)
+                        self.wfile.write(msg.encode("utf-8"))
+                        self.wfile.flush()
+                    except queue.Empty:
+                        self.wfile.write(b": ping\n\n")
+                        self.wfile.flush()
+            except (ConnectionResetError, BrokenPipeError):
+                pass
+            finally:
+                if client_q in sse_clients:
+                    sse_clients.remove(client_q)
+            return
+
+        # Whitelist 2: Stream Synthesized Audio Chunk
+        if path.startswith("/api/audio/"):
+            raw_id = path.split("/api/audio/")[-1]
+            chunk_id = sanitize_identifier(raw_id, max_len=64)
+            if chunk_id and chunk_id in audio_store:
+                audio_bytes, mime_type, _ = audio_store[chunk_id]
+                self.send_response(200)
+                self.send_header("Content-Type", mime_type)
+                self.send_header("Content-Length", str(len(audio_bytes)))
+                self.send_header("Cache-Control", "public, max-age=3600")
+                self._send_security_headers()
+                self.end_headers()
+                self.wfile.write(audio_bytes)
+                return
+            else:
+                self.send_error(404, "Audio chunk not found")
+                return
+
+        # Whitelist 3: OBS Overlay HTML Page
+        if path in ("/", "/obs", "/obs.html", "/overlay", "/overlay.html"):
+            file_path = os.path.join(STATIC_DIR, "obs.html")
+            self._serve_static_file(file_path, "text/html; charset=utf-8")
+            return
+
+        # Whitelist 4: OBS CSS Asset
+        if path == "/obs.css":
+            file_path = os.path.join(STATIC_DIR, "obs.css")
+            self._serve_static_file(file_path, "text/css")
+            return
+
+        # Whitelist 5: OBS JS Asset
+        if path == "/obs.js":
+            file_path = os.path.join(STATIC_DIR, "obs.js")
+            self._serve_static_file(file_path, "application/javascript")
+            return
+
+        # Block all administrative or un-whitelisted routes
+        self.send_error(404, "Not Found")
+
+    def _serve_static_file(self, filepath: str, mime_type: str):
+        try:
+            with open(filepath, "rb") as f:
+                content = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", mime_type)
+            self.send_header("Content-Length", str(len(content)))
+            self._send_security_headers()
+            self.end_headers()
+            self.wfile.write(content)
+        except Exception as e:
+            logger.error(f"Error reading OBS static file {filepath}: {e}")
+            self.send_error(500, "Internal server error")
+
+
+def run_server(host: str = "0.0.0.0", port: int = 5000, obs_host: str = "0.0.0.0", obs_port: int = 5001):
     global twitch_bot
     
     # Initialize Twitch bot listener
@@ -740,14 +877,25 @@ def run_server(host: str = "0.0.0.0", port: int = 5000):
     p_thread = threading.Thread(target=_periodic_info_loop, daemon=True)
     p_thread.start()
 
+    # Start dedicated read-only OBS Overlay HTTP Server
+    obs_httpd = None
+    if obs_port != port:
+        obs_address = (obs_host, obs_port)
+        obs_httpd = ThreadingHTTPServer(obs_address, OBSRequestHandler)
+        obs_thread = threading.Thread(target=obs_httpd.serve_forever, daemon=True)
+        obs_thread.start()
+        logger.info(f"Dedicated Read-Only OBS Overlay Server running on http://{obs_host}:{obs_port}/obs")
+
     server_address = (host, port)
     httpd = ThreadingHTTPServer(server_address, TTSRequestHandler)
-    logger.info(f"Twitch TTS Bot Web Server running on http://{host}:{port}")
+    logger.info(f"Twitch TTS Admin Web Server running on http://{host}:{port}")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        logger.info("Stopping server...")
+        logger.info("Stopping servers...")
     finally:
         if twitch_bot:
             twitch_bot.stop()
+        if obs_httpd:
+            obs_httpd.server_close()
         httpd.server_close()

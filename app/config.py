@@ -15,6 +15,8 @@ ENV_KEYS = {
     "min_chunk_chars": "MIN_CHUNK_CHARS",
     "server_host": "SERVER_HOST",
     "server_port": "SERVER_PORT",
+    "obs_server_host": "OBS_SERVER_HOST",
+    "obs_server_port": "OBS_SERVER_PORT",
     "twitch_channel": "TWITCH_CHANNEL",
     "user_template": "USER_TEMPLATE",
     "voice_presets": "VOICE_PRESETS",
@@ -79,6 +81,8 @@ class Config:
     min_chunk_chars: int = field(default_factory=lambda: int(os.getenv("MIN_CHUNK_CHARS", "10")))
     server_host: str = field(default_factory=lambda: os.getenv("SERVER_HOST", "0.0.0.0"))
     server_port: int = field(default_factory=lambda: int(os.getenv("SERVER_PORT", "5000")))
+    obs_server_host: str = field(default_factory=lambda: os.getenv("OBS_SERVER_HOST", "0.0.0.0"))
+    obs_server_port: int = field(default_factory=lambda: int(os.getenv("OBS_SERVER_PORT", "5001")))
     twitch_channel: str = field(default_factory=lambda: os.getenv("TWITCH_CHANNEL", "m_e_s_t_a_a_j_a"))
     user_template: str = field(default_factory=lambda: os.getenv("USER_TEMPLATE", "{user} sanoo: {text}"))
     voice_presets: str = field(default_factory=lambda: os.getenv("VOICE_PRESETS", "mieto, terapisti, terry, tuomo4, niilo"))
@@ -173,6 +177,8 @@ class Config:
             "min_chunk_chars": self.min_chunk_chars,
             "server_host": self.server_host,
             "server_port": self.server_port,
+            "obs_server_host": self.obs_server_host,
+            "obs_server_port": self.obs_server_port,
             "twitch_channel": self.twitch_channel,
             "user_template": self.user_template,
             "voice_presets": self.voice_presets,
