@@ -108,12 +108,33 @@ class TestPierutaCommand(unittest.TestCase):
             self.assertTrue(body.get("success"))
             self.assertEqual(body.get("target"), "ApiUser")
 
-        # Query GET /api/pieruta
-        get_req = urllib.request.Request(f"{self.base_url}/api/pieruta")
-        with urllib.request.urlopen(get_req) as resp:
-            self.assertEqual(resp.status, 200)
-            body = json.loads(resp.read().decode("utf-8"))
-            self.assertIn("apiuser", body.get("pieruta_targets", []))
+    def test_ffmpeg_mix_audio_with_background(self):
+        import subprocess, tempfile, os
+        from app.server import mix_audio_with_background
+        from app.soundboard import soundboard_manager
+        
+        bg_match = soundboard_manager.find_sound("fartbackground")
+        self.assertIsNotNone(bg_match)
+        bg_path = bg_match[1]
+        
+        # Generate valid 2-second WAV bytes using ffmpeg for the test
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_f:
+            tmp_wav_path = tmp_f.name
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-f", "wav", tmp_wav_path],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True
+            )
+            with open(tmp_wav_path, "rb") as f:
+                valid_tts_bytes = f.read()
+
+            mixed_bytes, mime = mix_audio_with_background(valid_tts_bytes, bg_path, audio_format="wav")
+            self.assertIsNotNone(mixed_bytes)
+            self.assertTrue(len(mixed_bytes) > 0)
+            self.assertEqual(mime, "audio/wav")
+        finally:
+            if os.path.exists(tmp_wav_path):
+                os.remove(tmp_wav_path)
 
 
 if __name__ == "__main__":

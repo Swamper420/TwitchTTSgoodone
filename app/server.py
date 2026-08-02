@@ -3,6 +3,8 @@ import logging
 import os
 import queue
 import random
+import subprocess
+import tempfile
 import threading
 import time
 import uuid
@@ -118,6 +120,63 @@ last_command_broadcast_time = 0.0
 last_speaker: Optional[str] = None
 last_speaker_time: float = 0.0
 pieruta_targets: Dict[str, bool] = {}
+
+def mix_audio_with_background(tts_audio_bytes: bytes, bg_file_path: str, audio_format: str = "wav") -> Tuple[bytes, str]:
+    """
+    Mixes tts_audio_bytes with a background audio file (e.g. fartbackground.mp3) using ffmpeg amix.
+    Returns tuple of (mixed_audio_bytes, mime_type).
+    """
+    if not bg_file_path or not os.path.exists(bg_file_path):
+        fmt = audio_format or "wav"
+        mime = "audio/mpeg" if fmt == "mp3" else f"audio/{fmt}"
+        return tts_audio_bytes, mime
+
+    fmt = audio_format or "wav"
+    out_fmt = "wav" if fmt not in ("mp3", "wav", "ogg") else fmt
+    mime_type = "audio/mpeg" if out_fmt == "mp3" else f"audio/{out_fmt}"
+
+    tts_tmp = None
+    out_tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=f".{out_fmt}", delete=False) as f:
+            f.write(tts_audio_bytes)
+            tts_tmp = f.name
+
+        out_tmp = tts_tmp + f"_mixed.{out_fmt}"
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", tts_tmp,
+            "-i", bg_file_path,
+            "-filter_complex", "[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=2[aout]",
+            "-map", "[aout]",
+            "-f", out_fmt,
+            out_tmp
+        ]
+
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        if res.returncode == 0 and os.path.exists(out_tmp) and os.path.getsize(out_tmp) > 0:
+            with open(out_tmp, "rb") as f:
+                mixed_bytes = f.read()
+            logger.info(f"⚡ ffmpeg mixed TTS audio with background sound '{os.path.basename(bg_file_path)}' ({len(mixed_bytes)} bytes).")
+            return mixed_bytes, mime_type
+        else:
+            logger.warning(f"ffmpeg mixing warning (exit code {res.returncode}): {res.stderr.decode('utf-8', errors='ignore')}")
+            return tts_audio_bytes, mime_type
+    except Exception as e:
+        logger.error(f"Error mixing audio with ffmpeg: {e}")
+        return tts_audio_bytes, mime_type
+    finally:
+        if tts_tmp and os.path.exists(tts_tmp):
+            try:
+                os.remove(tts_tmp)
+            except Exception:
+                pass
+        if out_tmp and os.path.exists(out_tmp):
+            try:
+                os.remove(out_tmp)
+            except Exception:
+                pass
 
 def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str] = None, override_model: Optional[str] = None, channel: str = ""):
     """
@@ -347,6 +406,15 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                     audio_format=config.tts_format
                 )
                 voice_used = voice_to_use or "default"
+
+                if has_fart_bg:
+                    bg_match = soundboard_manager.find_sound("fartbackground")
+                    if bg_match and os.path.exists(bg_match[1]):
+                        audio_bytes, mime_type = mix_audio_with_background(
+                            tts_audio_bytes=audio_bytes,
+                            bg_file_path=bg_match[1],
+                            audio_format=config.tts_format
+                        )
             
             chunk_id = f"chunk_{uuid.uuid4().hex[:12]}"
             item_meta = {
