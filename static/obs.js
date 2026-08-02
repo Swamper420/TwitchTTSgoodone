@@ -6,8 +6,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const obsSpeaker = document.getElementById('obsSpeaker');
     const obsText = document.getElementById('obsText');
-    const obsVoiceTag = document.getElementById('obsVoiceTag');
-    const obsChunkTag = document.getElementById('obsChunkTag');
     const obsAvatar = document.getElementById('obsAvatar');
     
     const obsCanvas = document.getElementById('obsCanvas');
@@ -139,23 +137,47 @@ document.addEventListener('DOMContentLoaded', () => {
             animFrameId = requestAnimationFrame(draw);
             analyser.getByteFrequencyData(dataArray);
 
+            if (obsCanvas.clientWidth && obsCanvas.width !== obsCanvas.clientWidth) {
+                obsCanvas.width = obsCanvas.clientWidth;
+            }
+
             canvasCtx.clearRect(0, 0, obsCanvas.width, obsCanvas.height);
 
-            const barWidth = (obsCanvas.width / bufferLength) * 1.5;
-            let barHeight;
+            const numBars = 20; // Chunky blocky bar count
+            const barGap = 2;   // Horizontal gap between chunky bars
+            const step = Math.max(1, Math.floor(bufferLength / numBars));
+            const barWidth = Math.max(3, Math.floor((obsCanvas.width - (numBars * barGap)) / numBars));
+
+            const blockHeight = 2; // Vertical pixel block height
+            const blockGap = 1;    // Vertical gap between block segments
+            const maxBlocks = Math.floor(obsCanvas.height / (blockHeight + blockGap));
+
             let x = 0;
 
-            for (let i = 0; i < bufferLength; i++) {
-                barHeight = (dataArray[i] / 255) * obsCanvas.height;
+            for (let i = 0; i < numBars; i++) {
+                let sum = 0;
+                for (let j = 0; j < step; j++) {
+                    sum += dataArray[i * step + j] || 0;
+                }
+                const val = sum / step;
+                const ratio = val / 255;
+                const activeBlocks = Math.round(ratio * maxBlocks);
 
-                const gradient = canvasCtx.createLinearGradient(0, obsCanvas.height, 0, 0);
-                gradient.addColorStop(0, '#8ba079');
-                gradient.addColorStop(1, '#c5d7b5');
+                for (let b = 0; b < maxBlocks; b++) {
+                    const blockY = obsCanvas.height - ((b + 1) * (blockHeight + blockGap));
 
-                canvasCtx.fillStyle = gradient;
-                canvasCtx.fillRect(x, obsCanvas.height - barHeight, barWidth - 2, barHeight);
+                    if (b < activeBlocks) {
+                        // Active retro green block
+                        canvasCtx.fillStyle = (b >= maxBlocks - 1) ? '#e2f0d9' : ((b >= maxBlocks - 2) ? '#c5d7b5' : '#8ba079');
+                    } else {
+                        // Dimmed pixel block background trace
+                        canvasCtx.fillStyle = 'rgba(55, 65, 50, 0.35)';
+                    }
 
-                x += barWidth + 1;
+                    canvasCtx.fillRect(Math.floor(x), Math.floor(blockY), barWidth, blockHeight);
+                }
+
+                x += barWidth + barGap;
             }
         }
         draw();
@@ -167,7 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const evtSource = new EventSource(sseUrl);
 
         evtSource.onopen = () => {
-            if (liveText) liveText.textContent = filterChannel ? `STREAM TTS (#${filterChannel.toUpperCase()})` : 'STREAM TTS';
+            if (liveText) liveText.textContent = 'TTS';
         };
 
         evtSource.onerror = () => {
@@ -233,12 +255,9 @@ document.addEventListener('DOMContentLoaded', () => {
         playChimeSound();
         renderSpectrum();
 
-        // Update Overlay UI
+        // Update Overlay UI (Essential Username & Text only)
         if (obsSpeaker) obsSpeaker.textContent = currentItem.user || 'Chatter';
         if (obsText) obsText.textContent = currentItem.text || '';
-        const chanLabel = currentItem.channel ? ` • #${currentItem.channel.toUpperCase()}` : '';
-        if (obsVoiceTag) obsVoiceTag.textContent = `VOICE: ${(currentItem.voice || 'DEFAULT').toUpperCase()}${chanLabel}`;
-        if (obsChunkTag) obsChunkTag.textContent = `CHUNK ${currentItem.chunk_index || 1}/${currentItem.total_chunks || 1}`;
 
         overlayCard.classList.remove('idle');
         overlayCard.classList.add('speaking');
@@ -263,7 +282,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             if (obsSpeaker) obsSpeaker.textContent = 'Waiting for TTS...';
             if (obsText) obsText.textContent = 'Twitch TTS Voice Overlay ready.';
-            if (obsChunkTag) obsChunkTag.textContent = 'Ready';
         }
     }
 

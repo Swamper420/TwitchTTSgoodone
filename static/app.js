@@ -168,18 +168,39 @@ document.addEventListener('DOMContentLoaded', () => {
         const height = spectrumCanvas.height;
         canvasCtx.clearRect(0, 0, width, height);
 
-        const barWidth = (width / bufferLength) * 1.5;
+        const numBars = 20;
+        const barGap = 3;
+        const step = Math.max(1, Math.floor(bufferLength / numBars));
+        const barWidth = Math.max(4, Math.floor((width - (numBars * barGap)) / numBars));
+
+        const blockHeight = 4;
+        const blockGap = 2;
+        const maxBlocks = Math.floor(height / (blockHeight + blockGap));
+
         let x = 0;
 
-        for (let i = 0; i < bufferLength; i++) {
-            const barHeight = isPlaying ? (dataArray[i] / 255) * height : 2;
-            const gradient = canvasCtx.createLinearGradient(0, height, 0, 0);
-            gradient.addColorStop(0, '#9146ff');
-            gradient.addColorStop(1, '#00f0ff');
+        for (let i = 0; i < numBars; i++) {
+            let sum = 0;
+            for (let j = 0; j < step; j++) {
+                sum += dataArray[i * step + j] || 0;
+            }
+            const val = isPlaying ? (sum / step) : 0;
+            const ratio = val / 255;
+            const activeBlocks = Math.round(ratio * maxBlocks);
 
-            canvasCtx.fillStyle = gradient;
-            canvasCtx.fillRect(x, height - barHeight, barWidth - 1, barHeight);
-            x += barWidth + 1;
+            for (let b = 0; b < maxBlocks; b++) {
+                const blockY = height - ((b + 1) * (blockHeight + blockGap));
+
+                if (b < activeBlocks) {
+                    canvasCtx.fillStyle = (b >= maxBlocks - 2) ? '#c5d7b5' : '#8ba079';
+                } else {
+                    canvasCtx.fillStyle = 'rgba(55, 65, 50, 0.25)';
+                }
+
+                canvasCtx.fillRect(Math.floor(x), Math.floor(blockY), barWidth, blockHeight);
+            }
+
+            x += barWidth + barGap;
         }
     }
 
