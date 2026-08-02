@@ -1,107 +1,121 @@
-# 🎙️ Twitch TTS Bot with Local TTS API & Web Player
+# 🕹️ Steam 2004 Twitch TTS Bot with Local TTS API & Web Overlay
 
-A lightweight, simple, and high-performance Python Twitch TTS (Text-To-Speech) Bot with a local TTS API client, text chunking, multi-voice tag support, and a sleek web audio overlay for streamers.
+A lightweight, simple, and high-performance Python Twitch TTS (Text-To-Speech) Bot with a local TTS API client, text chunking, multi-voice tag support, dual continuous stream support, and a classic Steam 2004 style web audio overlay for streamers.
 
 ---
 
 ## ✨ Features
 
+- **Dual Continuous Stream Support**: Connect to up to 2 Twitch channels simultaneously (e.g. `channel1, channel2`).
+- **Dedicated Read-Only OBS Overlay Server**: Runs on a separate dedicated port (default `5001`) with read-only security maxxing.
+- **Per-Channel OBS Audio & Event Routing**: OBS overlay instances can target a specific channel via `?channel=channelname`.
+- **OBS URL Modifiers**: Customize position, volume, auto-hide, font size, and chime sound directly via URL query parameters.
+- **Steam 2004 Classic Aesthetic**: Retro dark-green interface with live spectrum visualizer, mute controls, and keyboard shortcuts.
 - **Local TTS API Integration**: Connects to `http://localhost:8080/api/tts` (GET or POST) supporting `text`, `voice`, `model`, and `format` (`wav`, `ogg`, `json`).
 - **Multi-Voice Tag Support**: Users can trigger different voices within a single message using `[voicename]` tags (e.g. `[alice] Hello world! [bob] How are you?`).
-- **Smart Text Chunking**: Automatically sanitizes messages (strips URLs, reduces spam) and splits text at sentence/clause boundaries (`.`, `!`, `?`, `,`, `;`) into smaller chunks for fast TTS generation and minimal audio latency.
-- **Web Audio Player & Overlay**: Dark-mode dashboard and OBS Browser Source with live HTML5 Audio queue, visual equalizer, auto-play, skip track, volume controls, and live chat feed.
-- **Modern Twitch OAuth 2.0 Validation**: Directly validates Twitch access tokens against the official Twitch API (`https://id.twitch.tv/oauth2/validate`). Displays live scope health (`chat:read`, `chat:edit`), User ID, Client ID, and expiration metadata.
-- **Auto-Bot Username Detection**: Leave bot username blank and the bot automatically detects and populates your bot username from Twitch OAuth token metadata!
-- **Masked Credential Security**: OAuth tokens and passwords are automatically masked in web settings and public SSE streams (`oauth:••••••••4a2b`) to prevent stream overlay leaks.
-- **Dashboard Admin Protection**: Secure web dashboard configuration routes with an optional `ADMIN_PASSWORD` and token session authentication (`X-Admin-Token`).
-- **Anonymous Twitch Connection**: Connect to any public Twitch channel in read-only mode (`justinfan`) without needing Twitch API keys or OAuth setup!
+- **Smart Text Chunking & Sanitization**: Automatically strips URLs, reduces spam, and splits text at clause boundaries (`.`, `!`, `?`, `,`, `;`) into smaller chunks for low audio latency.
+- **Twitch Chat Bot & Signature Voices**: Chatters can set signature TTS voices with `!myvoice <voicename>` and reset with `!myvoice reset`.
+- **Modern Twitch OAuth 2.0 & Anonymous Mode**: Auto-detects bot username from OAuth token or connects anonymously in read-only mode (`justinfan`).
 
 ---
 
-## 🤖 Real Twitch Chat Bot & Commands
+## 🚀 Quick Start & Usage Instructions
 
-When configured with bot credentials (or through the Web UI Settings):
-- **`!help` / `!tts` / `!botinfo`**: Explains how TTS works, voice tags, and setting custom signature voices.
-- **`!voices`**: Lists available voice presets.
-- **`!myvoice <voicename>`**: Sets the chatter's personal signature voice (e.g. `!myvoice mieto`) or resets with `!myvoice reset`.
-
-### Setting Up Modern Twitch Bot OAuth:
-1. Obtain a Twitch OAuth token for your bot account from [twitchapps.com/tmi/](https://twitchapps.com/tmi/).
-2. Enter your **OAuth Token** (`oauth:xxxxxxxxxxxxx` or raw bearer token) in the Web Dashboard.
-3. Click **⚡ Validate Token** to test permissions against Twitch API and auto-detect your bot username!
-4. Save settings to activate real chat bot responses.
-
----
-
-## 🚀 Quick Start
-
-### 1. Run the Bot & Web Interface
+### 1. Installation
 
 ```bash
-python3 main.py --channel streamername --port 5000
+git clone https://github.com/Swamper420/TwitchTTSgoodone.git
+cd TwitchTTSgoodone
+
+# Set up virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
 ```
 
-Open your browser to:
-👉 **`http://localhost:5000`**
+### 2. Running the Bot
+
+```bash
+# Connect to 1 or 2 Twitch channels on startup:
+python3 main.py --channel "streamer1, streamer2" --port 5000 --obs-port 5001
+```
+
+Once running:
+- **Admin Dashboard**: `http://localhost:5000`
+- **End-User Standalone Player**: `http://localhost:5000/player`
+- **Dedicated Read-Only OBS Overlay**: `http://localhost:5001/obs`
 
 ---
 
-## 🎙️ Multi-Voice Tag Usage
+## 📺 OBS Studio Setup & URL Modifiers
 
-Streamers and chatters can use `[voicename]` tags directly in Twitch chat or in the web test console:
+Add a **Browser Source** in OBS Studio pointing to the OBS Overlay Server (`http://localhost:5001/obs`).
 
+### Single Stream / Multi-Stream URL Routing:
+- **All Channels Combined**: `http://localhost:5001/obs`
+- **Channel 1 Only**: `http://localhost:5001/obs?channel=channel1`
+- **Channel 2 Only**: `http://localhost:5001/obs?channel=channel2`
+
+### Supported URL Query Parameter Modifiers:
+
+| Modifier | Example | Description |
+| :--- | :--- | :--- |
+| `?channel=name` or `?ch=name` | `?channel=shroud` | Target a specific Twitch stream instance for isolated audio. |
+| `?autohide=1` or `?hide_idle=1` | `?autohide=1` | Automatically fade out the overlay card when idle (no active speech). |
+| `?volume=80` | `?volume=70` | Override audio playback volume level (0 to 100). |
+| `?position=pos` or `?pos=pos` | `?pos=bottom-right` | Position overlay: `bottom-left`, `bottom-right`, `top-left`, `top-right`, or `center`. |
+| `?chime=0` or `?chime=false` | `?chime=0` | Disable the start notification chime sound before TTS audio. |
+| `?font_size=20` | `?font_size=24` | Custom font size for the message text (in pixels). |
+
+#### Combined Example:
 ```text
-Hello everyone! [alice] Welcome to the stream! [bob] Glad to be here today!
-```
-
-- Text before any tag uses the default configured voice.
-- Each `[voicename]` segment is split into chunks and generated using that voice name override.
-
----
-
-## 📡 Local TTS API Endpoint Specs
-
-The bot connects to your local TTS API at `http://localhost:8080/api/tts`.
-
-### Parameters:
-- `text` *(string, required)*: Text string to synthesize.
-- `voice` *(string, optional)*: Reference voice filename or identifier.
-- `model` *(string, optional)*: Model engine override.
-- `format` *(string, optional)*: Output audio format — `"wav"`, `"ogg"`, `"pcm"`, or `"json"`.
-
-### API Examples:
-```bash
-# 1. Download WAV speech file
-curl -o speech.wav "http://localhost:8080/api/tts?text=Hello%20world&format=wav"
-
-# 2. POST JSON payload
-curl -X POST http://localhost:8080/api/tts \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Hello world", "voice": "alice", "format": "wav"}' \
-  --output speech.wav
+http://localhost:5001/obs?channel=shroud&autohide=1&volume=75&position=bottom-right&font_size=22
 ```
 
 ---
 
-## 🖥️ OBS Studio Setup
+## 🤖 Twitch Chat Bot Commands
 
-1. Open **OBS Studio**.
-2. Add a new **Browser Source**.
-3. Set URL to `http://localhost:5000`.
-4. Set Width: `800`, Height: `600`.
-5. Check **Control audio via OBS** (optional) and click **OK**.
+When bot OAuth credentials are provided:
+- **`!help` / `!tts` / `!botinfo`**: Posts helpful info about TTS commands and multi-voice tags.
+- **`!voices`**: Lists available voice presets.
+- **`!myvoice <voicename>`**: Sets chatter's signature TTS voice (e.g. `!myvoice mieto`).
+- **`!myvoice reset`**: Resets chatter's signature voice to default.
 
 ---
 
-## ⚙️ Configuration & Options
+## 🎙️ Multi-Voice Chat Usage
+
+Chatters can use inline `[voicename]` tags in chat:
+```text
+Hello everyone! [alice] Welcome to the stream! [bob] Glad to be here!
+```
+
+---
+
+## ⚙️ Configuration & Environment
 
 Command-line flags:
 ```bash
 python3 main.py --help
-  --channel CHANNEL, -c CHANNEL Twitch channel name
-  --port PORT, -p PORT          Web server port (default 5000)
+  --channel CHANNEL, -c CHANNEL Twitch channel(s) to join (comma-separated, max 2)
+  --port PORT, -p PORT          Admin web server port (default 5000)
+  --obs-port OBS_PORT           Dedicated OBS overlay server port (default 5001)
   --tts-url TTS_URL             Local TTS API endpoint (default http://localhost:8080/api/tts)
   --voice VOICE                 Default voice override
   --model MODEL                 Default model override
-  --max-chunk MAX_CHUNK         Max chunk length in characters (default 100)
+  --max-chunk MAX_CHUNK         Max chunk length in characters
+```
+
+> 💡 **Note on `.env` vs Web UI settings:**  
+> If `TWITCH_CHANNEL` is defined in your `.env` file, it will take priority on server startup. To make settings entered in the Web UI persist across restarts, leave `TWITCH_CHANNEL` empty or commented out in `.env` (e.g., `# TWITCH_CHANNEL=`).
+
+---
+
+## 🧪 Running Tests
+
+```bash
+./venv/bin/python3 -m unittest discover tests
 ```
