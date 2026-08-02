@@ -156,20 +156,35 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                     twitch_bot.send_chat(voices_msg, channel=clean_chan)
             return
 
-        # Command: !soundboard / !sounds
-        if raw_lower in ("!soundboard", "!sounds", "!sound"):
+        # Command / Query: Soundboard sound effects request (!sounds, !soundboard, !sfx, "what sound effects", etc.)
+        is_sound_query = (
+            raw_lower in ("!soundboard", "!sounds", "!sound", "!sfx", "!effects", "!soundslist", "!audioeffects") or
+            (raw_lower.startswith("!") and any(k in raw_lower for k in ("sound", "sfx", "effect"))) or
+            any(phrase in raw_lower for phrase in (
+                "what sound effects", "which sound effects", "list sound effects",
+                "available sound effects", "show sound effects", "what sounds",
+                "mitä soundeja", "mitä ääniefektejä", "mitä efektejä"
+            ))
+        )
+        if is_sound_query:
             now = time.time()
             if now - last_command_broadcast_time > 3.0:
                 last_command_broadcast_time = now
                 available_sounds = list(soundboard_manager.get_available_sounds().keys())
                 if available_sounds:
-                    sounds_str = ", ".join(available_sounds[:20])
-                    sb_msg = f"🔊 Available Soundboard sounds: [{sounds_str}]. Type (soundname) in chat to play!"
+                    sounds_str = ", ".join(available_sounds[:25])
+                    sb_msg = f"🔊 Available sound effects: {sounds_str}. Type (soundname) in chat to play!"
+                    tts_speech = f"Saatavilla olevat ääniefektit ovat: {sounds_str}"
                 else:
                     sb_msg = f"🔊 Soundboard is active! Add soundboard .mp3 files into {soundboard_manager.directory} to play them using (soundname) in chat."
+                    tts_speech = "Soundboardilla ei ole vielä ääniefektejä."
+
                 broadcast_event("chat_message", {"user": "System", "message": sb_msg, "channel": clean_chan, "timestamp": time.time()})
                 if config.enable_chat_responses and twitch_bot:
                     twitch_bot.send_chat(sb_msg, channel=clean_chan)
+
+                # Synthesize and speak available sound effect filenames aloud via TTS
+                process_incoming_text(user=None, raw_text=tts_speech, channel=clean_chan)
             return
 
         # Command: !myvoice / !voice
