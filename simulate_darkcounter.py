@@ -58,7 +58,8 @@ def main():
     parser = argparse.ArgumentParser(description="DarkCounter Simulator for testing TwitchTTS without the game")
     parser.add_argument("--file", "-f", type=str, default="values/deaths", help="Path to counter file (default: values/deaths)")
     parser.add_argument("--server", "-s", type=str, default="", help="TwitchTTS server URL for remote HTTP simulation (e.g. http://localhost:5000)")
-    parser.add_argument("--token", "-t", type=str, default="", help="Counter API token / admin password (if auth is enabled)")
+    default_token = os.getenv("KILL_COUNTER_API_TOKEN") or os.getenv("DARKCOUNTER_TOKEN") or os.getenv("ADMIN_TOKEN", "")
+    parser.add_argument("--token", "-t", type=str, default=default_token, help="Counter API token / admin password (if auth is enabled)")
     parser.add_argument("--auto", "-a", type=float, default=0.0, help="Auto increment interval in seconds (e.g. --auto 5)")
     parser.add_argument("--start", type=int, default=0, help="Initial count to start from (default: 0)")
 

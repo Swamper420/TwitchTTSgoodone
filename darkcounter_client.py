@@ -69,7 +69,8 @@ def main():
     parser = argparse.ArgumentParser(description="DarkCounter Remote Client for TwitchTTS")
     parser.add_argument("--server", "-s", type=str, default="http://localhost:5000", help="TwitchTTS server URL (e.g. http://192.168.1.100:5000)")
     parser.add_argument("--file", "-f", type=str, default="values/deaths", help="Path to DarkCounter output file (e.g. values/deaths)")
-    parser.add_argument("--token", "-t", type=str, default="", help="Admin token (if server auth is enabled)")
+    default_token = os.getenv("KILL_COUNTER_API_TOKEN") or os.getenv("DARKCOUNTER_TOKEN") or os.getenv("ADMIN_TOKEN", "")
+    parser.add_argument("--token", "-t", type=str, default=default_token, help="Admin token or KILL_COUNTER_API_TOKEN (if auth is enabled)")
     parser.add_argument("--poll", "-p", type=float, default=1.0, help="Poll interval in seconds")
 
     args = parser.parse_args()
