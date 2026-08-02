@@ -118,7 +118,7 @@ class Config:
     soundboard_dir: str = field(default_factory=lambda: os.getenv("SOUNDBOARD_DIR", os.path.join(BASE_DIR, "storage", "soundboard")))
     enable_soundboard: bool = field(default_factory=lambda: os.getenv("ENABLE_SOUNDBOARD", "true").lower() in ("true", "1", "yes"))
     shouting_voices: str = field(default_factory=lambda: os.getenv("SHOUTING_VOICES", "dracula"))
-    effect_8d_speed: float = field(default_factory=lambda: float(os.getenv("EFFECT_8D_SPEED", "0.15")))
+    effect_8d_speed: float = field(default_factory=lambda: float(os.getenv("EFFECT_8D_SPEED", "0.5")))
 
     def load(self, filepath: str = CONFIG_FILE):
         """Load configuration from JSON file if present, respecting environment variable overrides."""
