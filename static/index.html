@@ -89,6 +89,43 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- URL Modifiers Hints Panel -->
+                <div class="obs-modifiers-hints" style="margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--border-color);">
+                    <div style="font-size: 13px; font-weight: 700; color: var(--text-main); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                        <span>💡 Available OBS Overlay URL Modifiers (Query Parameters):</span>
+                    </div>
+                    <div class="modifiers-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; font-size: 12px; color: var(--text-muted);">
+                        <div style="background: rgba(0,0,0,0.3); padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                            <code style="color: var(--accent-cyan); font-weight: 600;">?channel=name</code> or <code style="color: var(--accent-cyan);">?ch=name</code>
+                            <div style="margin-top: 2px;">Target specific channel (e.g. <code>?channel=shroud</code>)</div>
+                        </div>
+                        <div style="background: rgba(0,0,0,0.3); padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                            <code style="color: var(--accent-cyan); font-weight: 600;">?autohide=1</code> or <code style="color: var(--accent-cyan);">?hide_idle=1</code>
+                            <div style="margin-top: 2px;">Fade out overlay card when idle / not speaking</div>
+                        </div>
+                        <div style="background: rgba(0,0,0,0.3); padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                            <code style="color: var(--accent-cyan); font-weight: 600;">?volume=80</code> (0 - 100)
+                            <div style="margin-top: 2px;">Override audio volume level (e.g. <code>?volume=50</code>)</div>
+                        </div>
+                        <div style="background: rgba(0,0,0,0.3); padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                            <code style="color: var(--accent-cyan); font-weight: 600;">?position=pos</code> or <code style="color: var(--accent-cyan);">?pos=pos</code>
+                            <div style="margin-top: 2px;">Position: <code>bottom-left</code>, <code>bottom-right</code>, <code>top-left</code>, <code>top-right</code>, <code>center</code></div>
+                        </div>
+                        <div style="background: rgba(0,0,0,0.3); padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                            <code style="color: var(--accent-cyan); font-weight: 600;">?chime=0</code> or <code style="color: var(--accent-cyan);">?chime=false</code>
+                            <div style="margin-top: 2px;">Disable notification chime sound before TTS</div>
+                        </div>
+                        <div style="background: rgba(0,0,0,0.3); padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                            <code style="color: var(--accent-cyan); font-weight: 600;">?font_size=20</code> (in px)
+                            <div style="margin-top: 2px;">Set message text font size (e.g. <code>?font_size=24</code>)</div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 10px; font-size: 12px; color: var(--text-muted); background: rgba(145, 70, 255, 0.1); padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--twitch-purple-glow);">
+                        ⚡ <strong>Combined Modifiers Example:</strong><br />
+                        <code style="color: #fff; font-size: 11px;">http://localhost:5001/obs?channel=shroud&autohide=1&volume=75&position=bottom-right&font_size=22</code>
+                    </div>
+                </div>
             </div>
         </section>
 
