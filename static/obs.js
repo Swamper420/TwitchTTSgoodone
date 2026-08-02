@@ -179,8 +179,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const item = JSON.parse(e.data);
                 if (!item || !item.url) return;
                 
-                if (filterChannel && item.channel && item.channel.toLowerCase() !== filterChannel) {
-                    return; // Frontend guard for channel isolation
+                if (filterChannel) {
+                    const chunkChan = item.channel ? String(item.channel).toLowerCase().replace(/^#/, '').trim() : '';
+                    if (chunkChan !== filterChannel) {
+                        return; // Strict frontend channel isolation guard
+                    }
                 }
 
                 audioQueue.push(item);
@@ -193,7 +196,10 @@ document.addEventListener('DOMContentLoaded', () => {
         evtSource.addEventListener('skip_audio', (e) => {
             try {
                 const data = e.data ? JSON.parse(e.data) : {};
-                if (filterChannel && data.channel && data.channel.toLowerCase() !== filterChannel) return;
+                if (filterChannel) {
+                    const cmdChan = data.channel ? String(data.channel).toLowerCase().replace(/^#/, '').trim() : '';
+                    if (cmdChan && cmdChan !== filterChannel) return;
+                }
                 skipCurrentAudio();
             } catch (err) {
                 skipCurrentAudio();
@@ -203,7 +209,10 @@ document.addEventListener('DOMContentLoaded', () => {
         evtSource.addEventListener('clear_audio', (e) => {
             try {
                 const data = e.data ? JSON.parse(e.data) : {};
-                if (filterChannel && data.channel && data.channel.toLowerCase() !== filterChannel) return;
+                if (filterChannel) {
+                    const cmdChan = data.channel ? String(data.channel).toLowerCase().replace(/^#/, '').trim() : '';
+                    if (cmdChan && cmdChan !== filterChannel) return;
+                }
                 audioQueue = [];
                 skipCurrentAudio();
             } catch (err) {

@@ -46,7 +46,7 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 
 
 def broadcast_event(event_type: str, payload: dict):
-    """Send SSE event to all connected web clients, optionally filtered by target channel."""
+    """Send SSE event to all connected web clients, filtered by target channel if set."""
     msg = f"event: {event_type}\ndata: {json.dumps(payload)}\n\n"
     event_chan = payload.get("channel")
     event_chan_clean = str(event_chan).strip().lstrip("#").lower() if event_chan else None
@@ -58,9 +58,14 @@ def broadcast_event(event_type: str, payload: dict):
         else:
             q, filter_chan = item, None
 
-        if filter_chan and event_chan_clean and filter_chan != event_chan_clean:
-            # Skip delivering channel-specific event to a client listening to another channel
-            continue
+        if filter_chan:
+            # Client requested strict channel filtering (e.g. /obs?channel=channelname)
+            if event_chan_clean:
+                if filter_chan != event_chan_clean:
+                    continue
+            elif event_type in ("audio_chunk", "chat_message", "skip_audio", "clear_audio"):
+                # Channel-specific event without a matching channel tag must not leak to a channel-filtered client
+                continue
 
         try:
             q.put_nowait(msg)

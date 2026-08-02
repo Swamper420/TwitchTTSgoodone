@@ -1,3 +1,4 @@
+import inspect
 import logging
 import queue
 import random
@@ -422,6 +423,19 @@ class TwitchListener:
                 if self.running:
                     time.sleep(3.0)
 
+    def _dispatch_on_message(self, user: str, text: str, channel: str):
+        if not self.on_message:
+            return
+        try:
+            sig = inspect.signature(self.on_message)
+            num_params = len(sig.parameters)
+            if num_params >= 3:
+                self.on_message(user, text, channel)
+            else:
+                self.on_message(user, text)
+        except Exception as err:
+            logger.error(f"Error executing on_message callback for user '{user}' on #{channel}: {err}")
+
     def _handle_irc_line(self, line: str, expected_auth: bool = False) -> Optional[str]:
         if not line or not line.strip():
             return None
@@ -477,12 +491,6 @@ class TwitchListener:
             target_chan = raw_target or self.channel
             chat_text = msg
             logger.info(f"Twitch Chat [#{target_chan}] {user_display}: {chat_text}")
-            try:
-                try:
-                    self.on_message(user_display, chat_text, target_chan)
-                except TypeError:
-                    self.on_message(user_display, chat_text)
-            except Exception as e:
-                logger.error(f"Error processing chat message from {user_display}: {e}")
+            self._dispatch_on_message(user_display, chat_text, target_chan)
 
         return None
