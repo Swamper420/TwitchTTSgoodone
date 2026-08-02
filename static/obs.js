@@ -273,6 +273,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 const fartUrl = currentItem.fart_bg_url || '/api/soundboard/fartbackground';
                 currentFartBgAudio = new Audio(fartUrl);
+                currentFartBgAudio.volume = (audioPlayer && audioPlayer.volume !== undefined) ? audioPlayer.volume : 1.0;
                 currentFartBgAudio.play().catch((err) => {
                     console.warn('OBS Overlay fart background audio playback note:', err);
                 });

@@ -307,6 +307,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 stopFartBgAudio();
                 const fartUrl = currentItem.fart_bg_url || '/api/soundboard/fartbackground';
                 currentFartBgAudio = new Audio(fartUrl);
+                if (volumeSlider) {
+                    currentFartBgAudio.volume = volumeSlider.value / 100;
+                }
                 currentFartBgAudio.play().catch((err) => {
                     console.warn('Dashboard fart background audio playback note:', err);
                 });

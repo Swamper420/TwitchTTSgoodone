@@ -552,7 +552,9 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         # Route: Stream Soundboard Raw Audio File
         if path.startswith("/api/soundboard/"):
             raw_sound_name = path.split("/api/soundboard/", 1)[-1]
-            match = soundboard_manager.find_sound(raw_sound_name)
+            clean_name = urllib.parse.unquote(raw_sound_name).strip()
+            base_name = os.path.splitext(clean_name)[0] if "." in clean_name else clean_name
+            match = soundboard_manager.find_sound(clean_name) or soundboard_manager.find_sound(base_name)
             if match and os.path.exists(match[1]):
                 file_path = match[1]
                 mime_type = soundboard_manager.get_mime_type(file_path)
@@ -1121,6 +1123,34 @@ class OBSRequestHandler(BaseHTTPRequestHandler):
                 return
             else:
                 self.send_error(404, "Audio chunk not found")
+                return
+
+        # Whitelist 2b: Stream Soundboard Raw Audio File for OBS Overlay
+        if path.startswith("/api/soundboard/"):
+            raw_sound_name = path.split("/api/soundboard/", 1)[-1]
+            clean_name = urllib.parse.unquote(raw_sound_name).strip()
+            base_name = os.path.splitext(clean_name)[0] if "." in clean_name else clean_name
+            match = soundboard_manager.find_sound(clean_name) or soundboard_manager.find_sound(base_name)
+            if match and os.path.exists(match[1]):
+                file_path = match[1]
+                mime_type = soundboard_manager.get_mime_type(file_path)
+                try:
+                    with open(file_path, "rb") as f:
+                        audio_bytes = f.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", mime_type)
+                    self.send_header("Content-Length", str(len(audio_bytes)))
+                    self.send_header("Cache-Control", "public, max-age=3600")
+                    self._send_security_headers()
+                    self.end_headers()
+                    self.wfile.write(audio_bytes)
+                    return
+                except Exception as e:
+                    logger.error(f"Error serving soundboard file '{file_path}' in OBS handler: {e}")
+                    self.send_error(500, "Error reading soundboard file")
+                    return
+            else:
+                self.send_error(404, "Sound effect not found")
                 return
 
         # Whitelist 3: OBS Overlay HTML Page
