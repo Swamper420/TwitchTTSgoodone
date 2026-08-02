@@ -3,44 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Twitch TTS - OBS Browser Overlay</title>
-    <meta name="description" content="Dedicated, transparent OBS Stream Overlay for Twitch TTS voice output. High visibility, auto-hide, and real-time spectrum visualizer.">
-    <!-- Google Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+    <title>Twitch TTS - Steam 2004 OBS Browser Overlay</title>
     <link rel="stylesheet" href="obs.css">
 </head>
 <body class="obs-body">
     <!-- Audio Element -->
     <audio id="obsAudioPlayer" preload="auto"></audio>
 
-    <!-- Floating OBS Stream Widget -->
+    <!-- Floating Steam 2004 OBS Stream Overlay -->
     <div id="obsOverlayCard" class="obs-card idle">
-        <!-- Top Status Bar -->
+        <!-- Steam Window Titlebar -->
         <div class="obs-header">
             <div class="obs-live-tag">
                 <span class="pulse-dot"></span>
-                <span id="obsLiveText">LIVE TTS</span>
+                <span id="obsLiveText">STEAM TTS</span>
             </div>
             <div class="obs-meta">
-                <span class="obs-pill obs-pill-purple" id="obsVoiceTag">Voice: Default</span>
-                <span class="obs-pill obs-pill-cyan" id="obsChunkTag">Ready</span>
+                <span class="obs-pill" id="obsVoiceTag">VOICE: DEFAULT</span>
+                <span class="obs-pill" id="obsChunkTag">READY</span>
             </div>
         </div>
 
-        <!-- Speaker Info & Content -->
+        <!-- Speaker Info & Text Content -->
         <div class="obs-body-content">
-            <div class="obs-avatar" id="obsAvatar">🎙️</div>
+            <div class="obs-avatar" id="obsAvatar">TTS</div>
             <div class="obs-text-container">
                 <div class="obs-speaker-name" id="obsSpeaker">Waiting for TTS...</div>
-                <div class="obs-spoken-text" id="obsText">Twitch TTS Voice Overlay active and ready.</div>
+                <div class="obs-spoken-text" id="obsText">Twitch TTS Voice Overlay ready.</div>
             </div>
         </div>
 
-        <!-- Spectrum Visualizer -->
+        <!-- Retro Visualizer Bar -->
         <div class="obs-visualizer-bar">
-            <canvas id="obsCanvas" width="300" height="35" class="obs-canvas"></canvas>
+            <canvas id="obsCanvas" width="300" height="20" class="obs-canvas"></canvas>
             <div id="obsEqualizer" class="obs-eq-bars">
                 <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
             </div>

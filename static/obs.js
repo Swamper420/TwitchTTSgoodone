@@ -147,8 +147,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 barHeight = (dataArray[i] / 255) * obsCanvas.height;
 
                 const gradient = canvasCtx.createLinearGradient(0, obsCanvas.height, 0, 0);
-                gradient.addColorStop(0, 'rgba(145, 70, 255, 0.85)');
-                gradient.addColorStop(1, 'rgba(0, 240, 255, 0.95)');
+                gradient.addColorStop(0, '#8ba079');
+                gradient.addColorStop(1, '#c5d7b5');
 
                 canvasCtx.fillStyle = gradient;
                 canvasCtx.fillRect(x, obsCanvas.height - barHeight, barWidth - 2, barHeight);
@@ -164,7 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const evtSource = new EventSource('/api/events');
 
         evtSource.onopen = () => {
-            if (liveText) liveText.textContent = 'LIVE TTS';
+            if (liveText) liveText.textContent = 'STEAM TTS';
         };
 
         evtSource.onerror = () => {
@@ -207,8 +207,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Update Overlay UI
         if (obsSpeaker) obsSpeaker.textContent = currentItem.user || 'Chatter';
         if (obsText) obsText.textContent = currentItem.text || '';
-        if (obsVoiceTag) obsVoiceTag.textContent = `Voice: ${currentItem.voice || 'Default'}`;
-        if (obsChunkTag) obsChunkTag.textContent = `Chunk ${currentItem.chunk_index || 1}/${currentItem.total_chunks || 1}`;
+        if (obsVoiceTag) obsVoiceTag.textContent = `VOICE: ${(currentItem.voice || 'DEFAULT').toUpperCase()}`;
+        if (obsChunkTag) obsChunkTag.textContent = `CHUNK ${currentItem.chunk_index || 1}/${currentItem.total_chunks || 1}`;
 
         overlayCard.classList.remove('idle');
         overlayCard.classList.add('speaking');
