@@ -293,7 +293,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Update UI
         if (currentSpeaker) currentSpeaker.textContent = currentItem.user || 'Anonymous';
         if (currentText) currentText.textContent = currentItem.text || '';
-        if (voiceTag) voiceTag.textContent = `Voice: ${currentItem.voice || 'Default'}`;
+        if (voiceTag) voiceTag.textContent = `Voice: ${currentItem.voice || 'Default'}${currentItem.has_8d ? ' (8D)' : ''}`;
         if (chunkTag) chunkTag.textContent = `Chunk ${currentItem.chunk_index || 1}/${currentItem.total_chunks || 1}`;
 
         if (speakerAvatar) speakerAvatar.classList.add('active');

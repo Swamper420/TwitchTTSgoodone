@@ -3,6 +3,7 @@ import logging
 import os
 import queue
 import random
+import re
 import subprocess
 import tempfile
 import threading
@@ -179,6 +180,65 @@ def mix_audio_with_background(tts_audio_bytes: bytes, bg_file_path: str, audio_f
             except Exception:
                 pass
 
+
+def apply_8d_audio_effect(audio_bytes: bytes, audio_format: str = "wav") -> Tuple[bytes, str]:
+    """
+    Applies an 8D spatial panning and audio atmosphere effect using ffmpeg apulsator and aecho filters.
+    Returns tuple of (processed_audio_bytes, mime_type).
+    """
+    if not audio_bytes:
+        fmt = audio_format or "wav"
+        mime = "audio/mpeg" if fmt == "mp3" else f"audio/{fmt}"
+        return audio_bytes, mime
+
+    fmt = audio_format or "wav"
+    out_fmt = "wav" if fmt not in ("mp3", "wav", "ogg") else fmt
+    mime_type = "audio/mpeg" if out_fmt == "mp3" else f"audio/{out_fmt}"
+
+    in_tmp = None
+    out_tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=f".{out_fmt}", delete=False) as f:
+            f.write(audio_bytes)
+            in_tmp = f.name
+
+        out_tmp = in_tmp + f"_8d.{out_fmt}"
+
+        filter_str = "apulsator=hz=0.15:mode=sine:offset_l=0:offset_r=0.5:amount=1,aecho=0.8:0.88:40:0.2"
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", in_tmp,
+            "-filter_complex", f"[0:a]{filter_str}[aout]",
+            "-map", "[aout]",
+            "-f", out_fmt,
+            out_tmp
+        ]
+
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        if res.returncode == 0 and os.path.exists(out_tmp) and os.path.getsize(out_tmp) > 0:
+            with open(out_tmp, "rb") as f:
+                processed_bytes = f.read()
+            logger.info(f"🌀 Applied 8D audio effect via ffmpeg ({len(processed_bytes)} bytes).")
+            return processed_bytes, mime_type
+        else:
+            logger.warning(f"ffmpeg 8D effect warning (exit code {res.returncode}): {res.stderr.decode('utf-8', errors='ignore')}")
+            return audio_bytes, mime_type
+    except Exception as e:
+        logger.error(f"Error applying 8D audio effect with ffmpeg: {e}")
+        return audio_bytes, mime_type
+    finally:
+        if in_tmp and os.path.exists(in_tmp):
+            try:
+                os.remove(in_tmp)
+            except Exception:
+                pass
+        if out_tmp and os.path.exists(out_tmp):
+            try:
+                os.remove(out_tmp)
+            except Exception:
+                pass
+
 def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str] = None, override_model: Optional[str] = None, channel: str = ""):
     """
     Process incoming chat or test message:
@@ -192,7 +252,13 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
 
     clean_chan = channel.strip().lstrip('#').lower() if channel else (config.channels[0] if config.channels else "")
 
+    has_8d = False
     if raw_text:
+        if re.search(r'\{\s*8d\s*\}', raw_text, re.IGNORECASE):
+            has_8d = True
+            raw_text = re.sub(r'\{\s*8d\s*\}', '', raw_text, flags=re.IGNORECASE).strip()
+            logger.info(f"🌀 Detected {{8D}} tag in message from '{user}'. Enabling 8D audio effect.")
+
         raw_lower = raw_text.strip().lower()
 
         # Command: !pieruta <username>
@@ -417,6 +483,12 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                             audio_format=config.tts_format
                         )
             
+            if has_8d:
+                audio_bytes, mime_type = apply_8d_audio_effect(
+                    audio_bytes=audio_bytes,
+                    audio_format=config.tts_format
+                )
+
             chunk_id = f"chunk_{uuid.uuid4().hex[:12]}"
             item_meta = {
                 "id": chunk_id,
@@ -427,6 +499,7 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                 "sound_name": chunk.sound_name,
                 "has_fart_bg": has_fart_bg,
                 "fart_bg_url": "/api/soundboard/fartbackground" if has_fart_bg else None,
+                "has_8d": has_8d,
                 "channel": clean_chan,
                 "chunk_index": chunk.chunk_index + 1,
                 "total_chunks": chunk.total_chunks,
@@ -671,6 +744,11 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             model = sanitize_identifier(raw_model, max_len=100) if raw_model is not None else None
             fmt = sanitize_audio_format(raw_fmt) if raw_fmt is not None else None
             
+            has_8d_api = False
+            if text and re.search(r'\{\s*8d\s*\}', text, re.IGNORECASE):
+                has_8d_api = True
+                text = re.sub(r'\{\s*8d\s*\}', '', text, flags=re.IGNORECASE).strip()
+
             if not text:
                 self._send_json(400, {"error": "Missing required parameter 'text'"})
                 return
@@ -679,6 +757,8 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 audio_bytes, mime_type = tts_client.synthesize(
                     text=text, voice=voice, model=model, audio_format=fmt, method="GET"
                 )
+                if has_8d_api:
+                    audio_bytes, mime_type = apply_8d_audio_effect(audio_bytes, audio_format=fmt or config.tts_format)
                 self.send_response(200)
                 self.send_header("Content-Type", mime_type)
                 self.send_header("Content-Length", str(len(audio_bytes)))
@@ -849,6 +929,11 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             model = sanitize_identifier(body.get("model"), max_len=100) if body.get("model") is not None else None
             fmt = sanitize_audio_format(body.get("format")) if body.get("format") is not None else None
             
+            has_8d_api = False
+            if text and re.search(r'\{\s*8d\s*\}', text, re.IGNORECASE):
+                has_8d_api = True
+                text = re.sub(r'\{\s*8d\s*\}', '', text, flags=re.IGNORECASE).strip()
+
             if not text:
                 self._send_json(400, {"error": "Missing required field 'text'"})
                 return
@@ -857,6 +942,8 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 audio_bytes, mime_type = tts_client.synthesize(
                     text=text, voice=voice, model=model, audio_format=fmt, method="POST"
                 )
+                if has_8d_api:
+                    audio_bytes, mime_type = apply_8d_audio_effect(audio_bytes, audio_format=fmt or config.tts_format)
                 if fmt == "json":
                     import base64
                     b64 = base64.b64encode(audio_bytes).decode('ascii')

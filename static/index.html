@@ -200,9 +200,9 @@
                     <div class="form-group">
                         <label for="testTextInput">
                             Test Message 
-                            <span class="hint">Use <code>[voicename]</code> tags for multi-voice!</span>
+                            <span class="hint">Use <code>[voicename]</code> tags for multi-voice, or <code>{8D}</code> for 8D audio!</span>
                         </label>
-                        <textarea id="testTextInput" rows="3" placeholder="Hello! [alice] Welcome to the stream! [bob] How is everyone doing today?"></textarea>
+                        <textarea id="testTextInput" rows="3" placeholder="Hello! [alice] Welcome to the stream! [bob] How is everyone doing today? {8D}"></textarea>
 
                         <!-- Preset Voice Chips -->
                         <div class="voice-chips" id="voiceChips">
@@ -210,6 +210,7 @@
                             <span class="chip" data-voice="bob">+ [bob]</span>
                             <span class="chip" data-voice="charlie">+ [charlie]</span>
                             <span class="chip" data-voice="dave">+ [dave]</span>
+                            <span class="chip" data-tag="{8D}">+ {8D}</span>
                         </div>
                     </div>
 

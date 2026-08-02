@@ -510,7 +510,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         speakerName.textContent = item.user;
         spokenText.textContent = `"${item.text}"`;
-        voiceTag.textContent = `Voice: ${item.voice || 'default'}`;
+        voiceTag.textContent = `Voice: ${item.voice || 'default'}${item.has_8d ? ' (8D)' : ''}`;
         chunkTag.textContent = `Chunk: ${item.chunk_index} / ${item.total_chunks}`;
     }
 
@@ -522,8 +522,12 @@ document.addEventListener('DOMContentLoaded', () => {
         voiceChips.addEventListener('click', (e) => {
             if (e.target.classList.contains('chip')) {
                 const voice = e.target.getAttribute('data-voice');
+                const tag = e.target.getAttribute('data-tag');
                 if (voice) {
                     testTextInput.value = (testTextInput.value + ` [${voice}] `).trimStart();
+                    testTextInput.focus();
+                } else if (tag) {
+                    testTextInput.value = (testTextInput.value + ` ${tag} `).trimStart();
                     testTextInput.focus();
                 }
             }

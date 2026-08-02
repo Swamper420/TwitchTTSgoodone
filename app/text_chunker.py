@@ -24,6 +24,9 @@ def sanitize_text(text: str) -> str:
     # Strip null bytes, control characters, and non-printable unicode ranges that trigger special token errors
     text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\ufffe\uffff]', '', text)
     
+    # Strip {8D} tags
+    text = re.sub(r'\{\s*8d\s*\}', '', text, flags=re.IGNORECASE)
+    
     # Advanced text normalization (currencies, numbers, abbreviations, emotes)
     text = normalize_text(text)
     
