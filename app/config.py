@@ -117,7 +117,7 @@ class Config:
     kill_counter_api_token: str = field(default_factory=lambda: os.getenv("KILL_COUNTER_API_TOKEN", ""))
     soundboard_dir: str = field(default_factory=lambda: os.getenv("SOUNDBOARD_DIR", os.path.join(BASE_DIR, "storage", "soundboard")))
     enable_soundboard: bool = field(default_factory=lambda: os.getenv("ENABLE_SOUNDBOARD", "true").lower() in ("true", "1", "yes"))
-    shouting_voices: str = field(default_factory=lambda: os.getenv("SHOUTING_VOICES", "dracula"))
+    shouting_voices: str = field(default_factory=lambda: os.getenv("SHOUTING_VOICES", "mertaranta"))
     effect_8d_speed: float = field(default_factory=lambda: float(os.getenv("EFFECT_8D_SPEED", "0.5")))
 
     def load(self, filepath: str = CONFIG_FILE):
@@ -197,12 +197,12 @@ class Config:
     def shouting_voices_list(self) -> List[str]:
         """Returns list of preset shouting voice names from shouting_voices config."""
         if not self.shouting_voices:
-            return ["dracula"]
+            return ["mertaranta"]
         if isinstance(self.shouting_voices, list):
             voices = [str(v).strip() for v in self.shouting_voices if str(v).strip()]
         else:
             voices = [v.strip() for v in str(self.shouting_voices).replace(";", ",").split(",") if v.strip()]
-        return voices if voices else ["dracula"]
+        return voices if voices else ["mertaranta"]
 
     @property
     def channels(self) -> List[str]:
