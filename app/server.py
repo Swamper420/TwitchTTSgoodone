@@ -1333,54 +1333,98 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             self.send_error(500, "Internal server error")
 
 
-class OBSRequestHandler(BaseHTTPRequestHandler):
+class PublicRequestHandler(BaseHTTPRequestHandler):
     """
-    Dedicated, read-only HTTP request handler for the OBS Overlay server port.
-    Security Maxxing:
-    - Rejects all mutating methods (POST, PUT, DELETE, OPTIONS, etc.) with HTTP 405.
-    - Whitelists only OBS static files (obs.html, obs.css, obs.js), /api/events (SSE), and /api/audio/<chunk_id>.
-    - Does NOT leak administrative pages, configuration tokens, or Twitch credentials.
+    Unified internet-facing HTTP handler for public pages:
+      /              → Streamer Control Portal (password-protected)
+      /control       → Streamer Control Portal (password-protected)
+      /player        → Voice Player (public, read-only)
+      /obs           → OBS Browser Source Overlay (public, read-only)
+
+    Security:
+    - Whitelists only safe API routes; admin-only routes (/api/settings, /api/bot/*) are blocked.
+    - Enforces authentication on mutating control-portal routes.
+    - Player and OBS overlay are read-only and safe without authentication.
+    - Serves only whitelisted static assets (no index.html / admin dashboard).
+    - Adds defense-in-depth security headers to every response.
     """
+
+    # Whitelisted static files that may be served on the public server
+    _ALLOWED_STATIC_FILES = {
+        "control.html", "control.css", "control.js",
+        "player.html", "player.css", "player.js",
+        "obs.html", "obs.css", "obs.js",
+    }
 
     def log_message(self, format, *args):
         pass
 
-    def _send_security_headers(self):
+    def _send_cors_headers(self):
+        origin = self.headers.get("Origin", "")
+        if origin:
+            public_port = str(config.public_server_port)
+            allowed = {
+                f"http://localhost:{public_port}",
+                f"http://127.0.0.1:{public_port}",
+            }
+            if config.public_server_host not in ("0.0.0.0", "::", ""):
+                allowed.add(f"http://{config.public_server_host}:{public_port}")
+            if origin in allowed:
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Token")
+
+    def _send_security_headers(self, allow_framing: bool = False):
+        """Send HTTP security headers. allow_framing=True for OBS overlay pages."""
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("X-Frame-Options", "ALLOWALL")
-        self.send_header("Content-Security-Policy", "default-src 'self' 'unsafe-inline' data:; media-src 'self' blob: data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; connect-src 'self';")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("X-XSS-Protection", "1; mode=block")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        if allow_framing:
+            self.send_header("X-Frame-Options", "ALLOWALL")
+        else:
+            self.send_header("X-Frame-Options", "SAMEORIGIN")
 
-    def _reject_method(self):
-        self.send_response(405)
-        self.send_header("Content-Type", "application/json")
-        self._send_security_headers()
-        self.end_headers()
-        self.wfile.write(json.dumps({"error": "Method Not Allowed - OBS Overlay server is read-only"}).encode("utf-8"))
+    def _get_client_ip(self) -> str:
+        return self.client_address[0] if self.client_address else "unknown"
 
-    def do_POST(self):
-        self._reject_method()
+    def _get_request_auth_token(self) -> str:
+        token = self.headers.get("X-Admin-Token")
+        if not token:
+            token = self.headers.get("Authorization", "")
+        if not token:
+            parsed = urllib.parse.urlparse(self.path)
+            query = urllib.parse.parse_qs(parsed.query)
+            if "token" in query:
+                token = query["token"][0]
+            elif "admin_token" in query:
+                token = query["admin_token"][0]
+        return token.strip() if token else ""
 
-    def do_PUT(self):
-        self._reject_method()
-
-    def do_DELETE(self):
-        self._reject_method()
-
-    def do_PATCH(self):
-        self._reject_method()
+    def _check_auth(self, required_role: str = "user") -> bool:
+        token = self._get_request_auth_token()
+        if not dashboard_auth_manager.verify_session(token, required_role=required_role):
+            self._send_json(401, {
+                "error": f"Unauthorized: {required_role.capitalize()} authentication required",
+                "auth_required": dashboard_auth_manager.is_auth_required(),
+                "admin_auth_required": dashboard_auth_manager.is_admin_auth_required(),
+                "user_auth_required": dashboard_auth_manager.is_user_auth_required()
+            })
+            return False
+        return True
 
     def do_OPTIONS(self):
-        self._reject_method()
+        self.send_response(204)
+        self._send_cors_headers()
+        self.end_headers()
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+        query = urllib.parse.parse_qs(parsed.query)
 
-        # Whitelist 1: Read-Only SSE Event Stream for OBS Audio Player
+        # ── SSE Event Stream ──
         if path == "/api/events":
-            query = urllib.parse.parse_qs(parsed.query)
             req_chan = query.get("channel", [None])[0] or query.get("ch", [None])[0]
             filter_chan = req_chan.strip().lstrip('#').lower() if req_chan else None
 
@@ -1388,15 +1432,17 @@ class OBSRequestHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
             self.send_header("Connection", "keep-alive")
-            self._send_security_headers()
+            self._send_cors_headers()
+            self._send_security_headers(allow_framing=True)
             self.end_headers()
 
             client_q = queue.Queue()
             client_item = (client_q, filter_chan)
             sse_clients.append(client_item)
 
-            # Send minimal status payload (no admin tokens, passwords, or configs)
-            init_payload = f"event: status\ndata: {json.dumps({'obs_ready': True, 'channel': filter_chan})}\n\n"
+            # Send initial status (sanitized — no admin creds)
+            init_status = self._get_public_status_dict()
+            init_payload = f"event: status\ndata: {json.dumps(init_status)}\n\n"
             try:
                 self.wfile.write(init_payload.encode("utf-8"))
                 self.wfile.flush()
@@ -1421,7 +1467,7 @@ class OBSRequestHandler(BaseHTTPRequestHandler):
                     sse_clients.remove(client_item)
             return
 
-        # Whitelist 2: Stream Synthesized Audio Chunk
+        # ── Audio Chunk Streaming ──
         if path.startswith("/api/audio/"):
             raw_id = path.split("/api/audio/")[-1]
             chunk_id = sanitize_identifier(raw_id, max_len=64)
@@ -1431,7 +1477,8 @@ class OBSRequestHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", mime_type)
                 self.send_header("Content-Length", str(len(audio_bytes)))
                 self.send_header("Cache-Control", "public, max-age=3600")
-                self._send_security_headers()
+                self._send_cors_headers()
+                self._send_security_headers(allow_framing=True)
                 self.end_headers()
                 self.wfile.write(audio_bytes)
                 return
@@ -1439,7 +1486,7 @@ class OBSRequestHandler(BaseHTTPRequestHandler):
                 self.send_error(404, "Audio chunk not found")
                 return
 
-        # Whitelist 2b: Stream Soundboard Raw Audio File for OBS Overlay
+        # ── Soundboard Audio File Streaming ──
         if path.startswith("/api/soundboard/"):
             raw_sound_name = path.split("/api/soundboard/", 1)[-1]
             clean_name = urllib.parse.unquote(raw_sound_name).strip()
@@ -1455,55 +1502,495 @@ class OBSRequestHandler(BaseHTTPRequestHandler):
                     self.send_header("Content-Type", mime_type)
                     self.send_header("Content-Length", str(len(audio_bytes)))
                     self.send_header("Cache-Control", "public, max-age=3600")
-                    self._send_security_headers()
+                    self._send_cors_headers()
+                    self._send_security_headers(allow_framing=True)
                     self.end_headers()
                     self.wfile.write(audio_bytes)
                     return
                 except Exception as e:
-                    logger.error(f"Error serving soundboard file '{file_path}' in OBS handler: {e}")
+                    logger.error(f"Error serving soundboard file '{file_path}' on public server: {e}")
                     self.send_error(500, "Error reading soundboard file")
                     return
             else:
                 self.send_error(404, "Sound effect not found")
                 return
 
-        # Whitelist 3: OBS Overlay HTML Page
-        if path in ("/", "/obs", "/obs.html", "/overlay", "/overlay.html"):
-            file_path = os.path.join(STATIC_DIR, "obs.html")
+        # ── Auth Status (public) ──
+        if path == "/api/auth/status":
+            tok = self._get_request_auth_token()
+            role = dashboard_auth_manager.get_session_role(tok)
+            authenticated = dashboard_auth_manager.verify_session(tok, required_role="user")
+            self._send_json(200, {
+                "auth_required": dashboard_auth_manager.is_auth_required(),
+                "admin_auth_required": dashboard_auth_manager.is_admin_auth_required(),
+                "user_auth_required": dashboard_auth_manager.is_user_auth_required(),
+                "authenticated": authenticated,
+                "role": role or ("admin" if not dashboard_auth_manager.is_auth_required() else None),
+                "twitch_auth": twitch_bot.get_auth_info() if twitch_bot else {}
+            })
+            return
+
+        # ── API Status (sanitized, no admin creds) ──
+        if path == "/api/status":
+            self._send_json(200, self._get_public_status_dict())
+            return
+
+        # ── User Voices List (public) ──
+        if path == "/api/user_voices":
+            self._send_json(200, {"user_voices": user_voice_manager.get_all()})
+            return
+
+        # ── TTS Voices List Proxy (public) ──
+        if path in ("/api/voices", "/api/v1/voices"):
+            try:
+                voices_data = tts_client.get_voices()
+                self._send_json(200, voices_data)
+            except Exception as e:
+                self._send_json(500, {"error": f"Failed to fetch voices from TTS API: {str(e)}"})
+            return
+
+        # ── Soundboard List (public) ──
+        if path == "/api/soundboard":
+            sounds = soundboard_manager.get_available_sounds()
+            self._send_json(200, {
+                "directory": soundboard_manager.directory,
+                "enabled": config.enable_soundboard,
+                "sounds": list(sounds.keys()),
+                "sound_files": sounds
+            })
+            return
+
+        # ── Pieruta Targets (public) ──
+        if path == "/api/pieruta":
+            self._send_json(200, {"pieruta_targets": list(pieruta_targets.keys())})
+            return
+
+        # ── Kill Counter Status (public) ──
+        if path == "/api/counter":
+            self._send_json(200, kill_counter_monitor.get_status_dict())
+            return
+
+        # ── Proxy GET /api/tts (public, rate-limited) ──
+        if path == "/api/tts":
+            if not tts_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
+            raw_text = query.get("text", [""])[0]
+            raw_voice = query.get("voice", [None])[0]
+            raw_model = query.get("model", [None])[0]
+            raw_fmt = query.get("format", [None])[0]
+            text = sanitize_string(raw_text, max_len=2000)
+            voice = sanitize_identifier(raw_voice, max_len=100) if raw_voice is not None else None
+            model = sanitize_identifier(raw_model, max_len=100) if raw_model is not None else None
+            fmt = sanitize_audio_format(raw_fmt) if raw_fmt is not None else None
+
+            has_8d_api = False
+            if text and re.search(r'\{\s*8d\s*\}', text, re.IGNORECASE):
+                has_8d_api = True
+                text = re.sub(r'\{\s*8d\s*\}', '', text, flags=re.IGNORECASE).strip()
+
+            if not text:
+                self._send_json(400, {"error": "Missing required parameter 'text'"})
+                return
+            try:
+                audio_bytes, mime_type = tts_client.synthesize(
+                    text=text, voice=voice, model=model, audio_format=fmt, method="GET"
+                )
+                if has_8d_api and getattr(config, "enable_8d_audio", True):
+                    audio_bytes, mime_type = apply_8d_audio_effect(audio_bytes, audio_format=fmt or config.tts_format)
+                self.send_response(200)
+                self.send_header("Content-Type", mime_type)
+                self.send_header("Content-Length", str(len(audio_bytes)))
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(audio_bytes)
+            except Exception as e:
+                logger.error(f"GET /api/tts error on public server: {e}")
+                self._send_json(500, {"error": "TTS synthesis failed"})
+            return
+
+        # ── Serve Public Static Pages ──
+        # Control Portal (default landing page)
+        if path in ("/", "/control", "/control.html", "/user", "/user.html"):
+            file_path = os.path.join(STATIC_DIR, "control.html")
             self._serve_static_file(file_path, "text/html; charset=utf-8")
             return
 
-        # Whitelist 4: OBS CSS Asset
-        if path == "/obs.css":
-            file_path = os.path.join(STATIC_DIR, "obs.css")
-            self._serve_static_file(file_path, "text/css")
+        # Voice Player
+        if path in ("/player", "/player.html", "/listen", "/listen.html"):
+            file_path = os.path.join(STATIC_DIR, "player.html")
+            self._serve_static_file(file_path, "text/html; charset=utf-8")
             return
 
-        # Whitelist 5: OBS JS Asset
-        if path == "/obs.js":
-            file_path = os.path.join(STATIC_DIR, "obs.js")
-            self._serve_static_file(file_path, "application/javascript")
+        # OBS Overlay
+        if path in ("/obs", "/obs.html", "/overlay", "/overlay.html"):
+            file_path = os.path.join(STATIC_DIR, "obs.html")
+            self._serve_static_file(file_path, "text/html; charset=utf-8", allow_framing=True)
             return
 
-        # Block all administrative or un-whitelisted routes
+        # Serve whitelisted static assets (CSS, JS) for public pages only
+        rel_path = path.lstrip('/')
+        if rel_path in self._ALLOWED_STATIC_FILES:
+            safe_path = os.path.join(STATIC_DIR, rel_path)
+            if os.path.isfile(safe_path):
+                if rel_path.endswith(".css"):
+                    mime = "text/css"
+                elif rel_path.endswith(".js"):
+                    mime = "application/javascript"
+                else:
+                    mime = "text/html; charset=utf-8"
+                is_obs = rel_path.startswith("obs.")
+                self._serve_static_file(safe_path, mime, allow_framing=is_obs)
+                return
+
+        # Block admin dashboard and all un-whitelisted routes
         self.send_error(404, "Not Found")
 
-    def _serve_static_file(self, filepath: str, mime_type: str):
+    def do_POST(self):
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+
+        # ── Block admin-only routes ──
+        blocked_admin_routes = (
+            "/api/settings",
+            "/api/bot/reconnect",
+            "/api/bot/send_info",
+        )
+        if path in blocked_admin_routes:
+            self._send_json(403, {"error": "Forbidden: This route is not available on the public server"})
+            return
+
+        try:
+            content_len = int(self.headers.get('Content-Length', 0))
+        except (ValueError, TypeError):
+            content_len = 0
+
+        # Maximum payload limit (5MB)
+        if content_len > 5 * 1024 * 1024:
+            self._send_json(413, {"error": "Payload too large (max 5MB)"})
+            return
+
+        post_data = self.rfile.read(content_len) if content_len > 0 else b"{}"
+
+        try:
+            body = json.loads(post_data.decode('utf-8')) if post_data else {}
+            if not isinstance(body, dict):
+                body = {}
+        except Exception:
+            body = {}
+
+        # ── Public POST routes (no auth required) ──
+
+        # Validate Twitch Token
+        if path == "/api/auth/validate_twitch":
+            token = sanitize_string(body.get("oauth_token"), max_len=500)
+            res = twitch_token_validator.validate_token(token)
+            self._send_json(200, res)
+            return
+
+        # Login
+        if path == "/api/auth/login":
+            if not login_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Too many login attempts. Try again later."})
+                return
+            password = sanitize_string(body.get("password"), max_len=500)
+            success, session_token, err, role = dashboard_auth_manager.authenticate(password)
+            if success:
+                # On the public server, cap the role to 'user' — never grant 'admin' externally
+                public_role = "user" if role == "admin" else role
+                self._send_json(200, {"success": True, "token": session_token, "role": public_role})
+            else:
+                self._send_json(401, {"error": err or "Invalid password"})
+            return
+
+        # Logout
+        if path == "/api/auth/logout":
+            tok = self._get_request_auth_token()
+            dashboard_auth_manager.revoke_session(tok)
+            self._send_json(200, {"success": True})
+            return
+
+        # Soundboard Trigger (public)
+        if path in ("/api/soundboard/trigger", "/api/soundboard/play"):
+            if not config.enable_soundboard:
+                self._send_json(400, {"error": "Soundboard is currently disabled"})
+                return
+            raw_sound = body.get("sound") or body.get("sound_name") or body.get("name") or ""
+            clean_sound = sanitize_identifier(raw_sound, max_len=100)
+            if not clean_sound:
+                self._send_json(400, {"error": "Missing or invalid 'sound' parameter"})
+                return
+            sound_match = soundboard_manager.find_sound(clean_sound)
+            if not sound_match:
+                self._send_json(404, {"error": f"Soundboard effect '{clean_sound}' not found"})
+                return
+            matched_name, file_path = sound_match
+            req_chan = sanitize_string(body.get("channel") or config.twitch_channel, max_len=100)
+            user = sanitize_string(body.get("user", "Control Portal"), max_len=50, default="Control Portal")
+            broadcast_event("soundboard_trigger", {
+                "sound_name": matched_name,
+                "file_path": f"/api/soundboard/{matched_name}",
+                "user": user,
+                "channel": req_chan,
+                "timestamp": time.time()
+            })
+            self._send_json(200, {
+                "success": True,
+                "sound_name": matched_name,
+                "audio_url": f"/api/soundboard/{matched_name}",
+                "channel": req_chan
+            })
+            return
+
+        # Soundboard Toggle
+        if path == "/api/soundboard/toggle":
+            if "enabled" in body:
+                config.enable_soundboard = sanitize_bool(body["enabled"], default=config.enable_soundboard)
+            else:
+                config.enable_soundboard = not config.enable_soundboard
+            config.save()
+            broadcast_event("status", self._get_public_status_dict())
+            self._send_json(200, {"success": True, "enabled": config.enable_soundboard})
+            return
+
+        # Set Pieruta Target
+        if path == "/api/pieruta":
+            raw_user = body.get("user") or body.get("username") or ""
+            target_user = sanitize_identifier(raw_user.lstrip('@'), max_len=100) if raw_user else ""
+            if not target_user:
+                self._send_json(400, {"error": "Missing or invalid 'user' parameter"})
+                return
+            pieruta_targets[target_user.lower()] = True
+            self._send_json(200, {"success": True, "target": target_user, "message": f"Fart background queued for @{target_user}'s next message"})
+            return
+
+        # Kill Counter Update (requires counter token or auth)
+        if path == "/api/counter":
+            if not counter_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
+            req_token = self._get_request_auth_token()
+            if config.kill_counter_api_token:
+                if req_token != config.kill_counter_api_token and not dashboard_auth_manager.verify_session(req_token):
+                    self._send_json(401, {"error": "Unauthorized: Invalid counter API token", "auth_required": True})
+                    return
+            elif dashboard_auth_manager.is_auth_required():
+                if not self._check_auth():
+                    return
+            if "increment" in body or "delta" in body:
+                amt = sanitize_int(body.get("increment", body.get("delta", 1)), default=1, min_val=-1000, max_val=1000)
+                res = kill_counter_monitor.increment(amt)
+                self._send_json(200, res)
+                return
+            if "count" in body or "set" in body:
+                cnt = sanitize_int(body.get("count", body.get("set", 0)), default=0, min_val=0, max_val=1000000)
+                trigger = sanitize_bool(body.get("trigger_tts", False), default=False)
+                res = kill_counter_monitor.set_count(cnt, trigger_tts=trigger)
+                self._send_json(200, res)
+                return
+            verse = kill_counter_monitor.trigger_bible_tts()
+            self._send_json(200, {"success": True, "count": kill_counter_monitor.current_count, "verse": verse})
+            return
+
+        # Kill Counter Test
+        if path == "/api/counter/test":
+            if not counter_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
+            req_token = self._get_request_auth_token()
+            if config.kill_counter_api_token:
+                if req_token != config.kill_counter_api_token and not dashboard_auth_manager.verify_session(req_token):
+                    self._send_json(401, {"error": "Unauthorized: Invalid counter API token", "auth_required": True})
+                    return
+            elif dashboard_auth_manager.is_auth_required():
+                if not self._check_auth():
+                    return
+            verse = kill_counter_monitor.trigger_bible_tts()
+            self._send_json(200, {"success": True, "count": kill_counter_monitor.current_count, "verse": verse})
+            return
+
+        # Proxy POST /api/tts (rate-limited, public)
+        if path == "/api/tts":
+            if not tts_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
+            text = sanitize_string(body.get("text"), max_len=2000)
+            voice = sanitize_identifier(body.get("voice"), max_len=100) if body.get("voice") is not None else None
+            model = sanitize_identifier(body.get("model"), max_len=100) if body.get("model") is not None else None
+            fmt = sanitize_audio_format(body.get("format")) if body.get("format") is not None else None
+
+            has_8d_api = False
+            if text and re.search(r'\{\s*8d\s*\}', text, re.IGNORECASE):
+                has_8d_api = True
+                text = re.sub(r'\{\s*8d\s*\}', '', text, flags=re.IGNORECASE).strip()
+
+            if not text:
+                self._send_json(400, {"error": "Missing required field 'text'"})
+                return
+            try:
+                audio_bytes, mime_type = tts_client.synthesize(
+                    text=text, voice=voice, model=model, audio_format=fmt, method="POST"
+                )
+                if has_8d_api and getattr(config, "enable_8d_audio", True):
+                    audio_bytes, mime_type = apply_8d_audio_effect(audio_bytes, audio_format=fmt or config.tts_format)
+                if fmt == "json":
+                    import base64
+                    b64 = base64.b64encode(audio_bytes).decode('ascii')
+                    self._send_json(200, {"audio": b64, "mime_type": mime_type})
+                else:
+                    self.send_response(200)
+                    self.send_header("Content-Type", mime_type)
+                    self.send_header("Content-Length", str(len(audio_bytes)))
+                    self._send_cors_headers()
+                    self.end_headers()
+                    self.wfile.write(audio_bytes)
+            except Exception as e:
+                logger.error(f"POST /api/tts error on public server: {e}")
+                self._send_json(500, {"error": "TTS synthesis failed"})
+            return
+
+        # ── Authenticated POST routes (user role required) ──
+        if not self._check_auth(required_role="user"):
+            return
+
+        # Save user/control settings
+        if path == "/api/control/settings":
+            if "enable_8d_audio" in body:
+                config.enable_8d_audio = sanitize_bool(body["enable_8d_audio"], default=config.enable_8d_audio)
+            if "effect_8d_speed" in body:
+                config.effect_8d_speed = sanitize_float(body["effect_8d_speed"], default=config.effect_8d_speed, min_val=0.01, max_val=5.0)
+            if "same_user_timeout" in body:
+                config.same_user_timeout = sanitize_float(body["same_user_timeout"], default=config.same_user_timeout, min_val=0.0, max_val=300.0)
+            if "enable_chat_responses" in body:
+                config.enable_chat_responses = sanitize_bool(body["enable_chat_responses"], default=config.enable_chat_responses)
+            if "enable_kill_counter" in body:
+                config.enable_kill_counter = sanitize_bool(body["enable_kill_counter"], default=config.enable_kill_counter)
+            config.save()
+            broadcast_event("status", self._get_public_status_dict())
+            self._send_json(200, {"success": True, "config": config.to_masked_dict()})
+            return
+
+        # Connect Twitch Channel
+        if path == "/api/connect":
+            raw_chan = body.get("channel")
+            sanitized = sanitize_channels_list(raw_chan)
+            if not sanitized:
+                self._send_json(400, {"error": "Valid Twitch channel name(s) required (up to 2 alphanumeric/underscore channels)"})
+                return
+            config.twitch_channel = sanitized
+            config.save()
+            if twitch_bot:
+                twitch_bot.set_channel(sanitized)
+            broadcast_event("status", self._get_public_status_dict())
+            self._send_json(200, {"success": True, "channel": config.twitch_channel, "channels": config.channels})
+            return
+
+        # Skip Audio
+        if path in ("/api/queue/skip", "/api/skip"):
+            user = sanitize_string(body.get("user", "Dashboard"), max_len=50, default="Dashboard")
+            broadcast_event("skip_audio", {"user": user, "channel": config.twitch_channel, "timestamp": time.time()})
+            skip_msg = f"⏭️ Audio skipped by {user}."
+            broadcast_event("chat_message", {"user": "System", "message": skip_msg, "channel": config.twitch_channel, "timestamp": time.time()})
+            self._send_json(200, {"success": True, "message": "Audio skip triggered."})
+            return
+
+        # Clear Audio Queue
+        if path == "/api/queue/clear":
+            audio_queue.clear()
+            broadcast_event("clear_audio", {"user": "Dashboard", "timestamp": time.time()})
+            self._send_json(200, {"success": True, "message": "Audio queue cleared."})
+            return
+
+        # Test TTS
+        if path == "/api/tts/test":
+            text = sanitize_string(body.get("text"), max_len=2000)
+            voice = sanitize_identifier(body.get("voice"), max_len=100) if body.get("voice") is not None else None
+            model = sanitize_identifier(body.get("model"), max_len=100) if body.get("model") is not None else None
+            user = sanitize_string(body.get("user", "TestUser"), max_len=50, default="TestUser")
+            if not text:
+                self._send_json(400, {"error": "Text is required"})
+                return
+            threading.Thread(
+                target=process_incoming_text,
+                kwargs={"user": user, "raw_text": text, "override_voice": voice, "override_model": model},
+                daemon=True
+            ).start()
+            self._send_json(200, {"success": True, "message": "Test TTS job queued."})
+            return
+
+        # User Voices Management
+        if path == "/api/user_voices/set":
+            username = sanitize_username(body.get("user"))
+            voice = sanitize_identifier(body.get("voice"), max_len=100)
+            locked = bool(body.get("locked", False))
+            if not username or not voice:
+                self._send_json(400, {"error": "Both valid 'user' and 'voice' parameters are required"})
+                return
+            saved = user_voice_manager.set_voice(username, voice, locked=locked, force=True)
+            broadcast_event("status", self._get_public_status_dict())
+            self._send_json(200, {"success": True, "user": username, "voice": saved, "user_voices": user_voice_manager.get_all()})
+            return
+
+        if path == "/api/user_voices/delete":
+            username = sanitize_username(body.get("user"))
+            if not username:
+                self._send_json(400, {"error": "Valid parameter 'user' is required"})
+                return
+            user_voice_manager.clear_user(username)
+            broadcast_event("status", self._get_public_status_dict())
+            self._send_json(200, {"success": True, "user_voices": user_voice_manager.get_all()})
+            return
+
+        if path == "/api/user_voices/clear":
+            user_voice_manager.clear_all()
+            broadcast_event("status", self._get_public_status_dict())
+            self._send_json(200, {"success": True, "user_voices": {}})
+            return
+
+        self.send_error(404, "Not Found")
+
+    def _get_public_status_dict(self) -> dict:
+        """Return sanitized status dict safe for internet exposure (no admin creds, no TTS API URL, etc.)."""
+        return {
+            "channel": config.twitch_channel,
+            "channels": config.channels,
+            "connected": bool(twitch_bot and twitch_bot.running and (twitch_bot.channels or twitch_bot.channel)),
+            "authenticated": bool(twitch_bot and twitch_bot.is_authenticated),
+            "config": config.to_masked_dict(),
+            "user_voices": user_voice_manager.get_all(),
+            "auth_required": dashboard_auth_manager.is_auth_required(),
+            "twitch_auth": twitch_bot.get_auth_info() if twitch_bot else {},
+            "bot_status": twitch_bot.get_status() if twitch_bot else {},
+            "counter": kill_counter_monitor.get_status_dict()
+        }
+
+    def _send_json(self, code: int, data: dict):
+        body = json.dumps(data).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self._send_cors_headers()
+        self._send_security_headers()
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _serve_static_file(self, filepath: str, mime_type: str, allow_framing: bool = False):
         try:
             with open(filepath, "rb") as f:
                 content = f.read()
             self.send_response(200)
             self.send_header("Content-Type", mime_type)
             self.send_header("Content-Length", str(len(content)))
-            self._send_security_headers()
+            self._send_cors_headers()
+            self._send_security_headers(allow_framing=allow_framing)
             self.end_headers()
             self.wfile.write(content)
         except Exception as e:
-            logger.error(f"Error reading OBS static file {filepath}: {e}")
+            logger.error(f"Error reading static file {filepath} on public server: {e}")
             self.send_error(500, "Internal server error")
 
 
-def run_server(host: str = "0.0.0.0", port: int = 5000, obs_host: str = "0.0.0.0", obs_port: int = 5001):
+def run_server(host: str = "0.0.0.0", port: int = 5000, public_host: str = "0.0.0.0", public_port: int = 5001):
     global twitch_bot
     
     # Initialize Twitch bot listener
@@ -1523,18 +2010,18 @@ def run_server(host: str = "0.0.0.0", port: int = 5000, obs_host: str = "0.0.0.0
     kill_counter_monitor.broadcast_func = broadcast_event
     kill_counter_monitor.start()
 
-    # Start dedicated read-only OBS Overlay HTTP Server
-    obs_httpd = None
-    if obs_port != port:
-        obs_address = (obs_host, obs_port)
-        obs_httpd = ThreadingHTTPServer(obs_address, OBSRequestHandler)
-        obs_thread = threading.Thread(target=obs_httpd.serve_forever, daemon=True)
-        obs_thread.start()
-        logger.info(f"Dedicated Read-Only OBS Overlay Server running on http://{obs_host}:{obs_port}/obs")
+    # Start unified Public Web Server (control portal, player, OBS overlay)
+    public_httpd = None
+    if public_port != port:
+        public_address = (public_host, public_port)
+        public_httpd = ThreadingHTTPServer(public_address, PublicRequestHandler)
+        public_thread = threading.Thread(target=public_httpd.serve_forever, daemon=True)
+        public_thread.start()
+        logger.info(f"Public Web Server running on http://{public_host}:{public_port}/ (Control Portal, Player, OBS Overlay)")
 
     server_address = (host, port)
     httpd = ThreadingHTTPServer(server_address, TTSRequestHandler)
-    logger.info(f"Twitch TTS Admin Web Server running on http://{host}:{port}")
+    logger.info(f"Admin Dashboard Server running on http://{host}:{port} (Private)")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -1543,6 +2030,6 @@ def run_server(host: str = "0.0.0.0", port: int = 5000, obs_host: str = "0.0.0.0
         kill_counter_monitor.stop()
         if twitch_bot:
             twitch_bot.stop()
-        if obs_httpd:
-            obs_httpd.server_close()
+        if public_httpd:
+            public_httpd.server_close()
         httpd.server_close()

@@ -18,6 +18,8 @@ ENV_KEYS = {
     "tts_seed": "TTS_SEED",
     "server_host": "SERVER_HOST",
     "server_port": "SERVER_PORT",
+    "public_server_host": "PUBLIC_SERVER_HOST",
+    "public_server_port": "PUBLIC_SERVER_PORT",
     "obs_server_host": "OBS_SERVER_HOST",
     "obs_server_port": "OBS_SERVER_PORT",
     "twitch_channel": "TWITCH_CHANNEL",
@@ -102,6 +104,11 @@ class Config:
     tts_seed: int = field(default_factory=lambda: int(os.getenv("TTS_SEED", "42")))
     server_host: str = field(default_factory=lambda: os.getenv("SERVER_HOST", "0.0.0.0"))
     server_port: int = field(default_factory=lambda: int(os.getenv("SERVER_PORT", "5000")))
+    # Public server (internet-facing): serves control portal, player, and OBS overlay
+    # Falls back to legacy OBS_SERVER_HOST/PORT env vars for backward compatibility
+    public_server_host: str = field(default_factory=lambda: os.getenv("PUBLIC_SERVER_HOST", os.getenv("OBS_SERVER_HOST", "0.0.0.0")))
+    public_server_port: int = field(default_factory=lambda: int(os.getenv("PUBLIC_SERVER_PORT", os.getenv("OBS_SERVER_PORT", "5001"))))
+    # Legacy aliases (kept for backward compat with config.json)
     obs_server_host: str = field(default_factory=lambda: os.getenv("OBS_SERVER_HOST", "0.0.0.0"))
     obs_server_port: int = field(default_factory=lambda: int(os.getenv("OBS_SERVER_PORT", "5001")))
     twitch_channel: str = field(default_factory=lambda: os.getenv("TWITCH_CHANNEL", "m_e_s_t_a_a_j_a"))
@@ -238,8 +245,10 @@ class Config:
             "tts_seed": self.tts_seed,
             "server_host": self.server_host,
             "server_port": self.server_port,
-            "obs_server_host": self.obs_server_host,
-            "obs_server_port": self.obs_server_port,
+            "public_server_host": self.public_server_host,
+            "public_server_port": self.public_server_port,
+            "obs_server_host": self.public_server_host,
+            "obs_server_port": self.public_server_port,
             "twitch_channel": self.twitch_channel,
             "channels": self.channels,
             "user_template": self.user_template,

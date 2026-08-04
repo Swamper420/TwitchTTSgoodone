@@ -314,7 +314,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!status) return;
         state.connected = status.connected !== undefined ? status.connected : (status.twitch_connected || false);
         state.channels = status.channels || [];
-        state.obsPort = status.config?.obs_server_port || 5001;
+        state.obsPort = status.config?.public_server_port || status.config?.obs_server_port || 5001;
 
         // Status pill
         if (state.connected) {

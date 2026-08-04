@@ -685,10 +685,17 @@ document.addEventListener('DOMContentLoaded', () => {
             connectBtn.textContent = 'Connect';
         }
 
-        // Update OBS Overlay links display
-        const obsPort = data.config && data.config.obs_server_port ? data.config.obs_server_port : 5001;
+        // Update OBS Overlay links display (uses public server port)
+        const publicPort = data.config && (data.config.public_server_port || data.config.obs_server_port) ? (data.config.public_server_port || data.config.obs_server_port) : 5001;
         const host = window.location.hostname || 'localhost';
-        const obsBaseUrl = `http://${host}:${obsPort}/obs`;
+        const publicBaseUrl = `http://${host}:${publicPort}`;
+        const obsBaseUrl = `${publicBaseUrl}/obs`;
+
+        // Update navbar links to point to the public server
+        const publicPlayerLink = document.getElementById('publicPlayerLink');
+        if (publicPlayerLink) publicPlayerLink.href = `${publicBaseUrl}/player`;
+        const publicObsLink = document.getElementById('publicObsLink');
+        if (publicObsLink) publicObsLink.href = `${publicBaseUrl}/obs`;
 
         const obsLinkAll = document.getElementById('obsLinkAll');
         if (obsLinkAll) obsLinkAll.value = obsBaseUrl;
