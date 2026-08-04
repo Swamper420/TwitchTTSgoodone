@@ -373,6 +373,13 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
             raw_voice_arg = parts[1].strip() if len(parts) > 1 else ""
             user_name = user or "Chatter"
 
+            if user_voice_manager.is_locked(user_name):
+                msg_text = f"🔒 @{user_name}, your signature voice is locked by the streamer and cannot be changed."
+                broadcast_event("chat_message", {"user": "System", "message": msg_text, "channel": clean_chan, "timestamp": time.time()})
+                if config.enable_chat_responses and twitch_bot:
+                    twitch_bot.send_chat(msg_text, channel=clean_chan)
+                return
+
             if not raw_voice_arg:
                 curr_voice = user_voice_manager.get_voice(user_name) or config.tts_voice
                 msg_text = f"@{user_name} Usage: !myvoice <voicename>, !myvoice random, or !myvoice reset. Your active voice: '{curr_voice}'. Presets: {config.voice_presets}"
@@ -1115,10 +1122,11 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/user_voices/set":
             username = sanitize_username(body.get("user"))
             voice = sanitize_identifier(body.get("voice"), max_len=100)
+            locked = bool(body.get("locked", False))
             if not username or not voice:
                 self._send_json(400, {"error": "Both valid 'user' and 'voice' parameters are required"})
                 return
-            saved = user_voice_manager.set_voice(username, voice)
+            saved = user_voice_manager.set_voice(username, voice, locked=locked, force=True)
             broadcast_event("status", self._get_status_dict())
             self._send_json(200, {"success": True, "user": username, "voice": saved, "user_voices": user_voice_manager.get_all()})
             return
@@ -1255,10 +1263,11 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/user_voices/set":
             username = sanitize_username(body.get("user"))
             voice = sanitize_identifier(body.get("voice"), max_len=100)
+            locked = bool(body.get("locked", False))
             if not username or not voice:
                 self._send_json(400, {"error": "Both valid 'user' and 'voice' parameters are required"})
                 return
-            saved = user_voice_manager.set_voice(username, voice)
+            saved = user_voice_manager.set_voice(username, voice, locked=locked, force=True)
             broadcast_event("status", self._get_status_dict())
             self._send_json(200, {"success": True, "user": username, "voice": saved, "user_voices": user_voice_manager.get_all()})
             return

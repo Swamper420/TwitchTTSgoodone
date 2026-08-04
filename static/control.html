@@ -367,11 +367,15 @@
                             View or assign signature TTS voices for specific chatters. Chatters can also set their own voice using <code>!myvoice &lt;voice&gt;</code>.
                         </p>
 
-                        <div class="add-voice-form">
-                            <input type="text" id="chatterUserVal" placeholder="Twitch Username" class="form-input-sm" />
-                            <select id="chatterVoiceVal" class="form-select-sm">
+                        <div class="add-voice-form" style="align-items: center; gap: 6px;">
+                            <input type="text" id="chatterUserVal" placeholder="Twitch Username" class="form-input-sm" style="flex: 1.2;" />
+                            <select id="chatterVoiceVal" class="form-select-sm" style="flex: 1.2;">
                                 <option value="">Select Voice...</option>
                             </select>
+                            <label style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer; flex: 0.8; user-select: none;" title="Lock this user to this voice">
+                                <input type="checkbox" id="chatterLockVal" style="accent-color: var(--accent-cyan);" />
+                                <span>Lock</span>
+                            </label>
                             <button type="button" id="addVoiceBtn" class="btn btn-primary btn-small">
                                 <span class="material-symbols-outlined">add</span> Save
                             </button>

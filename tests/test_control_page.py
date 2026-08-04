@@ -186,6 +186,47 @@ class TestControlPageServerRoutes(unittest.TestCase):
         self.assertFalse(config.enable_chat_responses)
         self.assertFalse(config.enable_kill_counter)
 
+    def test_user_voice_locking(self):
+        """Test setting locked custom user voice and that it rejects chat command overrides."""
+        # 1. Login to get token
+        url_login = f"{self.base_url}/api/auth/login"
+        req_login = urllib.request.Request(
+            url_login,
+            data=json.dumps({"password": ""}).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req_login) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            token = data.get("token")
+
+        # 2. Set user voice with locked=True
+        url_set = f"{self.base_url}/api/user_voices/set"
+        payload_set = {"user": "lockguy", "voice": "mertaranta_fi", "locked": True}
+        req_set = urllib.request.Request(
+            url_set,
+            data=json.dumps(payload_set).encode("utf-8"),
+            headers={"Content-Type": "application/json", "X-Admin-Token": token}
+        )
+        with urllib.request.urlopen(req_set) as resp:
+            self.assertEqual(resp.status, 200)
+            res_data = json.loads(resp.read().decode("utf-8"))
+            self.assertTrue(res_data.get("success"))
+
+        from app.user_voices import user_voice_manager
+        self.assertEqual(user_voice_manager.get_voice("lockguy"), "mertaranta_fi")
+        self.assertTrue(user_voice_manager.is_locked("lockguy"))
+
+        # 3. Send chat message '!myvoice kimi_fi' to attempt changing it
+        from app.server import process_incoming_text
+        process_incoming_text("lockguy", "!myvoice kimi_fi", channel="testchannel")
+
+        # 4. Verify it is still locked to mertaranta_fi!
+        self.assertEqual(user_voice_manager.get_voice("lockguy"), "mertaranta_fi")
+        self.assertTrue(user_voice_manager.is_locked("lockguy"))
+
+        # Cleanup
+        user_voice_manager.clear_user("lockguy", force=True)
+
 
 if __name__ == "__main__":
     unittest.main()

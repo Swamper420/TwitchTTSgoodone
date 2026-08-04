@@ -259,6 +259,12 @@ class Config:
             "shouting_voices": self.shouting_voices,
             "effect_8d_speed": self.effect_8d_speed,
             "enable_8d_audio": self.enable_8d_audio,
+            "enable_kill_counter": self.enable_kill_counter,
+            "kill_counter_file": self.kill_counter_file,
+            "kill_counter_poll_interval": self.kill_counter_poll_interval,
+            "kill_counter_voice": self.kill_counter_voice,
+            "kill_counter_template": self.kill_counter_template,
+            "bible_api_url": self.bible_api_url,
         }
 
     def to_masked_dict(self) -> Dict[str, Any]:

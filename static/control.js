@@ -85,6 +85,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // User Voices
         chatterUserVal: document.getElementById("chatterUserVal"),
         chatterVoiceVal: document.getElementById("chatterVoiceVal"),
+        chatterLockVal: document.getElementById("chatterLockVal"),
         addVoiceBtn: document.getElementById("addVoiceBtn"),
         userVoicesTableBody: document.getElementById("userVoicesTableBody"),
         
@@ -311,7 +312,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function updateStatusUI(status) {
         if (!status) return;
-        state.connected = status.twitch_connected || false;
+        state.connected = status.connected !== undefined ? status.connected : (status.twitch_connected || false);
         state.channels = status.channels || [];
         state.obsPort = status.config?.obs_server_port || 5001;
 
@@ -626,22 +627,24 @@ document.addEventListener("DOMContentLoaded", () => {
     elements.addVoiceBtn.addEventListener("click", async () => {
         const user = elements.chatterUserVal.value.trim().toLowerCase();
         const voice = elements.chatterVoiceVal.value;
-
+        const locked = elements.chatterLockVal ? elements.chatterLockVal.checked : false;
+ 
         if (!user || !voice) {
             showToast("Please specify both a chatter username and a voice.", "warning");
             return;
         }
-
+ 
         try {
             const res = await apiRequest("/api/user_voices/set", {
                 method: "POST",
-                body: JSON.stringify({ user, voice })
+                body: JSON.stringify({ user, voice, locked })
             });
             state.userVoices = res.user_voices || {};
             renderUserVoicesTable();
-            showToast(`Assigned voice '${voice}' to @${user}`, "success");
+            showToast(`Assigned voice '${voice}' to @${user}` + (locked ? " (locked)" : ""), "success");
             elements.chatterUserVal.value = "";
             elements.chatterVoiceVal.value = "";
+            if (elements.chatterLockVal) elements.chatterLockVal.checked = false;
         } catch (e) {
             showToast("Failed to save chatter voice mapping", "error");
         }
@@ -650,25 +653,31 @@ document.addEventListener("DOMContentLoaded", () => {
     function renderUserVoicesTable() {
         const tbody = elements.userVoicesTableBody;
         tbody.innerHTML = "";
-
+ 
         const entries = Object.entries(state.userVoices);
         if (entries.length === 0) {
             tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted" style="text-align:center; padding:12px;">No signature voices configured yet.</td></tr>';
             return;
         }
+ 
+        entries.forEach(([user, entry]) => {
+            const voiceName = (typeof entry === 'object' && entry !== null) ? (entry.voice || "") : entry;
+            const isLocked = (typeof entry === 'object' && entry !== null) ? !!entry.locked : false;
 
-        entries.forEach(([user, voice]) => {
             const tr = document.createElement("tr");
             tr.innerHTML = `
                 <td style="font-weight:700; color:var(--accent-cyan);">@${user}</td>
-                <td><span class="badge badge-purple">${voice}</span></td>
+                <td>
+                    <span class="badge badge-purple">${voiceName}</span>
+                    ${isLocked ? '<span class="material-symbols-outlined" style="font-size:14px; vertical-align:middle; color:var(--warning-amber); margin-left:4px;" title="Voice Locked">lock</span>' : ''}
+                </td>
                 <td>
                     <button class="btn btn-small btn-danger delete-voice-btn" data-user="${user}">
                         <span class="material-symbols-outlined" style="font-size:12px;">delete</span> Delete
                     </button>
                 </td>
             `;
-
+ 
             tr.querySelector(".delete-voice-btn").addEventListener("click", async () => {
                 try {
                     const res = await apiRequest("/api/user_voices/delete", {
@@ -682,7 +691,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     showToast("Failed to delete voice mapping", "error");
                 }
             });
-
+ 
             tbody.appendChild(tr);
         });
     }

@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from typing import Dict, Optional
+from typing import Dict, Any, Optional
 
 from app.sanitizer import sanitize_identifier, sanitize_username
 
@@ -14,7 +14,7 @@ class UserVoiceManager:
     
     def __init__(self, filepath: str = USER_VOICES_FILE):
         self.filepath = filepath
-        self._voices: Dict[str, str] = {}
+        self._voices: Dict[str, Dict[str, Any]] = {}
         self.load()
         
     def load(self):
@@ -24,11 +24,20 @@ class UserVoiceManager:
                 with open(self.filepath, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 if isinstance(data, dict):
-                    self._voices = {
-                        sanitize_username(k): sanitize_identifier(v, max_len=100)
-                        for k, v in data.items()
-                        if k and v and sanitize_username(k) and sanitize_identifier(v, max_len=100)
-                    }
+                    self._voices = {}
+                    for k, v in data.items():
+                        user_clean = sanitize_username(k)
+                        if not user_clean:
+                            continue
+                        if isinstance(v, dict):
+                            voice_name = sanitize_identifier(v.get("voice"), max_len=100)
+                            is_locked = bool(v.get("locked", False))
+                        else:
+                            voice_name = sanitize_identifier(v, max_len=100)
+                            is_locked = False
+                        
+                        if voice_name:
+                            self._voices[user_clean] = {"voice": voice_name, "locked": is_locked}
                 logger.info(f"Loaded {len(self._voices)} user voice mappings from {self.filepath}")
             except Exception as e:
                 logger.error(f"Failed to load user voices from {self.filepath}: {e}")
@@ -48,13 +57,27 @@ class UserVoiceManager:
         if not username:
             return None
         user_clean = sanitize_username(username)
-        return self._voices.get(user_clean) if user_clean else None
+        entry = self._voices.get(user_clean)
+        return entry.get("voice") if entry else None
+
+    def is_locked(self, username: Optional[str]) -> bool:
+        """Check if username signature voice is locked."""
+        if not username:
+            return False
+        user_clean = sanitize_username(username)
+        entry = self._voices.get(user_clean)
+        return entry.get("locked", False) if entry else False
         
-    def set_voice(self, username: str, voice_name: str) -> str:
+    def set_voice(self, username: str, voice_name: str, locked: bool = False, force: bool = False) -> str:
         """Set signature voice for username. Returns clean voice name."""
         user_clean = sanitize_username(username)
         if not user_clean:
             return "default"
+
+        # Check existing lock if not forced (e.g. chat commands cannot override locks)
+        if not force and self.is_locked(user_clean):
+            entry = self._voices.get(user_clean)
+            return entry.get("voice") if entry else "default"
 
         voice_clean = sanitize_identifier(voice_name, max_len=100).lower()
         
@@ -64,13 +87,15 @@ class UserVoiceManager:
                 self.save()
             return "default"
             
-        self._voices[user_clean] = voice_clean
+        self._voices[user_clean] = {"voice": voice_clean, "locked": locked}
         self.save()
         return voice_clean
         
-    def clear_user(self, username: str):
+    def clear_user(self, username: str, force: bool = False):
         """Remove signature voice for username."""
         user_clean = username.strip().lower()
+        if not force and self.is_locked(user_clean):
+            return
         if user_clean in self._voices:
             del self._voices[user_clean]
             self.save()
@@ -80,7 +105,7 @@ class UserVoiceManager:
         self._voices.clear()
         self.save()
         
-    def get_all(self) -> Dict[str, str]:
+    def get_all(self) -> Dict[str, Any]:
         """Return dict of all user voice mappings."""
         return dict(self._voices)
 
