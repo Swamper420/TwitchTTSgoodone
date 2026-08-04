@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Streamer Control Portal - Twitch TTS & OBS Overlay Setup</title>
+    <meta name="description" content="Secure streamer control portal for monitoring Twitch chat, building custom OBS overlays, triggering soundboard effects, and managing TTS voices.">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="control.css">
+</head>
+<body>
+    <!-- Password Lock Screen Overlay -->
+    <div id="authLockModal" class="auth-lock-overlay hidden">
+        <div class="auth-lock-card">
+            <div class="lock-icon-badge">🔒</div>
+            <h2>Streamer Control Portal Lock</h2>
+            <p>Please enter the Streamer Control Password to unlock chat controls, soundboard, and OBS setup.</p>
+            <div class="auth-form">
+                <input type="password" id="controlPasswordInput" placeholder="Enter Streamer Password..." class="form-input-lg" autocomplete="current-password" />
+                <button type="button" id="controlLoginBtn" class="btn btn-primary btn-large">
+                    <span>🔓</span> Unlock Portal
+                </button>
+            </div>
+            <div id="controlLoginError" class="auth-error-msg hidden"></div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <div class="app-container">
+        <!-- Header Navbar -->
+        <header class="navbar">
+            <div class="navbar-brand">
+                <div class="brand-logo">
+                    <span class="logo-icon">🎮</span>
+                </div>
+                <div class="brand-title">
+                    <h1>Streamer <span>Control Portal</span></h1>
+                    <span class="version-tag">SECURE END-USER SUITE</span>
+                </div>
+            </div>
+
+            <!-- Twitch Channel Connect Controls -->
+            <div class="channel-connect-box">
+                <div class="status-pill" id="statusPill">
+                    <span class="status-dot"></span>
+                    <span id="statusText">Disconnected</span>
+                </div>
+                <div class="channel-input-wrapper">
+                    <span class="twitch-icon">🔮</span>
+                    <input type="text" id="channelInput" placeholder="Twitch Channel(s) e.g. shroud, summit1g..." title="Supports up to 2 Twitch channels (comma separated)" />
+                </div>
+                <button id="connectBtn" class="btn btn-primary">
+                    <span>📡</span> Connect Chat
+                </button>
+            </div>
+
+            <div class="navbar-links">
+                <button type="button" id="portalLockBtn" class="nav-link nav-link-lock" title="Toggle Password Lock">
+                    <span id="lockBtnIcon">🔒</span> <span id="lockBtnText">Locked</span>
+                </button>
+                <a href="/obs" target="_blank" class="nav-link" title="Open OBS Overlay in new tab">
+                    <span>📺</span> OBS Overlay
+                </a>
+                <a href="/player" target="_blank" class="nav-link" title="Open Voice Player in new tab">
+                    <span>🔊</span> Voice Player
+                </a>
+                <a href="/" class="nav-link nav-link-admin" title="Open Admin Dashboard">
+                    <span>⚙️</span> Admin
+                </a>
+            </div>
+        </header>
+
+        <!-- Active Channels Status Bar -->
+        <div class="active-channels-bar" id="activeChannelsBar">
+            <div class="bar-label"><span>LIVE MONITORED CHANNELS:</span></div>
+            <div class="channels-chips" id="channelsChips">
+                <span class="chip chip-empty">No Twitch channel connected</span>
+            </div>
+        </div>
+
+        <!-- Main Workspace Grid -->
+        <main class="control-grid">
+            
+            <!-- SECTION 1: Interactive OBS Overlay Builder & Live Visualizer -->
+            <section class="card obs-builder-card">
+                <div class="card-header">
+                    <h2><span class="header-icon">📺</span> OBS Overlay Studio & Builder</h2>
+                    <span class="badge badge-cyan">READ-ONLY OBS SERVER :5001</span>
+                </div>
+                
+                <div class="builder-layout">
+                    <!-- Controls Panel -->
+                    <div class="builder-controls">
+                        <p class="section-desc">
+                            Customize your OBS Browser Source variables below. Settings update the URL and live preview frame in real-time.
+                        </p>
+
+                        <div class="control-group">
+                            <label class="control-label">Target Stream Channel</label>
+                            <select id="obsChannelSelect" class="form-select">
+                                <option value="">All Monitored Channels (Combined)</option>
+                                <option value="chan1" id="optChan1">Channel 1</option>
+                                <option value="chan2" id="optChan2">Channel 2</option>
+                            </select>
+                        </div>
+
+                        <div class="control-group">
+                            <label class="control-label">Overlay Screen Position</label>
+                            <div class="position-grid">
+                                <button type="button" class="pos-btn" data-pos="top-left">Top Left</button>
+                                <button type="button" class="pos-btn" data-pos="top-right">Top Right</button>
+                                <button type="button" class="pos-btn" data-pos="center">Center</button>
+                                <button type="button" class="pos-btn" data-pos="bottom-left">Bottom Left</button>
+                                <button type="button" class="pos-btn active" data-pos="bottom-right">Bottom Right</button>
+                            </div>
+                        </div>
+
+                        <div class="control-row">
+                            <div class="control-group flex-1">
+                                <label class="control-label">Audio Volume: <span id="volumeVal" class="val-highlight">80%</span></label>
+                                <input type="range" id="obsVolume" min="0" max="100" value="80" class="form-slider" />
+                            </div>
+
+                            <div class="control-group flex-1">
+                                <label class="control-label">Text Font Size: <span id="fontSizeVal" class="val-highlight">22px</span></label>
+                                <input type="range" id="obsFontSize" min="14" max="42" value="22" class="form-slider" />
+                            </div>
+                        </div>
+
+                        <div class="toggles-row">
+                            <label class="toggle-card">
+                                <input type="checkbox" id="obsAutohide" checked />
+                                <span class="toggle-slider"></span>
+                                <span class="toggle-text">
+                                    <strong>Autohide Card</strong>
+                                    <small>Fade out when idle</small>
+                                </span>
+                            </label>
+
+                            <label class="toggle-card">
+                                <input type="checkbox" id="obsChime" checked />
+                                <span class="toggle-slider"></span>
+                                <span class="toggle-text">
+                                    <strong>Chime Sound</strong>
+                                    <small>Play chime before TTS</small>
+                                </span>
+                            </label>
+                        </div>
+
+                        <!-- Generated URL Box -->
+                        <div class="generated-url-card">
+                            <div class="url-header">
+                                <span>OBS BROWSER SOURCE URL</span>
+                                <span class="width-hint">Recommended Size: 800 x 300</span>
+                            </div>
+                            <div class="url-input-group">
+                                <input type="text" id="obsGeneratedUrl" readonly value="http://localhost:5001/obs?position=bottom-right&autohide=1&volume=80&font_size=22" />
+                                <button type="button" id="copyUrlBtn" class="btn btn-accent">
+                                    <span>📋</span> Copy URL
+                                </button>
+                                <button type="button" id="launchObsBtn" class="btn btn-secondary" title="Open preview in new window">
+                                    <span>↗️</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Live Stream Visualizer Frame -->
+                    <div class="preview-panel">
+                        <div class="preview-frame-header">
+                            <span class="preview-title">📺 Stream Preview Simulator</span>
+                            <span class="preview-status">● Live Rendering</span>
+                        </div>
+                        <div class="stream-viewport" id="streamViewport">
+                            <!-- Simulated Stream Content Background -->
+                            <div class="game-bg-graphic">
+                                <div class="game-hud">
+                                    <span class="hud-item">🔴 LIVE</span>
+                                    <span class="hud-item">FPS: 144</span>
+                                    <span class="hud-item">CHAT TTS ACTIVE</span>
+                                </div>
+                            </div>
+
+                            <!-- Simulated Overlay Element positioned according to settings -->
+                            <div class="simulated-overlay-card pos-bottom-right" id="simulatedOverlay">
+                                <div class="sim-card-header">
+                                    <span class="sim-speaker">@StreamerFan</span>
+                                    <span class="sim-voice-tag">[mieto]</span>
+                                </div>
+                                <div class="sim-card-text" id="simCardText">
+                                    Welcome to the stream! Customize your OBS overlay live!
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 2: Soundboard Control Panel -->
+            <section class="card soundboard-card">
+                <div class="card-header">
+                    <h2><span class="header-icon">🔊</span> Chat Soundboard Controls</h2>
+                    <div class="soundboard-header-actions">
+                        <label class="toggle-card mini-toggle">
+                            <input type="checkbox" id="soundboardMasterToggle" checked />
+                            <span class="toggle-slider"></span>
+                            <span class="toggle-text">Soundboard Active</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="soundboard-body">
+                    <div class="soundboard-top-bar">
+                        <div class="search-box">
+                            <span class="search-icon">🔍</span>
+                            <input type="text" id="soundSearch" placeholder="Search soundboard triggers..." />
+                        </div>
+                        <div class="chat-help-badge">
+                            💡 Chatters trigger sounds using parenthesis, e.g.: <code>(boom)</code> or <code>(bruh)</code>
+                        </div>
+                    </div>
+
+                    <!-- Soundboard Grid -->
+                    <div class="soundboard-grid" id="soundboardGrid">
+                        <div class="empty-state">Scanning available soundboard effects...</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 3: Live Chat Stream & Audio Queue Controls -->
+            <section class="card player-card">
+                <div class="card-header">
+                    <h2><span class="header-icon">🎙️</span> Live Audio Queue & Speech Monitor</h2>
+                    <span class="queue-count-badge" id="queueBadge">0 in queue</span>
+                </div>
+
+                <div class="player-wrapper">
+                    <!-- Equalizer Canvas & Now Playing Box -->
+                    <div class="now-playing-banner" id="nowPlayingBanner">
+                        <div class="eq-visualizer" id="eqVisualizer">
+                            <span></span><span></span><span></span><span></span><span></span>
+                        </div>
+                        <canvas id="spectrumCanvas" width="160" height="50" class="spectrum-canvas"></canvas>
+                        
+                        <div class="speaker-info">
+                            <span class="speaker-label">NOW SPEAKING</span>
+                            <h3 id="currentSpeaker" class="speaker-title">Idle / Ready</h3>
+                            <p id="currentText" class="spoken-message">Waiting for incoming chat messages...</p>
+                        </div>
+
+                        <div class="player-actions">
+                            <button type="button" id="skipAudioBtn" class="btn btn-warning" title="Skip currently playing audio">
+                                <span>⏭️</span> Skip Audio
+                            </button>
+                            <button type="button" id="clearQueueBtn" class="btn btn-danger" title="Clear all queued messages">
+                                <span>🧹</span> Clear Queue
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Interactive TTS Test Tool -->
+                    <div class="tts-test-panel">
+                        <h3>🧪 Quick TTS Test & Voice Preview</h3>
+                        <div class="tts-test-form">
+                            <div class="input-row">
+                                <input type="text" id="testTextInput" placeholder="Enter text to synthesize e.g. Hello chat! {8d} Welcome to the stream!" class="flex-1" />
+                                <button type="button" id="testSpeakBtn" class="btn btn-primary">
+                                    <span>🗣️</span> Speak Test
+                                </button>
+                            </div>
+                            <div class="options-row">
+                                <div class="select-field">
+                                    <label>Voice:</label>
+                                    <select id="testVoiceSelect" class="form-select-sm">
+                                        <option value="">Default Voice</option>
+                                    </select>
+                                </div>
+                                <div class="select-field">
+                                    <label>8D Spatial Audio:</label>
+                                    <label class="toggle-card mini-toggle inline-toggle">
+                                        <input type="checkbox" id="test8dToggle" />
+                                        <span class="toggle-slider"></span>
+                                        <span class="toggle-text">8D Effect</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Recent Chat Messages Log -->
+                    <div class="chat-log-panel">
+                        <div class="panel-header">
+                            <span>💬 Live Twitch Chat Stream Log</span>
+                            <button type="button" id="clearChatLogBtn" class="btn-text">Clear Log</button>
+                        </div>
+                        <div class="chat-log-list" id="chatLogList">
+                            <div class="log-placeholder">No messages logged yet. Connected stream activity will display here.</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 4: Chatters Signature Voices & Kill Counter -->
+            <div class="side-column">
+                <!-- Chatter Signature Voices Manager -->
+                <section class="card chatter-voices-card">
+                    <div class="card-header">
+                        <h2><span class="header-icon">👥</span> Chatter Signature Voices</h2>
+                        <span class="badge">!myvoice Mappings</span>
+                    </div>
+
+                    <div class="voices-body">
+                        <p class="small-desc">
+                            View or assign signature TTS voices for specific chatters. Chatters can also set their own voice using <code>!myvoice &lt;voice&gt;</code>.
+                        </p>
+
+                        <div class="add-voice-form">
+                            <input type="text" id="chatterUserVal" placeholder="Twitch Username" class="form-input-sm" />
+                            <select id="chatterVoiceVal" class="form-select-sm">
+                                <option value="">Select Voice...</option>
+                            </select>
+                            <button type="button" id="addVoiceBtn" class="btn btn-primary btn-small">
+                                <span>➕</span> Save
+                            </button>
+                        </div>
+
+                        <div class="voices-list-table-wrapper">
+                            <table class="voices-table">
+                                <thead>
+                                    <tr>
+                                        <th>Chatter</th>
+                                        <th>Signature Voice</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="userVoicesTableBody">
+                                    <tr>
+                                        <td colspan="3" class="text-center text-muted">No custom voice assignments found.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Stream Kill / Death Counter Widget -->
+                <section class="card kill-counter-card">
+                    <div class="card-header">
+                        <h2><span class="header-icon">💀</span> Stream Death Counter</h2>
+                        <span class="badge badge-purple" id="counterStatusBadge">Active</span>
+                    </div>
+
+                    <div class="counter-body">
+                        <div class="counter-display">
+                            <span class="counter-number" id="counterNumber">0</span>
+                            <span class="counter-label">TOTAL DEATHS / KILLS</span>
+                        </div>
+
+                        <div class="counter-actions">
+                            <button type="button" id="countIncBtn" class="btn btn-success flex-1">
+                                <span>➕</span> +1 Death
+                            </button>
+                            <button type="button" id="countDecBtn" class="btn btn-secondary flex-1">
+                                <span>➖</span> -1
+                            </button>
+                            <button type="button" id="countResetBtn" class="btn btn-danger" title="Reset Counter to 0">
+                                <span>🔄</span> Reset
+                            </button>
+                        </div>
+
+                        <div class="counter-sub-actions">
+                            <button type="button" id="testBibleVerseBtn" class="btn btn-outline-purple flex-1">
+                                <span>📖</span> Trigger Bible Verse TTS
+                            </button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Main JavaScript App Logic -->
+    <script src="control.js"></script>
+</body>
+</html>

@@ -43,6 +43,7 @@ python3 main.py --channel "streamer1, streamer2" --port 5000 --obs-port 5001
 ```
 
 Once running:
+- **Streamer Control Portal (Internet-Safe End-User UI)**: `http://localhost:5000/control` (or `/user`)
 - **Admin Dashboard**: `http://localhost:5000`
 - **End-User Standalone Player**: `http://localhost:5000/player`
 - **Dedicated Read-Only OBS Overlay**: `http://localhost:5001/obs`

@@ -112,6 +112,7 @@ class Config:
     enable_periodic_info: bool = field(default_factory=lambda: os.getenv("ENABLE_PERIODIC_INFO", "false").lower() in ("true", "1", "yes"))
     periodic_info_interval: int = field(default_factory=lambda: int(os.getenv("PERIODIC_INFO_INTERVAL", "15")))
     admin_password: str = field(default_factory=lambda: os.getenv("ADMIN_PASSWORD", ""))
+    user_password: str = field(default_factory=lambda: os.getenv("USER_PASSWORD", os.getenv("CONTROL_PASSWORD", "")))
     twitch_client_id: str = field(default_factory=lambda: os.getenv("TWITCH_CLIENT_ID", ""))
     same_user_timeout: float = field(default_factory=lambda: float(os.getenv("SAME_USER_TIMEOUT", "10.0")))
     enable_kill_counter: bool = field(default_factory=lambda: os.getenv("ENABLE_KILL_COUNTER", "true").lower() in ("true", "1", "yes"))
@@ -247,6 +248,7 @@ class Config:
             "enable_periodic_info": self.enable_periodic_info,
             "periodic_info_interval": self.periodic_info_interval,
             "admin_password": self.admin_password,
+            "user_password": self.user_password,
             "twitch_client_id": self.twitch_client_id,
             "same_user_timeout": self.same_user_timeout,
             "kill_counter_api_token": self.kill_counter_api_token,
@@ -264,6 +266,8 @@ class Config:
         d["kill_counter_api_token"] = mask_token(self.kill_counter_api_token)
         d["has_admin_password"] = bool(self.admin_password)
         d["admin_password"] = "••••••••" if self.admin_password else ""
+        d["has_user_password"] = bool(self.user_password)
+        d["user_password"] = "••••••••" if self.user_password else ""
         return d
 
 config = Config()

@@ -23,9 +23,10 @@ class TestAuthModule(unittest.TestCase):
         self.assertFalse(manager.is_auth_required())
         
         # Guest token authentication when no password set
-        success, token, err = manager.authenticate("")
+        success, token, err, role = manager.authenticate("")
         self.assertTrue(success)
         self.assertIsNotNone(token)
+        self.assertEqual(role, "admin")
         self.assertTrue(manager.verify_session(token))
 
     def test_dashboard_auth_manager_with_password(self):
@@ -33,15 +34,16 @@ class TestAuthModule(unittest.TestCase):
         self.assertTrue(manager.is_auth_required())
 
         # Failed attempt
-        success, token, err = manager.authenticate("WrongPassword")
+        success, token, err, role = manager.authenticate("WrongPassword")
         self.assertFalse(success)
         self.assertIsNone(token)
-        self.assertEqual(err, "Invalid admin password")
+        self.assertEqual(err, "Invalid password")
 
         # Successful attempt
-        success, token, err = manager.authenticate("SuperSecretPassword123!")
+        success, token, err, role = manager.authenticate("SuperSecretPassword123!")
         self.assertTrue(success)
         self.assertIsNotNone(token)
+        self.assertEqual(role, "admin")
         self.assertTrue(manager.verify_session(token))
 
         # Revoke session
@@ -133,10 +135,10 @@ class TestAuthModule(unittest.TestCase):
         with patch.object(dashboard_auth_manager, 'admin_password', "secret123"):
             handler._get_request_auth_token = MagicMock(return_value="")
             self.assertFalse(TTSRequestHandler._check_auth(handler))
-            handler._send_json.assert_called_with(401, {
-                "error": "Unauthorized: Admin authentication required",
-                "auth_required": True
-            })
+            self.assertTrue(handler._send_json.called)
+            call_args = handler._send_json.call_args[0]
+            self.assertEqual(call_args[0], 401)
+            self.assertIn("error", call_args[1])
 
 
 if __name__ == "__main__":

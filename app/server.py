@@ -567,6 +567,13 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Token")
 
+    def _send_security_headers(self):
+        """Send HTTP security headers for defense-in-depth on internet-exposed endpoints."""
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("X-XSS-Protection", "1; mode=block")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+
     def _get_client_ip(self) -> str:
         """Get client IP address for rate limiting."""
         return self.client_address[0] if self.client_address else "unknown"
@@ -584,12 +591,14 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 token = query["admin_token"][0]
         return token.strip() if token else ""
 
-    def _check_auth(self) -> bool:
+    def _check_auth(self, required_role: str = "admin") -> bool:
         token = self._get_request_auth_token()
-        if not dashboard_auth_manager.verify_session(token):
+        if not dashboard_auth_manager.verify_session(token, required_role=required_role):
             self._send_json(401, {
-                "error": "Unauthorized: Admin authentication required",
-                "auth_required": dashboard_auth_manager.is_auth_required()
+                "error": f"Unauthorized: {required_role.capitalize()} authentication required",
+                "auth_required": dashboard_auth_manager.is_auth_required(),
+                "admin_auth_required": dashboard_auth_manager.is_admin_auth_required(),
+                "user_auth_required": dashboard_auth_manager.is_user_auth_required()
             })
             return False
         return True
@@ -668,10 +677,14 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         # Route: Auth Status
         if path == "/api/auth/status":
             tok = self._get_request_auth_token()
-            authenticated = dashboard_auth_manager.verify_session(tok)
+            role = dashboard_auth_manager.get_session_role(tok)
+            authenticated = dashboard_auth_manager.verify_session(tok, required_role="user")
             self._send_json(200, {
                 "auth_required": dashboard_auth_manager.is_auth_required(),
+                "admin_auth_required": dashboard_auth_manager.is_admin_auth_required(),
+                "user_auth_required": dashboard_auth_manager.is_user_auth_required(),
                 "authenticated": authenticated,
+                "role": role or ("admin" if not dashboard_auth_manager.is_auth_required() else None),
                 "twitch_auth": twitch_bot.get_auth_info() if twitch_bot else {}
             })
             return
@@ -791,6 +804,11 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             self._serve_static_file(file_path, "text/html; charset=utf-8")
             return
 
+        if path in ("/control", "/control.html", "/user", "/user.html"):
+            file_path = os.path.join(STATIC_DIR, "control.html")
+            self._serve_static_file(file_path, "text/html; charset=utf-8")
+            return
+
         if path in ("/player", "/player.html", "/listen", "/listen.html"):
             file_path = os.path.join(STATIC_DIR, "player.html")
             self._serve_static_file(file_path, "text/html; charset=utf-8")
@@ -854,6 +872,51 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             self._send_json(200, res)
             return
 
+        # Route: Trigger Soundboard Effect (Public/End-user)
+        if path in ("/api/soundboard/trigger", "/api/soundboard/play"):
+            if not config.enable_soundboard:
+                self._send_json(400, {"error": "Soundboard is currently disabled"})
+                return
+            raw_sound = body.get("sound") or body.get("sound_name") or body.get("name") or ""
+            clean_sound = sanitize_identifier(raw_sound, max_len=100)
+            if not clean_sound:
+                self._send_json(400, {"error": "Missing or invalid 'sound' parameter"})
+                return
+            sound_match = soundboard_manager.find_sound(clean_sound)
+            if not sound_match:
+                self._send_json(404, {"error": f"Soundboard effect '{clean_sound}' not found"})
+                return
+            matched_name, file_path = sound_match
+            req_chan = sanitize_string(body.get("channel") or config.twitch_channel, max_len=100)
+            user = sanitize_string(body.get("user", "Control Portal"), max_len=50, default="Control Portal")
+            
+            # Broadcast soundboard play event via SSE
+            broadcast_event("soundboard_trigger", {
+                "sound_name": matched_name,
+                "file_path": f"/api/soundboard/{matched_name}",
+                "user": user,
+                "channel": req_chan,
+                "timestamp": time.time()
+            })
+            self._send_json(200, {
+                "success": True,
+                "sound_name": matched_name,
+                "audio_url": f"/api/soundboard/{matched_name}",
+                "channel": req_chan
+            })
+            return
+
+        # Route: Toggle Soundboard
+        if path == "/api/soundboard/toggle":
+            if "enabled" in body:
+                config.enable_soundboard = sanitize_bool(body["enabled"], default=config.enable_soundboard)
+            else:
+                config.enable_soundboard = not config.enable_soundboard
+            config.save()
+            broadcast_event("status", self._get_status_dict())
+            self._send_json(200, {"success": True, "enabled": config.enable_soundboard})
+            return
+
         # Route: Set Pieruta Target
         if path == "/api/pieruta":
             raw_user = body.get("user") or body.get("username") or ""
@@ -914,20 +977,20 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"success": True, "count": kill_counter_monitor.current_count, "verse": verse})
             return
 
-        # Route: Admin Login
+        # Route: Admin / User Login
         if path == "/api/auth/login":
             if not login_limiter.check_and_record(self._get_client_ip()):
                 self._send_json(429, {"error": "Too many login attempts. Try again later."})
                 return
             password = sanitize_string(body.get("password"), max_len=500)
-            success, session_token, err = dashboard_auth_manager.authenticate(password)
+            success, session_token, err, role = dashboard_auth_manager.authenticate(password)
             if success:
-                self._send_json(200, {"success": True, "token": session_token})
+                self._send_json(200, {"success": True, "token": session_token, "role": role})
             else:
                 self._send_json(401, {"error": err or "Invalid password"})
             return
 
-        # Route: Admin Logout
+        # Route: Admin / User Logout
         if path == "/api/auth/logout":
             tok = self._get_request_auth_token()
             dashboard_auth_manager.revoke_session(tok)
@@ -975,8 +1038,8 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(500, {"error": "TTS synthesis failed"})
             return
 
-        # Protected administrative routes below
-        if not self._check_auth():
+        # Check user/streamer authentication for control portal routes
+        if not self._check_auth(required_role="user"):
             return
 
         # Route: Connect Twitch Channel
@@ -992,22 +1055,6 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 twitch_bot.set_channel(sanitized)
             broadcast_event("status", self._get_status_dict())
             self._send_json(200, {"success": True, "channel": config.twitch_channel, "channels": config.channels})
-            return
-
-        # Route: Send Helpful Info Now to Chat
-        if path == "/api/bot/send_info":
-            info_msg = send_bot_helpful_info()
-            self._send_json(200, {"success": True, "message": info_msg})
-            return
-
-        # Route: Force Reconnect Twitch Bot
-        if path == "/api/bot/reconnect":
-            if twitch_bot:
-                twitch_bot.reconnect()
-                broadcast_event("status", self._get_status_dict())
-                self._send_json(200, {"success": True, "message": "Twitch bot reconnection triggered."})
-            else:
-                self._send_json(400, {"error": "Twitch bot is not initialized."})
             return
 
         # Route: Skip Current Audio Track
@@ -1044,6 +1091,54 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             ).start()
             
             self._send_json(200, {"success": True, "message": "Test TTS job queued."})
+            return
+
+        # Route: User Voices Management
+        if path == "/api/user_voices/set":
+            username = sanitize_username(body.get("user"))
+            voice = sanitize_identifier(body.get("voice"), max_len=100)
+            if not username or not voice:
+                self._send_json(400, {"error": "Both valid 'user' and 'voice' parameters are required"})
+                return
+            saved = user_voice_manager.set_voice(username, voice)
+            broadcast_event("status", self._get_status_dict())
+            self._send_json(200, {"success": True, "user": username, "voice": saved, "user_voices": user_voice_manager.get_all()})
+            return
+
+        if path == "/api/user_voices/delete":
+            username = sanitize_username(body.get("user"))
+            if not username:
+                self._send_json(400, {"error": "Valid parameter 'user' is required"})
+                return
+            user_voice_manager.clear_user(username)
+            broadcast_event("status", self._get_status_dict())
+            self._send_json(200, {"success": True, "user_voices": user_voice_manager.get_all()})
+            return
+
+        if path == "/api/user_voices/clear":
+            user_voice_manager.clear_all()
+            broadcast_event("status", self._get_status_dict())
+            self._send_json(200, {"success": True, "user_voices": {}})
+            return
+
+        # Protected administrative routes below (requires admin role)
+        if not self._check_auth(required_role="admin"):
+            return
+
+        # Route: Send Helpful Info Now to Chat
+        if path == "/api/bot/send_info":
+            info_msg = send_bot_helpful_info()
+            self._send_json(200, {"success": True, "message": info_msg})
+            return
+
+        # Route: Force Reconnect Twitch Bot
+        if path == "/api/bot/reconnect":
+            if twitch_bot:
+                twitch_bot.reconnect()
+                broadcast_event("status", self._get_status_dict())
+                self._send_json(200, {"success": True, "message": "Twitch bot reconnection triggered."})
+            else:
+                self._send_json(400, {"error": "Twitch bot is not initialized."})
             return
 
         # Route: Save Config/Settings
@@ -1100,6 +1195,12 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 raw_pwd = sanitize_string(body["admin_password"], max_len=500)
                 if raw_pwd and raw_pwd != "••••••••":
                     config.admin_password = hash_password(raw_pwd)
+            if "user_password" in body:
+                raw_upwd = sanitize_string(body["user_password"], max_len=500)
+                if raw_upwd and raw_upwd != "••••••••":
+                    config.user_password = hash_password(raw_upwd)
+                elif raw_upwd == "":
+                    config.user_password = ""
             if "twitch_client_id" in body:
                 config.twitch_client_id = sanitize_string(body["twitch_client_id"], max_len=200)
             if "same_user_timeout" in body:
@@ -1124,6 +1225,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                     config.kill_counter_api_token = ""
             
             config.save()
+            dashboard_auth_manager.update_passwords(config.admin_password, config.user_password)
             if twitch_bot:
                 twitch_bot.set_credentials(config.twitch_bot_username, config.twitch_oauth_token)
             
@@ -1184,6 +1286,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self._send_cors_headers()
+        self._send_security_headers()
         self.end_headers()
         self.wfile.write(body)
 
@@ -1195,6 +1298,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", mime_type)
             self.send_header("Content-Length", str(len(content)))
             self._send_cors_headers()
+            self._send_security_headers()
             self.end_headers()
             self.wfile.write(content)
         except Exception as e:

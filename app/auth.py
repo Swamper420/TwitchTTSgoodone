@@ -195,12 +195,14 @@ class TwitchTokenValidator:
 
 class DashboardAuthManager:
     """
-    Manages Web Dashboard security, session tokens, and admin password protection.
+    Manages Web Dashboard and Streamer Control Portal security, session tokens,
+    role-based authorization (admin vs user), and separate password protection.
     """
 
-    def __init__(self, admin_password: str = ""):
+    def __init__(self, admin_password: str = "", user_password: str = ""):
         self.admin_password = admin_password.strip()
-        self._active_sessions: Dict[str, float] = {}  # token -> expiration timestamp
+        self.user_password = user_password.strip()
+        self._active_sessions: Dict[str, Dict[str, Any]] = {}  # token -> {"exp": timestamp, "role": "admin"|"user"}
         self._session_ttl_seconds = 86400  # 24 hours
 
     def update_admin_password(self, password: str):
@@ -213,33 +215,82 @@ class DashboardAuthManager:
                 f"Dashboard admin password updated. (Protection {'ENABLED' if self.admin_password else 'DISABLED'})"
             )
 
-    def is_auth_required(self) -> bool:
+    def update_user_password(self, password: str):
+        """Update control portal user password."""
+        new_pwd = password.strip()
+        if self.user_password != new_pwd:
+            self.user_password = new_pwd
+            self._active_sessions.clear()
+            logger.info(
+                f"Control portal user password updated. (Protection {'ENABLED' if self.user_password else 'DISABLED'})"
+            )
+
+    def update_passwords(self, admin_password: str = "", user_password: str = ""):
+        self.update_admin_password(admin_password)
+        self.update_user_password(user_password)
+
+    def is_admin_auth_required(self) -> bool:
         """Returns True if an admin password is configured."""
         return bool(self.admin_password)
 
-    def authenticate(self, password: str) -> Tuple[bool, Optional[str], Optional[str]]:
+    def is_user_auth_required(self) -> bool:
+        """Returns True if a user password or admin password is configured for control page."""
+        return bool(self.user_password or self.admin_password)
+
+    def is_auth_required(self) -> bool:
+        """Returns True if any password protection is configured."""
+        return self.is_admin_auth_required() or self.is_user_auth_required()
+
+    def authenticate(self, password: str) -> Tuple[bool, Optional[str], Optional[str], str]:
         """
         Authenticate with password.
-        Returns: (success, session_token, error_message)
+        Checks Admin password first (grants 'admin' role).
+        Checks User password second (grants 'user' role).
+        Returns: (success, session_token, error_message, role)
         """
-        if not self.is_auth_required():
-            # If no password set, issue a valid guest session token
-            token = secrets.token_hex(24)
-            self._active_sessions[token] = time.time() + self._session_ttl_seconds
-            return True, token, None
+        pwd = password.strip() if password else ""
 
-        if password and verify_password(password.strip(), self.admin_password):
+        # Check Admin password first
+        if self.admin_password and verify_password(pwd, self.admin_password):
             token = secrets.token_hex(24)
-            self._active_sessions[token] = time.time() + self._session_ttl_seconds
+            self._active_sessions[token] = {
+                "exp": time.time() + self._session_ttl_seconds,
+                "role": "admin"
+            }
             logger.info("Successful Dashboard Admin Login.")
-            return True, token, None
+            return True, token, None, "admin"
 
-        logger.warning("Failed Dashboard Admin Login attempt.")
-        return False, None, "Invalid admin password"
+        # Check User / Control page password
+        if self.user_password and verify_password(pwd, self.user_password):
+            token = secrets.token_hex(24)
+            self._active_sessions[token] = {
+                "exp": time.time() + self._session_ttl_seconds,
+                "role": "user"
+            }
+            logger.info("Successful Streamer Control Portal User Login.")
+            return True, token, None, "user"
 
-    def verify_session(self, token: str) -> bool:
-        """Verify if a session token is valid and active."""
-        if not self.is_auth_required():
+        # If no password set on server at all, grant admin guest token
+        if not self.is_admin_auth_required() and not self.is_user_auth_required():
+            token = secrets.token_hex(24)
+            self._active_sessions[token] = {
+                "exp": time.time() + self._session_ttl_seconds,
+                "role": "admin"
+            }
+            return True, token, None, "admin"
+
+        logger.warning("Failed Login attempt.")
+        return False, None, "Invalid password", ""
+
+    def verify_session(self, token: str, required_role: str = "user") -> bool:
+        """
+        Verify if a session token is valid and active for required role.
+        - 'admin' role satisfies both 'admin' and 'user' requirements.
+        - 'user' role satisfies 'user' requirement.
+        """
+        if required_role == "admin" and not self.is_admin_auth_required():
+            return True
+        if required_role == "user" and not self.is_user_auth_required():
             return True
 
         if not token:
@@ -249,18 +300,36 @@ class DashboardAuthManager:
         if clean_token.lower().startswith("bearer "):
             clean_token = clean_token[7:].strip()
 
-        exp = self._active_sessions.get(clean_token)
-        if not exp:
+        sess = self._active_sessions.get(clean_token)
+        if not sess:
             return False
 
+        exp = sess.get("exp", 0)
         if time.time() > exp:
             del self._active_sessions[clean_token]
             return False
 
+        role = sess.get("role", "user")
+        if required_role == "admin" and role != "admin":
+            return False
+
         return True
+
+    def get_session_role(self, token: str) -> Optional[str]:
+        if not token:
+            return None
+        clean_token = token.strip()
+        if clean_token.lower().startswith("bearer "):
+            clean_token = clean_token[7:].strip()
+        sess = self._active_sessions.get(clean_token)
+        if sess and time.time() <= sess.get("exp", 0):
+            return sess.get("role", "user")
+        return None
 
     def revoke_session(self, token: str):
         """Revoke a session token."""
+        if not token:
+            return
         clean_token = token.strip()
         if clean_token.lower().startswith("bearer "):
             clean_token = clean_token[7:].strip()
@@ -270,7 +339,7 @@ class DashboardAuthManager:
     def cleanup_expired_sessions(self):
         """Remove expired sessions from memory."""
         now = time.time()
-        expired = [t for t, exp in self._active_sessions.items() if now > exp]
+        expired = [t for t, sess in self._active_sessions.items() if now > sess.get("exp", 0)]
         for t in expired:
             del self._active_sessions[t]
 
