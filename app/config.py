@@ -198,7 +198,7 @@ class Config:
     def _sync_auth_manager(self):
         try:
             from app.auth import dashboard_auth_manager
-            dashboard_auth_manager.update_admin_password(self.admin_password)
+            dashboard_auth_manager.update_passwords(self.admin_password, self.user_password)
         except Exception:
             pass
 
