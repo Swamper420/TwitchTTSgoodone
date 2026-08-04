@@ -414,14 +414,17 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
             if config.same_user_timeout > 0 and (now - last_speaker_time) <= config.same_user_timeout:
                 skip_user_prefix = True
 
+    prefix_text = ""
     if user and not skip_user_prefix:
         tts_user = sanitize_speaker_name_for_tts(user)
-        if "{user}" in config.user_template and "{text}" in config.user_template:
-            text_to_speak = config.user_template.replace("{user}", tts_user).replace("{text}", raw_text)
+        if "{user}" in config.user_template:
+            if "{text}" in config.user_template:
+                prefix_template = config.user_template.split("{text}")[0].strip()
+                prefix_text = prefix_template.replace("{user}", tts_user).strip()
+            else:
+                prefix_text = config.user_template.replace("{user}", tts_user).strip()
         else:
-            text_to_speak = f"{tts_user} {config.user_template} {raw_text}"
-    else:
-        text_to_speak = raw_text
+            prefix_text = f"{tts_user} {config.user_template}".strip()
 
     if user:
         last_speaker = user
@@ -430,9 +433,17 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
         last_speaker = None
         last_speaker_time = 0.0
 
-    chunks = process_message_to_chunks(text_to_speak)
+    prefix_chunks = process_message_to_chunks(prefix_text) if prefix_text else []
+    message_chunks = process_message_to_chunks(raw_text) if raw_text else []
+    chunks = prefix_chunks + message_chunks
+
     if not chunks:
         return
+
+    total = len(chunks)
+    for idx, c in enumerate(chunks):
+        c.chunk_index = idx
+        c.total_chunks = total
 
     # Check for pending fartbackground trigger for this speaker
     has_fart_bg = False
@@ -442,7 +453,7 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
             has_fart_bg = True
             logger.info(f"💨 Applying fartbackground audio effect for target user '{user}'.")
 
-    logger.info(f"Processing text from '{user}' [#{clean_chan}]: '{text_to_speak[:40]}' -> {len(chunks)} segments")
+    logger.info(f"Processing text from '{user}' [#{clean_chan}]: '{raw_text[:40]}' -> {len(chunks)} segments")
 
     user_saved_voice = user_voice_manager.get_voice(user)
 

@@ -30,7 +30,7 @@ class TestChunkBuffering(unittest.TestCase):
 
         mock_synthesize.side_effect = side_effect_synth
 
-        server_module.process_incoming_text("UserA", "First segment of text. Second segment of text.")
+        server_module.process_incoming_text(None, "First segment of text. Second segment of text.")
 
         audio_chunk_events = [call[0][1] for call in mock_broadcast.call_args_list if call[0][0] == "audio_chunk"]
         self.assertEqual(len(audio_chunk_events), 2)
@@ -46,7 +46,7 @@ class TestChunkBuffering(unittest.TestCase):
         ]
         mock_synthesize.return_value = (b"fake_audio", "audio/wav")
 
-        server_module.process_incoming_text("UserA", "Only one chunk")
+        server_module.process_incoming_text(None, "Only one chunk")
 
         audio_chunk_events = [call[0][1] for call in mock_broadcast.call_args_list if call[0][0] == "audio_chunk"]
         self.assertEqual(len(audio_chunk_events), 1)
@@ -68,7 +68,7 @@ class TestChunkBuffering(unittest.TestCase):
 
         mock_synthesize.side_effect = side_effect_synth
 
-        server_module.process_incoming_text("UserA", "First chunk. Second chunk fails.")
+        server_module.process_incoming_text(None, "First chunk. Second chunk fails.")
 
         audio_chunk_events = [call[0][1] for call in mock_broadcast.call_args_list if call[0][0] == "audio_chunk"]
         self.assertEqual(len(audio_chunk_events), 1)

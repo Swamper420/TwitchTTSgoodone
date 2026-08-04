@@ -4,6 +4,7 @@ import urllib.error
 import threading
 import time
 from http.server import HTTPServer
+from unittest.mock import patch
 from app.server import TTSRequestHandler
 
 class TestPlayerServerRoutes(unittest.TestCase):
@@ -108,29 +109,49 @@ class TestPlayerServerRoutes(unittest.TestCase):
             server_module.last_speaker_time = 0.0
 
             with patch("app.server.tts_client.synthesize", side_effect=mock_synthesize):
-                # Message 1 from UserA
+                # Message 1 from UserA (Prefix chunk "UserA sanoo:" + message chunk)
                 server_module.process_incoming_text("UserA", "Tämä on ensimmäinen lause")
-                self.assertEqual(len(synthesized_texts), 1)
+                self.assertEqual(len(synthesized_texts), 2)
                 self.assertIn("UserA sanoo", synthesized_texts[0])
 
-                # Message 2 from UserA immediately after (should skip 'UserA sanoo')
+                # Message 2 from UserA immediately after (should skip 'UserA sanoo' prefix chunk)
                 server_module.process_incoming_text("UserA", "Tämä on toinen lause perään")
-                self.assertEqual(len(synthesized_texts), 2)
-                self.assertNotIn("UserA", synthesized_texts[1])
-                self.assertTrue(synthesized_texts[1].startswith("Tämä on toinen lause perään"))
-
-                # Message 3 from UserB (different user, should include 'UserB sanoo')
-                server_module.process_incoming_text("UserB", "Tämä on UserB:n lause")
                 self.assertEqual(len(synthesized_texts), 3)
-                self.assertIn("UserB sanoo", synthesized_texts[2])
+                self.assertNotIn("UserA", synthesized_texts[2])
+                self.assertTrue(synthesized_texts[2].startswith("Tämä on toinen lause perään"))
 
-                # Message 4 from UserB after timeout (> 10s ago)
+                # Message 3 from UserB (different user, should synthesize 'UserB sanoo:' prefix chunk + message)
+                server_module.process_incoming_text("UserB", "Tämä on UserB:n lause")
+                self.assertEqual(len(synthesized_texts), 5)
+                self.assertIn("UserB sanoo", synthesized_texts[3])
+
+                # Message 4 from UserB after timeout (> 10s ago, prefix chunk synthesized again)
                 server_module.last_speaker_time = time.time() - 20.0
                 server_module.process_incoming_text("UserB", "Tämä tulee pitkän ajan päästä")
-                self.assertEqual(len(synthesized_texts), 4)
-                self.assertIn("UserB sanoo", synthesized_texts[3])
+                self.assertEqual(len(synthesized_texts), 7)
+                self.assertIn("UserB sanoo", synthesized_texts[5])
         finally:
             config.same_user_timeout = original_timeout
+
+    @patch("app.server.soundboard_manager.parse_soundboard_text")
+    @patch("app.server.soundboard_manager.get_mime_type")
+    @patch("app.server.tts_client.synthesize")
+    def test_soundboard_only_message_no_tts_api_call(self, mock_synthesize, mock_mime, mock_parse_sb):
+        import app.server as server_module
+        mock_parse_sb.return_value = [{
+            "type": "soundboard",
+            "raw_trigger": "(pieru)",
+            "sound_name": "pieru",
+            "file_path": __file__ # existent file path
+        }]
+        mock_mime.return_value = "audio/mpeg"
+
+        server_module.last_speaker = None
+        server_module.last_speaker_time = 0.0
+
+        server_module.process_incoming_text("UserX", "(pieru)")
+        # 0 calls to tts_client.synthesize when message contains only soundboard triggers
+        mock_synthesize.assert_not_called()
 
 
 if __name__ == "__main__":
