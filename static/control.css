@@ -20,11 +20,20 @@
     --warning-amber: #ffab00;
     --danger-red: #ff1744;
     
-    --radius-sm: 6px;
-    --radius-md: 10px;
-    --radius-lg: 16px;
+    --radius-sm: 0px;
+    --radius-md: 0px;
+    --radius-lg: 0px;
     --shadow-card: 0 10px 30px -5px rgba(0, 0, 0, 0.5);
     --shadow-glow: 0 0 20px rgba(0, 242, 254, 0.15);
+}
+
+.material-symbols-outlined {
+    font-size: 18px;
+    vertical-align: middle;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
 }
 
 * {
@@ -55,14 +64,14 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
+    gap: 12px;
     background: var(--bg-card);
     backdrop-filter: blur(12px);
     border: 1px solid var(--border-color);
-    padding: 12px 24px;
+    padding: 8px 16px;
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-card);
-    margin-bottom: 12px;
+    margin-bottom: 8px;
 }
 
 .navbar-brand {
@@ -72,20 +81,20 @@ body {
 }
 
 .brand-logo {
-    width: 42px;
-    height: 42px;
+    width: 32px;
+    height: 32px;
     border-radius: var(--radius-md);
     background: linear-gradient(135deg, var(--twitch-purple), var(--accent-cyan));
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 22px;
+    font-size: 18px;
     box-shadow: 0 0 15px var(--twitch-purple-glow);
 }
 
 .brand-title h1 {
     font-family: 'Outfit', sans-serif;
-    font-size: 20px;
+    font-size: 16px;
     font-weight: 800;
     letter-spacing: -0.5px;
 }
@@ -95,22 +104,22 @@ body {
 }
 
 .version-tag {
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 700;
     color: var(--text-muted);
     letter-spacing: 1px;
     background: rgba(255, 255, 255, 0.05);
-    padding: 2px 6px;
-    border-radius: 4px;
+    padding: 1px 4px;
+    border-radius: 0;
 }
 
 /* Channel Connect Box */
 .channel-connect-box {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     background: rgba(0, 0, 0, 0.3);
-    padding: 6px 12px;
+    padding: 4px 8px;
     border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
 }
@@ -119,10 +128,10 @@ body {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
-    padding: 4px 10px;
-    border-radius: 20px;
+    padding: 2px 6px;
+    border-radius: 0;
     background: rgba(255, 23, 68, 0.15);
     color: var(--danger-red);
     border: 1px solid rgba(255, 23, 68, 0.3);
@@ -158,8 +167,8 @@ body {
     border: none;
     outline: none;
     color: #fff;
-    font-size: 13px;
-    width: 220px;
+    font-size: 12px;
+    width: 150px;
 }
 
 .navbar-links {
@@ -171,12 +180,12 @@ body {
 .nav-link {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 13px;
+    gap: 4px;
+    font-size: 12px;
     font-weight: 600;
     color: var(--text-muted);
     text-decoration: none;
-    padding: 8px 14px;
+    padding: 6px 10px;
     border-radius: var(--radius-sm);
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid var(--border-color);
@@ -199,13 +208,13 @@ body {
 .active-channels-bar {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     background: var(--bg-card);
     border: 1px solid var(--border-color);
-    padding: 8px 20px;
+    padding: 4px 12px;
     border-radius: var(--radius-md);
-    margin-bottom: 16px;
-    font-size: 12px;
+    margin-bottom: 8px;
+    font-size: 11px;
 }
 
 .bar-label {
@@ -220,8 +229,8 @@ body {
 }
 
 .chip {
-    padding: 3px 10px;
-    border-radius: 12px;
+    padding: 2px 8px;
+    border-radius: 0;
     font-weight: 600;
     font-family: 'JetBrains Mono', monospace;
     background: rgba(0, 242, 254, 0.15);
@@ -239,7 +248,7 @@ body {
 .control-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 16px;
+    gap: 10px;
 }
 
 .side-column {
@@ -255,7 +264,7 @@ body {
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-card);
-    padding: 20px;
+    padding: 12px;
     display: flex;
     flex-direction: column;
 }
@@ -264,18 +273,18 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 16px;
-    padding-bottom: 12px;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
     border-bottom: 1px solid var(--border-color);
 }
 
 .card-header h2 {
     font-family: 'Outfit', sans-serif;
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 700;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
 }
 
 .badge {
@@ -311,11 +320,11 @@ body {
 .section-desc {
     font-size: 13px;
     color: var(--text-muted);
-    margin-bottom: 16px;
+    margin-bottom: 8px;
 }
 
 .control-group {
-    margin-bottom: 14px;
+    margin-bottom: 8px;
 }
 
 .control-label {
@@ -358,9 +367,9 @@ body {
     background: var(--bg-input);
     border: 1px solid var(--border-color);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 600;
-    padding: 8px 4px;
+    padding: 4px 2px;
     border-radius: var(--radius-sm);
     cursor: pointer;
     transition: all 0.2s ease;
@@ -391,7 +400,7 @@ body {
     accent-color: var(--accent-cyan);
     height: 6px;
     background: var(--bg-input);
-    border-radius: 3px;
+    border-radius: 0;
     cursor: pointer;
 }
 
@@ -421,7 +430,7 @@ body {
     width: 36px;
     height: 20px;
     background: rgba(255, 255, 255, 0.15);
-    border-radius: 10px;
+    border-radius: 0;
     position: relative;
     transition: background 0.3s ease;
 }
@@ -434,7 +443,7 @@ body {
     top: 3px;
     left: 3px;
     background: #fff;
-    border-radius: 50%;
+    border-radius: 0;
     transition: transform 0.3s ease;
 }
 
@@ -517,7 +526,7 @@ body {
 .stream-viewport {
     position: relative;
     width: 100%;
-    height: 260px;
+    height: 180px;
     background: #05070a;
     border-radius: var(--radius-md);
     border: 2px solid var(--border-color);
@@ -648,18 +657,18 @@ body {
 /* Soundboard Section */
 .soundboard-top-bar {
     display: flex;
-    gap: 16px;
+    gap: 10px;
     align-items: center;
-    margin-bottom: 16px;
+    margin-bottom: 8px;
 }
 
 .search-box {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     background: var(--bg-input);
     border: 1px solid var(--border-color);
-    padding: 6px 12px;
+    padding: 4px 8px;
     border-radius: var(--radius-sm);
     flex: 1;
 }
@@ -678,15 +687,15 @@ body {
     color: var(--text-muted);
     background: rgba(145, 70, 255, 0.1);
     border: 1px solid var(--twitch-purple-glow);
-    padding: 6px 12px;
+    padding: 4px 8px;
     border-radius: var(--radius-sm);
 }
 
 .soundboard-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 12px;
-    max-height: 320px;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 6px;
+    max-height: 220px;
     overflow-y: auto;
     padding-right: 4px;
 }
@@ -695,10 +704,10 @@ body {
     background: rgba(0, 0, 0, 0.3);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
-    padding: 10px 12px;
+    padding: 6px 8px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 4px;
     transition: all 0.2s ease;
 }
 
@@ -731,11 +740,11 @@ body {
     background: linear-gradient(135deg, rgba(20, 26, 38, 0.9), rgba(12, 16, 24, 0.95));
     border: 1px solid var(--border-highlight);
     border-radius: var(--radius-md);
-    padding: 16px;
+    padding: 10px;
     display: flex;
     align-items: center;
-    gap: 16px;
-    margin-bottom: 16px;
+    gap: 12px;
+    margin-bottom: 8px;
 }
 
 .eq-visualizer {
@@ -749,7 +758,7 @@ body {
     width: 4px;
     background: var(--accent-cyan);
     height: 10%;
-    border-radius: 2px;
+    border-radius: 0;
 }
 
 .eq-visualizer.active span {
@@ -782,9 +791,9 @@ body {
 .tts-test-panel {
     background: rgba(0, 0, 0, 0.25);
     border: 1px solid var(--border-color);
-    padding: 14px;
+    padding: 10px;
     border-radius: var(--radius-md);
-    margin-bottom: 16px;
+    margin-bottom: 8px;
 }
 
 .tts-test-panel h3 { font-size: 13px; font-weight: 700; margin-bottom: 10px; }
@@ -802,11 +811,11 @@ body {
 }
 
 .panel-header { display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; margin-bottom: 8px; }
-.chat-log-list { max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.chat-log-list { max-height: 120px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
 
 .chat-item {
-    font-size: 12px;
-    padding: 6px 10px;
+    font-size: 11px;
+    padding: 4px 8px;
     background: rgba(255,255,255,0.03);
     border-radius: var(--radius-sm);
 }
@@ -824,14 +833,14 @@ body {
     text-align: center;
     background: rgba(0, 0, 0, 0.4);
     border: 1px solid var(--twitch-purple-glow);
-    padding: 16px;
+    padding: 8px;
     border-radius: var(--radius-md);
-    margin-bottom: 14px;
+    margin-bottom: 8px;
 }
 
 .counter-number {
     font-family: 'Outfit', sans-serif;
-    font-size: 48px;
+    font-size: 36px;
     font-weight: 800;
     color: var(--danger-red);
     display: block;
@@ -888,7 +897,7 @@ body {
     border: 1px solid var(--border-highlight);
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 30px var(--twitch-purple-glow);
     border-radius: var(--radius-lg);
-    padding: 36px 32px;
+    padding: 24px 20px;
     max-width: 440px;
     width: 100%;
     text-align: center;
@@ -899,12 +908,12 @@ body {
 }
 
 .lock-icon-badge {
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
+    width: 52px;
+    height: 52px;
+    border-radius: 0;
     background: rgba(145, 70, 255, 0.15);
     border: 1px solid var(--twitch-purple-glow);
-    font-size: 32px;
+    font-size: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -935,9 +944,9 @@ body {
     background: var(--bg-input);
     border: 1px solid var(--border-color);
     color: #fff;
-    padding: 12px 16px;
+    padding: 8px 12px;
     border-radius: var(--radius-md);
-    font-size: 14px;
+    font-size: 13px;
     outline: none;
     transition: border 0.2s ease;
 }
@@ -979,6 +988,13 @@ body {
 
 .hidden {
     display: none !important;
+}
+
+.toggles-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 8px;
 }
 
 /* Responsive Breakpoints */

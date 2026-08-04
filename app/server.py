@@ -504,7 +504,7 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                             audio_format=config.tts_format
                         )
             
-            if has_8d:
+            if has_8d and getattr(config, "enable_8d_audio", True):
                 audio_bytes, mime_type = apply_8d_audio_effect(
                     audio_bytes=audio_bytes,
                     audio_format=config.tts_format
@@ -785,7 +785,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 audio_bytes, mime_type = tts_client.synthesize(
                     text=text, voice=voice, model=model, audio_format=fmt, method="GET"
                 )
-                if has_8d_api:
+                if has_8d_api and getattr(config, "enable_8d_audio", True):
                     audio_bytes, mime_type = apply_8d_audio_effect(audio_bytes, audio_format=fmt or config.tts_format)
                 self.send_response(200)
                 self.send_header("Content-Type", mime_type)
@@ -1020,7 +1020,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 audio_bytes, mime_type = tts_client.synthesize(
                     text=text, voice=voice, model=model, audio_format=fmt, method="POST"
                 )
-                if has_8d_api:
+                if has_8d_api and getattr(config, "enable_8d_audio", True):
                     audio_bytes, mime_type = apply_8d_audio_effect(audio_bytes, audio_format=fmt or config.tts_format)
                 if fmt == "json":
                     import base64
@@ -1040,6 +1040,24 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
 
         # Check user/streamer authentication for control portal routes
         if not self._check_auth(required_role="user"):
+            return
+
+        # Route: Save user/control settings
+        if path == "/api/control/settings":
+            if "enable_8d_audio" in body:
+                config.enable_8d_audio = sanitize_bool(body["enable_8d_audio"], default=config.enable_8d_audio)
+            if "effect_8d_speed" in body:
+                config.effect_8d_speed = sanitize_float(body["effect_8d_speed"], default=config.effect_8d_speed, min_val=0.01, max_val=5.0)
+            if "same_user_timeout" in body:
+                config.same_user_timeout = sanitize_float(body["same_user_timeout"], default=config.same_user_timeout, min_val=0.0, max_val=300.0)
+            if "enable_chat_responses" in body:
+                config.enable_chat_responses = sanitize_bool(body["enable_chat_responses"], default=config.enable_chat_responses)
+            if "enable_kill_counter" in body:
+                config.enable_kill_counter = sanitize_bool(body["enable_kill_counter"], default=config.enable_kill_counter)
+
+            config.save()
+            broadcast_event("status", self._get_status_dict())
+            self._send_json(200, {"success": True, "config": self._get_config_dict()})
             return
 
         # Route: Connect Twitch Channel

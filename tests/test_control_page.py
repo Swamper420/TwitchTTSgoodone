@@ -145,6 +145,47 @@ class TestControlPageServerRoutes(unittest.TestCase):
             config.admin_password = ""
             config.user_password = ""
 
+    def test_user_control_settings(self):
+        """Test user settings API endpoint /api/control/settings."""
+        # 1. Login to get token
+        url_login = f"{self.base_url}/api/auth/login"
+        req_login = urllib.request.Request(
+            url_login,
+            data=json.dumps({"password": ""}).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req_login) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            token = data.get("token")
+            
+        # 2. POST settings
+        url_settings = f"{self.base_url}/api/control/settings"
+        settings_payload = {
+            "enable_8d_audio": False,
+            "effect_8d_speed": 0.35,
+            "same_user_timeout": 15.0,
+            "enable_chat_responses": False,
+            "enable_kill_counter": False
+        }
+        
+        req_settings = urllib.request.Request(
+            url_settings,
+            data=json.dumps(settings_payload).encode("utf-8"),
+            headers={"Content-Type": "application/json", "X-Admin-Token": token}
+        )
+        with urllib.request.urlopen(req_settings) as resp:
+            self.assertEqual(resp.status, 200)
+            res_data = json.loads(resp.read().decode("utf-8"))
+            self.assertTrue(res_data.get("success"))
+            
+        # 3. Check values in config
+        from app.config import config
+        self.assertFalse(config.enable_8d_audio)
+        self.assertEqual(config.effect_8d_speed, 0.35)
+        self.assertEqual(config.same_user_timeout, 15.0)
+        self.assertFalse(config.enable_chat_responses)
+        self.assertFalse(config.enable_kill_counter)
+
 
 if __name__ == "__main__":
     unittest.main()

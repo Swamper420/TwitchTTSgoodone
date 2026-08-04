@@ -94,6 +94,15 @@ document.addEventListener("DOMContentLoaded", () => {
         countDecBtn: document.getElementById("countDecBtn"),
         countResetBtn: document.getElementById("countResetBtn"),
         testBibleVerseBtn: document.getElementById("testBibleVerseBtn"),
+
+        // Preferences & Audio Settings
+        prefEnable8D: document.getElementById("prefEnable8D"),
+        pref8dSpeed: document.getElementById("pref8dSpeed"),
+        pref8dSpeedVal: document.getElementById("pref8dSpeedVal"),
+        prefChatResponses: document.getElementById("prefChatResponses"),
+        prefKillCounter: document.getElementById("prefKillCounter"),
+        prefCooldown: document.getElementById("prefCooldown"),
+        prefCooldownVal: document.getElementById("prefCooldownVal"),
         
         toastContainer: document.getElementById("toastContainer")
     };
@@ -160,17 +169,20 @@ document.addEventListener("DOMContentLoaded", () => {
             if (state.userAuthRequired && !state.authenticated) {
                 showAuthLockModal();
                 elements.portalLockBtn.classList.remove("unlocked");
-                elements.lockBtnIcon.textContent = "🔒";
+                elements.lockBtnIcon.className = "material-symbols-outlined";
+                elements.lockBtnIcon.textContent = "lock";
                 elements.lockBtnText.textContent = "Locked";
             } else if (state.userAuthRequired && state.authenticated) {
                 hideAuthLockModal();
                 elements.portalLockBtn.classList.add("unlocked");
-                elements.lockBtnIcon.textContent = "🔓";
+                elements.lockBtnIcon.className = "material-symbols-outlined";
+                elements.lockBtnIcon.textContent = "lock_open";
                 elements.lockBtnText.textContent = "Lock Portal";
             } else {
                 hideAuthLockModal();
                 elements.portalLockBtn.classList.remove("unlocked");
-                elements.lockBtnIcon.textContent = "🟢";
+                elements.lockBtnIcon.className = "material-symbols-outlined";
+                elements.lockBtnIcon.textContent = "public";
                 elements.lockBtnText.textContent = "Public Mode";
             }
         } catch (e) {
@@ -222,7 +234,7 @@ document.addEventListener("DOMContentLoaded", () => {
             showLoginError(e.message || "Invalid Streamer Password");
         } finally {
             elements.controlLoginBtn.disabled = false;
-            elements.controlLoginBtn.innerHTML = "<span>🔓</span> Unlock Portal";
+            elements.controlLoginBtn.innerHTML = "<span class=\"material-symbols-outlined\">lock_open</span> Unlock Portal";
         }
     }
 
@@ -252,7 +264,8 @@ document.addEventListener("DOMContentLoaded", () => {
             state.authenticated = false;
             showAuthLockModal();
             elements.portalLockBtn.classList.remove("unlocked");
-            elements.lockBtnIcon.textContent = "🔒";
+            elements.lockBtnIcon.className = "material-symbols-outlined";
+            elements.lockBtnIcon.textContent = "lock";
             elements.lockBtnText.textContent = "Locked";
             showToast("Control Portal Locked", "info");
         } else {
@@ -335,6 +348,32 @@ document.addEventListener("DOMContentLoaded", () => {
         elements.optChan2.textContent = state.channels[1] ? `Channel 2 (${state.channels[1]})` : "Channel 2";
         elements.optChan2.value = state.channels[1] || "";
 
+        const config = status.config || {};
+        
+        // Sync preferences settings in UI
+        if (elements.prefEnable8D) {
+            elements.prefEnable8D.checked = config.enable_8d_audio !== false;
+            const speedGroup = document.getElementById("pref8dSpeedGroup");
+            if (speedGroup) {
+                speedGroup.style.opacity = elements.prefEnable8D.checked ? "1" : "0.5";
+                speedGroup.style.pointerEvents = elements.prefEnable8D.checked ? "auto" : "none";
+            }
+        }
+        if (elements.pref8dSpeed) {
+            elements.pref8dSpeed.value = config.effect_8d_speed !== undefined ? config.effect_8d_speed : 0.5;
+            if (elements.pref8dSpeedVal) elements.pref8dSpeedVal.textContent = `${elements.pref8dSpeed.value}s`;
+        }
+        if (elements.prefChatResponses) {
+            elements.prefChatResponses.checked = config.enable_chat_responses !== false;
+        }
+        if (elements.prefKillCounter) {
+            elements.prefKillCounter.checked = config.enable_kill_counter !== false;
+        }
+        if (elements.prefCooldown) {
+            elements.prefCooldown.value = config.same_user_timeout !== undefined ? config.same_user_timeout : 10;
+            if (elements.prefCooldownVal) elements.prefCooldownVal.textContent = `${elements.prefCooldown.value}s`;
+        }
+
         updateObsUrl();
     }
 
@@ -362,7 +401,7 @@ document.addEventListener("DOMContentLoaded", () => {
             showToast("Failed to connect Twitch channels", "error");
         } finally {
             elements.connectBtn.disabled = false;
-            elements.connectBtn.innerHTML = "<span>📡</span> Connect Chat";
+            elements.connectBtn.innerHTML = "<span class=\"material-symbols-outlined\">sensors</span> Connect Chat";
         }
     });
 
@@ -491,14 +530,14 @@ document.addEventListener("DOMContentLoaded", () => {
             const card = document.createElement("div");
             card.className = "sound-card";
             card.innerHTML = `
-                <div class="sound-title">🔊 ${soundName}</div>
+                <div class="sound-title"><span class="material-symbols-outlined" style="font-size:16px;">volume_up</span> ${soundName}</div>
                 <div class="sound-trigger-code">(${soundName})</div>
                 <div class="sound-actions">
                     <button class="btn btn-small btn-primary trigger-btn" title="Trigger in OBS overlay">
-                        <span>▶</span> Overlay
+                        <span class="material-symbols-outlined" style="font-size:12px;">play_arrow</span> Overlay
                     </button>
                     <button class="btn btn-small btn-secondary preview-btn" title="Test audio locally in browser">
-                        <span>👂</span> Preview
+                        <span class="material-symbols-outlined" style="font-size:12px;">hearing</span> Preview
                     </button>
                 </div>
             `;
@@ -532,14 +571,17 @@ document.addEventListener("DOMContentLoaded", () => {
         elements.chatterVoiceVal.innerHTML = '<option value="">Select Voice...</option>';
 
         state.voices.forEach(voice => {
+            const voiceId = (typeof voice === 'object' && voice !== null) ? (voice.voice_id || voice.name || voice.id) : voice;
+            if (!voiceId) return;
+
             const opt1 = document.createElement("option");
-            opt1.value = voice;
-            opt1.textContent = voice;
+            opt1.value = voiceId;
+            opt1.textContent = voiceId;
             elements.testVoiceSelect.appendChild(opt1);
 
             const opt2 = document.createElement("option");
-            opt2.value = voice;
-            opt2.textContent = voice;
+            opt2.value = voiceId;
+            opt2.textContent = voiceId;
             elements.chatterVoiceVal.appendChild(opt2);
         });
     }
@@ -622,7 +664,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <td><span class="badge badge-purple">${voice}</span></td>
                 <td>
                     <button class="btn btn-small btn-danger delete-voice-btn" data-user="${user}">
-                        🗑️ Delete
+                        <span class="material-symbols-outlined" style="font-size:12px;">delete</span> Delete
                     </button>
                 </td>
             `;
@@ -778,6 +820,60 @@ document.addEventListener("DOMContentLoaded", () => {
         sse.onerror = () => {
             elements.eqVisualizer.classList.remove("active");
         };
+    }
+
+    // --- Preferences Settings Handlers ---
+    async function saveControlSettings() {
+        const body = {
+            enable_8d_audio: elements.prefEnable8D ? elements.prefEnable8D.checked : true,
+            effect_8d_speed: elements.pref8dSpeed ? parseFloat(elements.pref8dSpeed.value) : 0.5,
+            enable_chat_responses: elements.prefChatResponses ? elements.prefChatResponses.checked : true,
+            enable_kill_counter: elements.prefKillCounter ? elements.prefKillCounter.checked : true,
+            same_user_timeout: elements.prefCooldown ? parseFloat(elements.prefCooldown.value) : 10
+        };
+
+        try {
+            const res = await apiRequest("/api/control/settings", {
+                method: "POST",
+                body: JSON.stringify(body)
+            });
+            showToast("Preferences updated!", "success");
+        } catch (e) {
+            console.error("Failed to save settings", e);
+        }
+    }
+
+    if (elements.prefEnable8D) {
+        elements.prefEnable8D.addEventListener("change", () => {
+            const speedGroup = document.getElementById("pref8dSpeedGroup");
+            if (speedGroup) {
+                speedGroup.style.opacity = elements.prefEnable8D.checked ? "1" : "0.5";
+                speedGroup.style.pointerEvents = elements.prefEnable8D.checked ? "auto" : "none";
+            }
+            saveControlSettings();
+        });
+    }
+
+    if (elements.pref8dSpeed) {
+        elements.pref8dSpeed.addEventListener("input", () => {
+            if (elements.pref8dSpeedVal) elements.pref8dSpeedVal.textContent = `${elements.pref8dSpeed.value}s`;
+        });
+        elements.pref8dSpeed.addEventListener("change", saveControlSettings);
+    }
+
+    if (elements.prefChatResponses) {
+        elements.prefChatResponses.addEventListener("change", saveControlSettings);
+    }
+
+    if (elements.prefKillCounter) {
+        elements.prefKillCounter.addEventListener("change", saveControlSettings);
+    }
+
+    if (elements.prefCooldown) {
+        elements.prefCooldown.addEventListener("input", () => {
+            if (elements.prefCooldownVal) elements.prefCooldownVal.textContent = `${elements.prefCooldown.value}s`;
+        });
+        elements.prefCooldown.addEventListener("change", saveControlSettings);
     }
 
     // Initialize Auth & Status
