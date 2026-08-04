@@ -44,33 +44,33 @@ class TestShoutingVoices(unittest.TestCase):
 
     def test_shouting_voices_config_property(self):
         cfg = Config()
-        cfg.shouting_voices = "dracula"
-        self.assertEqual(cfg.shouting_voices_list, ["dracula"])
+        cfg.shouting_voices = "mertaranta_fi"
+        self.assertEqual(cfg.shouting_voices_list, ["mertaranta_fi"])
 
-        cfg.shouting_voices = "dracula, monster, screech"
-        self.assertEqual(cfg.shouting_voices_list, ["dracula", "monster", "screech"])
+        cfg.shouting_voices = "mertaranta_fi, monster, screech"
+        self.assertEqual(cfg.shouting_voices_list, ["mertaranta_fi", "monster", "screech"])
 
         cfg.shouting_voices = ""
-        self.assertEqual(cfg.shouting_voices_list, ["mertaranta"])
+        self.assertEqual(cfg.shouting_voices_list, ["mertaranta_fi"])
 
     def test_process_message_to_chunks_shouting(self):
-        with patch("app.text_chunker.config.shouting_voices", "dracula"):
+        with patch("app.text_chunker.config.shouting_voices", "mertaranta_fi"):
             chunks = process_message_to_chunks("hello GO SHOUT MAXXING world")
             voices = [c.voice for c in chunks]
             self.assertEqual(len(chunks), 3)
             self.assertIsNone(chunks[0].voice)
-            self.assertEqual(chunks[1].voice, "dracula")
+            self.assertEqual(chunks[1].voice, "mertaranta_fi")
             self.assertIsNone(chunks[2].voice)
 
     def test_process_message_to_chunks_random_shouting_voices(self):
-        with patch("app.text_chunker.config.shouting_voices", "dracula, vampire"):
+        with patch("app.text_chunker.config.shouting_voices", "mertaranta_fi, vampire"):
             voices_used = set()
             for _ in range(30):
                 chunks = process_message_to_chunks("SHOUT NOW")
                 for c in chunks:
                     if c.voice:
                         voices_used.add(c.voice)
-            self.assertTrue(voices_used.issubset({"dracula", "vampire"}))
+            self.assertTrue(voices_used.issubset({"mertaranta_fi", "vampire"}))
             self.assertGreater(len(voices_used), 0)
 
 
