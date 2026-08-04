@@ -22,7 +22,6 @@ def main():
     parser.add_argument("--tts-url", type=str, default=None, help="Local TTS API endpoint")
     parser.add_argument("--voice", type=str, default=None, help="Default voice override")
     parser.add_argument("--model", type=str, default=None, help="Default model override")
-    parser.add_argument("--max-chunk", type=int, default=None, help="Max chunk size in characters")
 
     args = parser.parse_args()
 
@@ -45,9 +44,6 @@ def main():
     if args.model is not None:
         config.tts_model = args.model
         cli_updated = True
-    if args.max_chunk is not None:
-        config.max_chunk_chars = args.max_chunk
-        cli_updated = True
 
     if cli_updated:
         config.save()
@@ -69,7 +65,6 @@ def main():
     print(f" ► External OBS Overlay:{' http://localhost:' + str(config.obs_server_port) + '/obs (Read-Only)'}")
     print(f" ► Local TTS API:       {config.tts_api_url}")
     print(f" ► Twitch Channel:      #{config.twitch_channel if config.twitch_channel else '(None - enter in Web UI)'}")
-    print(f" ► Max Chunk Chars:     {config.max_chunk_chars}")
     print("=" * 60)
 
     try:

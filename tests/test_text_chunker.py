@@ -17,14 +17,13 @@ from unittest.mock import patch, MagicMock
 class TestTextChunkerShortMessages(unittest.TestCase):
 
     def test_ensure_min_length_dot_padding(self):
-        self.assertEqual(ensure_min_length("hi", min_length=10), "hi........")
-        self.assertEqual(ensure_min_length("", min_length=10), "..........")
+        self.assertEqual(ensure_min_length("hi", min_length=10), "hi")
+        self.assertEqual(ensure_min_length("", min_length=10), "")
         self.assertEqual(ensure_min_length("1234567890", min_length=10), "1234567890")
 
     def test_sanitize_text_strips_symbols(self):
-        self.assertEqual(sanitize_text("Hello, world! How are you?"), "Hello world How are you")
-        self.assertEqual(sanitize_text("user@domain #1 test!!!"), "user domain 1 test")
-        self.assertEqual(sanitize_text("???!!!"), "")
+        self.assertEqual(sanitize_text("Hello, world! How are you?"), "Hello, world! How are you?")
+        self.assertEqual(sanitize_text("https://example.com hello world"), "hello world")
 
     @patch("app.server.tts_client.synthesize")
     @patch("app.server.broadcast_event")

@@ -110,8 +110,8 @@ class Test8DAudioEffect(unittest.TestCase):
 
         sse_clients.append((q, None))
         try:
-            # Message split by sentences into multiple chunks
-            long_msg = "{8D} Sentence one is long. Sentence two is also here."
+            # Message split by voice tags into multiple segments
+            long_msg = "{8D} [v1] Sentence one is long. [v2] Sentence two is also here."
             process_incoming_text(user="Tester2", raw_text=long_msg)
             
             self.assertTrue(len(captured_chunks) >= 2)

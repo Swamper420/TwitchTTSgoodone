@@ -51,7 +51,7 @@ class TestShoutingVoices(unittest.TestCase):
         self.assertEqual(cfg.shouting_voices_list, ["dracula", "monster", "screech"])
 
         cfg.shouting_voices = ""
-        self.assertEqual(cfg.shouting_voices_list, ["dracula"])
+        self.assertEqual(cfg.shouting_voices_list, ["mertaranta"])
 
     def test_process_message_to_chunks_shouting(self):
         with patch("app.text_chunker.config.shouting_voices", "dracula"):

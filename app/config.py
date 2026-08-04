@@ -2,7 +2,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger("Config")
 
@@ -11,8 +11,11 @@ ENV_KEYS = {
     "tts_model": "TTS_MODEL",
     "tts_voice": "TTS_VOICE",
     "tts_format": "TTS_FORMAT",
-    "max_chunk_chars": "MAX_CHUNK_CHARS",
-    "min_chunk_chars": "MIN_CHUNK_CHARS",
+    "tts_language": "TTS_LANGUAGE",
+    "tts_speed": "TTS_SPEED",
+    "tts_num_step": "TTS_NUM_STEP",
+    "tts_guidance_scale": "TTS_GUIDANCE_SCALE",
+    "tts_seed": "TTS_SEED",
     "server_host": "SERVER_HOST",
     "server_port": "SERVER_PORT",
     "obs_server_host": "OBS_SERVER_HOST",
@@ -87,12 +90,15 @@ CONFIG_FILE = os.getenv("CONFIG_FILE", os.path.join(BASE_DIR, "config.json"))
 
 @dataclass
 class Config:
-    tts_api_url: str = field(default_factory=lambda: os.getenv("TTS_API_URL", "http://192.168.1.3:6969/api/tts"))
+    tts_api_url: str = field(default_factory=lambda: os.getenv("TTS_API_URL", "http://192.168.1.3:6969"))
     tts_model: Optional[str] = field(default_factory=lambda: os.getenv("TTS_MODEL", ""))
-    tts_voice: Optional[str] = field(default_factory=lambda: os.getenv("TTS_VOICE", "mieto"))
-    tts_format: str = field(default_factory=lambda: os.getenv("TTS_FORMAT", "ogg"))
-    max_chunk_chars: int = field(default_factory=lambda: int(os.getenv("MAX_CHUNK_CHARS", "50")))
-    min_chunk_chars: int = field(default_factory=lambda: int(os.getenv("MIN_CHUNK_CHARS", "10")))
+    tts_voice: Optional[str] = field(default_factory=lambda: os.getenv("TTS_VOICE", "voice_fi"))
+    tts_format: str = field(default_factory=lambda: os.getenv("TTS_FORMAT", "wav"))
+    tts_language: str = field(default_factory=lambda: os.getenv("TTS_LANGUAGE", "fi"))
+    tts_speed: float = field(default_factory=lambda: float(os.getenv("TTS_SPEED", "1.0")))
+    tts_num_step: int = field(default_factory=lambda: int(os.getenv("TTS_NUM_STEP", "32")))
+    tts_guidance_scale: float = field(default_factory=lambda: float(os.getenv("TTS_GUIDANCE_SCALE", "2.0")))
+    tts_seed: int = field(default_factory=lambda: int(os.getenv("TTS_SEED", "42")))
     server_host: str = field(default_factory=lambda: os.getenv("SERVER_HOST", "0.0.0.0"))
     server_port: int = field(default_factory=lambda: int(os.getenv("SERVER_PORT", "5000")))
     obs_server_host: str = field(default_factory=lambda: os.getenv("OBS_SERVER_HOST", "0.0.0.0"))
@@ -222,8 +228,11 @@ class Config:
             "tts_model": self.tts_model or "",
             "tts_voice": self.tts_voice or "",
             "tts_format": self.tts_format,
-            "max_chunk_chars": self.max_chunk_chars,
-            "min_chunk_chars": self.min_chunk_chars,
+            "tts_language": self.tts_language,
+            "tts_speed": self.tts_speed,
+            "tts_num_step": self.tts_num_step,
+            "tts_guidance_scale": self.tts_guidance_scale,
+            "tts_seed": self.tts_seed,
             "server_host": self.server_host,
             "server_port": self.server_port,
             "obs_server_host": self.obs_server_host,

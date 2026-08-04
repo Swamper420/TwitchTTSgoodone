@@ -95,7 +95,7 @@ class TestPlayerServerRoutes(unittest.TestCase):
 
         synthesized_texts = []
 
-        def mock_synthesize(text, voice="", model="", audio_format="ogg"):
+        def mock_synthesize(text, **kwargs):
             synthesized_texts.append(text)
             return b"fake_audio_bytes", "audio/ogg"
 

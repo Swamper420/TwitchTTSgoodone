@@ -430,7 +430,7 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
         last_speaker = None
         last_speaker_time = 0.0
 
-    chunks = process_message_to_chunks(text_to_speak, max_chars=config.max_chunk_chars, min_chars=config.min_chunk_chars)
+    chunks = process_message_to_chunks(text_to_speak)
     if not chunks:
         return
 
@@ -442,7 +442,7 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
             has_fart_bg = True
             logger.info(f"💨 Applying fartbackground audio effect for target user '{user}'.")
 
-    logger.info(f"Processing text from '{user}' [#{clean_chan}]: '{text_to_speak[:40]}' -> {len(chunks)} chunks")
+    logger.info(f"Processing text from '{user}' [#{clean_chan}]: '{text_to_speak[:40]}' -> {len(chunks)} segments")
 
     user_saved_voice = user_voice_manager.get_voice(user)
 
@@ -452,9 +452,6 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
             oldest_id = next(iter(audio_store))
             del audio_store[oldest_id]
         broadcast_event("audio_chunk", item_meta)
-
-    pending_first_chunk = None
-    total_chunk_count = len(chunks)
 
     for i, chunk in enumerate(chunks):
         # Determine voice override hierarchy:
@@ -478,7 +475,12 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                     text=chunk.text,
                     voice=voice_to_use,
                     model=model_to_use,
-                    audio_format=config.tts_format
+                    audio_format=config.tts_format,
+                    language=config.tts_language,
+                    speed=config.tts_speed,
+                    num_step=config.tts_num_step,
+                    guidance_scale=config.tts_guidance_scale,
+                    seed=config.tts_seed
                 )
                 voice_used = voice_to_use or "default"
 
@@ -518,26 +520,11 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
             
             # Store audio bytes in memory store
             audio_store[chunk_id] = (audio_bytes, mime_type, item_meta)
-
-            # Hold first chunk until second chunk is ready if total_chunks >= 2
-            if i == 0 and total_chunk_count > 1:
-                pending_first_chunk = item_meta
-            else:
-                if pending_first_chunk is not None:
-                    emit_chunk(pending_first_chunk)
-                    pending_first_chunk = None
-                emit_chunk(item_meta)
+            emit_chunk(item_meta)
             
         except Exception as e:
             logger.error(f"Failed to synthesize chunk '{chunk.text}': {e}")
-            if pending_first_chunk is not None:
-                emit_chunk(pending_first_chunk)
-                pending_first_chunk = None
             broadcast_event("error", {"message": f"TTS synthesis failed for '{chunk.text}': {str(e)}"})
-
-    if pending_first_chunk is not None:
-        emit_chunk(pending_first_chunk)
-        pending_first_chunk = None
 
 
 def on_twitch_message(user: str, message: str, channel: str = ""):
@@ -686,6 +673,15 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         # Route: User Voices List
         if path == "/api/user_voices":
             self._send_json(200, {"user_voices": user_voice_manager.get_all()})
+            return
+
+        # Route: TTS API Voices List Proxy
+        if path in ("/api/voices", "/api/v1/voices"):
+            try:
+                voices_data = tts_client.get_voices()
+                self._send_json(200, voices_data)
+            except Exception as e:
+                self._send_json(500, {"error": f"Failed to fetch voices from TTS API: {str(e)}"})
             return
 
         # Route: Soundboard List
@@ -1050,10 +1046,16 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 config.tts_model = sanitize_identifier(body["tts_model"], max_len=100, default=config.tts_model)
             if "tts_format" in body:
                 config.tts_format = sanitize_audio_format(body["tts_format"], default=config.tts_format)
-            if "max_chunk_chars" in body:
-                config.max_chunk_chars = sanitize_int(body["max_chunk_chars"], default=config.max_chunk_chars, min_val=10, max_val=5000)
-            if "min_chunk_chars" in body:
-                config.min_chunk_chars = sanitize_int(body["min_chunk_chars"], default=config.min_chunk_chars, min_val=1, max_val=500)
+            if "tts_language" in body:
+                config.tts_language = sanitize_string(body["tts_language"], max_len=20, default=config.tts_language)
+            if "tts_speed" in body:
+                config.tts_speed = sanitize_float(body["tts_speed"], default=config.tts_speed, min_val=0.1, max_val=10.0)
+            if "tts_num_step" in body:
+                config.tts_num_step = sanitize_int(body["tts_num_step"], default=config.tts_num_step, min_val=1, max_val=500)
+            if "tts_guidance_scale" in body:
+                config.tts_guidance_scale = sanitize_float(body["tts_guidance_scale"], default=config.tts_guidance_scale, min_val=0.0, max_val=50.0)
+            if "tts_seed" in body:
+                config.tts_seed = sanitize_int(body["tts_seed"], default=config.tts_seed, min_val=-1, max_val=2147483647)
             if "user_template" in body:
                 config.user_template = sanitize_string(body["user_template"], max_len=500, default=config.user_template)
             if "voice_presets" in body:

@@ -279,13 +279,28 @@
 
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="maxChunkInput">Max Chunk Chars</label>
-                            <input type="number" id="maxChunkInput" min="20" max="500" placeholder="50" />
+                            <label for="languageInput">TTS Language</label>
+                            <input type="text" id="languageInput" placeholder="fi" />
                         </div>
                         <div class="form-group">
-                            <label for="minChunkInput">Min Chunk Chars</label>
-                            <input type="number" id="minChunkInput" min="1" max="100" placeholder="10" />
+                            <label for="speedInput">Speed</label>
+                            <input type="number" id="speedInput" step="0.1" min="0.1" max="10.0" placeholder="1.0" />
                         </div>
+                        <div class="form-group">
+                            <label for="numStepInput">Steps</label>
+                            <input type="number" id="numStepInput" min="1" max="500" placeholder="32" />
+                        </div>
+                        <div class="form-group">
+                            <label for="guidanceScaleInput">Guidance Scale</label>
+                            <input type="number" id="guidanceScaleInput" step="0.1" min="0.0" max="50.0" placeholder="2.0" />
+                        </div>
+                        <div class="form-group">
+                            <label for="seedInput">Seed</label>
+                            <input type="number" id="seedInput" min="-1" max="2147483647" placeholder="42" />
+                        </div>
+                    </div>
+
+                    <div class="form-row">
                         <div class="form-group">
                             <label for="userTemplateInput">Message Format Template</label>
                             <input type="text" id="userTemplateInput" placeholder="{user} sanoo: {text}" />

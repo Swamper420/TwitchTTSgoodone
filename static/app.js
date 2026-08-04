@@ -32,9 +32,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const apiUrlInput = document.getElementById('apiUrlInput');
     const defaultVoiceInput = document.getElementById('defaultVoiceInput');
     const defaultModelInput = document.getElementById('defaultModelInput');
-    const formatSelect = document.getElementById('formatSelect');
-    const maxChunkInput = document.getElementById('maxChunkInput');
-    const minChunkInput = document.getElementById('minChunkInput');
+    const languageInput = document.getElementById('languageInput');
+    const speedInput = document.getElementById('speedInput');
+    const numStepInput = document.getElementById('numStepInput');
+    const guidanceScaleInput = document.getElementById('guidanceScaleInput');
+    const seedInput = document.getElementById('seedInput');
     const userTemplateInput = document.getElementById('userTemplateInput');
     const sameUserTimeoutInput = document.getElementById('sameUserTimeoutInput');
     const voicePresetsInput = document.getElementById('voicePresetsInput');
@@ -724,8 +726,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (defaultVoiceInput) defaultVoiceInput.value = data.config.tts_voice || '';
             if (defaultModelInput) defaultModelInput.value = data.config.tts_model || '';
             if (formatSelect) formatSelect.value = data.config.tts_format || 'wav';
-            if (maxChunkInput) maxChunkInput.value = data.config.max_chunk_chars || 50;
-            if (minChunkInput) minChunkInput.value = data.config.min_chunk_chars || 10;
+            if (languageInput) languageInput.value = data.config.tts_language || 'fi';
+            if (speedInput) speedInput.value = data.config.tts_speed !== undefined ? data.config.tts_speed : 1.0;
+            if (numStepInput) numStepInput.value = data.config.tts_num_step !== undefined ? data.config.tts_num_step : 32;
+            if (guidanceScaleInput) guidanceScaleInput.value = data.config.tts_guidance_scale !== undefined ? data.config.tts_guidance_scale : 2.0;
+            if (seedInput) seedInput.value = data.config.tts_seed !== undefined ? data.config.tts_seed : 42;
             if (userTemplateInput) userTemplateInput.value = data.config.user_template || '';
             if (sameUserTimeoutInput) sameUserTimeoutInput.value = data.config.same_user_timeout !== undefined ? data.config.same_user_timeout : 10;
             if (voicePresetsInput) voicePresetsInput.value = data.config.voice_presets || '';
@@ -1091,8 +1096,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     tts_voice: defaultVoiceInput ? defaultVoiceInput.value.trim() : '',
                     tts_model: defaultModelInput ? defaultModelInput.value.trim() : '',
                     tts_format: formatSelect ? formatSelect.value : 'wav',
-                    max_chunk_chars: maxChunkInput ? (parseInt(maxChunkInput.value, 10) || 50) : 50,
-                    min_chunk_chars: minChunkInput ? (parseInt(minChunkInput.value, 10) || 10) : 10,
+                    tts_language: languageInput ? languageInput.value.trim() : 'fi',
+                    tts_speed: speedInput ? (parseFloat(speedInput.value) || 1.0) : 1.0,
+                    tts_num_step: numStepInput ? (parseInt(numStepInput.value, 10) || 32) : 32,
+                    tts_guidance_scale: guidanceScaleInput ? (parseFloat(guidanceScaleInput.value) || 2.0) : 2.0,
+                    tts_seed: seedInput ? (parseInt(seedInput.value, 10) || 42) : 42,
                     user_template: userTemplateInput ? userTemplateInput.value.trim() : '',
                     voice_presets: voicePresetsInput ? voicePresetsInput.value.trim() : '',
                     effect_8d_speed: effect8dSpeedInput ? (parseFloat(effect8dSpeedInput.value) || 0.15) : 0.15,
