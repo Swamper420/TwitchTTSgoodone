@@ -20,6 +20,9 @@ ENV_KEYS = {
     "server_port": "SERVER_PORT",
     "public_server_host": "PUBLIC_SERVER_HOST",
     "public_server_port": "PUBLIC_SERVER_PORT",
+    "site_domain": "SITE_DOMAIN",
+    "public_domain": "PUBLIC_DOMAIN",
+    "domain": "DOMAIN",
     "obs_server_host": "OBS_SERVER_HOST",
     "obs_server_port": "OBS_SERVER_PORT",
     "twitch_channel": "TWITCH_CHANNEL",
@@ -108,6 +111,7 @@ class Config:
     # Falls back to legacy OBS_SERVER_HOST/PORT env vars for backward compatibility
     public_server_host: str = field(default_factory=lambda: os.getenv("PUBLIC_SERVER_HOST", os.getenv("OBS_SERVER_HOST", "0.0.0.0")))
     public_server_port: int = field(default_factory=lambda: int(os.getenv("PUBLIC_SERVER_PORT", os.getenv("OBS_SERVER_PORT", "5001"))))
+    site_domain: str = field(default_factory=lambda: os.getenv("SITE_DOMAIN", os.getenv("PUBLIC_DOMAIN", os.getenv("DOMAIN", ""))))
     # Legacy aliases (kept for backward compat with config.json)
     obs_server_host: str = field(default_factory=lambda: os.getenv("OBS_SERVER_HOST", "0.0.0.0"))
     obs_server_port: int = field(default_factory=lambda: int(os.getenv("OBS_SERVER_PORT", "5001")))
@@ -247,6 +251,9 @@ class Config:
             "server_port": self.server_port,
             "public_server_host": self.public_server_host,
             "public_server_port": self.public_server_port,
+            "site_domain": self.site_domain,
+            "public_domain": self.site_domain,
+            "domain": self.site_domain,
             "obs_server_host": self.public_server_host,
             "obs_server_port": self.public_server_port,
             "twitch_channel": self.twitch_channel,

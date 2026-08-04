@@ -62,6 +62,16 @@ class TestConfigDotenv(unittest.TestCase):
             if os.path.exists(json_path):
                 os.remove(json_path)
 
+    def test_site_domain_configuration(self):
+        os.environ["SITE_DOMAIN"] = "tts.example.com"
+        cfg = Config()
+        cfg.load(filepath="/nonexistent_path/config.json")
+
+        self.assertEqual(cfg.site_domain, "tts.example.com")
+        d = cfg.to_dict()
+        self.assertEqual(d.get("site_domain"), "tts.example.com")
+        self.assertEqual(d.get("public_domain"), "tts.example.com")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -19,6 +19,7 @@ document.addEventListener("DOMContentLoaded", () => {
         isPlayingAudio: false,
         currentAudio: null,
         obsPort: 5001,
+        siteDomain: "",
         serverPort: window.location.port || 5000,
         serverHost: window.location.hostname || "localhost",
         authRequired: false,
@@ -315,6 +316,7 @@ document.addEventListener("DOMContentLoaded", () => {
         state.connected = status.connected !== undefined ? status.connected : (status.twitch_connected || false);
         state.channels = status.channels || [];
         state.obsPort = status.config?.public_server_port || status.config?.obs_server_port || 5001;
+        state.siteDomain = status.config?.site_domain || status.config?.public_domain || status.config?.domain || "";
 
         // Status pill
         if (state.connected) {
@@ -431,9 +433,25 @@ document.addEventListener("DOMContentLoaded", () => {
     elements.obsChime.addEventListener("change", updateObsUrl);
 
     function updateObsUrl() {
-        const host = state.serverHost;
         const port = state.obsPort || 5001;
-        const baseUrl = `http://${host}:${port}/obs`;
+        const domain = (state.siteDomain || "").trim();
+        let baseUrl;
+
+        if (domain) {
+            let cleanDomain = domain.replace(/\/+$/, '');
+            if (cleanDomain.startsWith('http://') || cleanDomain.startsWith('https://')) {
+                baseUrl = `${cleanDomain}/obs`;
+            } else if (cleanDomain.includes(':')) {
+                baseUrl = `http://${cleanDomain}/obs`;
+            } else if (port && port !== 80 && port !== 443) {
+                baseUrl = `http://${cleanDomain}:${port}/obs`;
+            } else {
+                baseUrl = `http://${cleanDomain}/obs`;
+            }
+        } else {
+            const host = state.serverHost || window.location.hostname || "localhost";
+            baseUrl = `http://${host}:${port}/obs`;
+        }
 
         const params = new URLSearchParams();
 

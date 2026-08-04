@@ -67,10 +67,26 @@ def main():
     print("=" * 60)
     print(f" ► Environment:         {env_status}")
     print(f" ► Admin Dashboard:     http://localhost:{config.server_port} (Private)")
-    print(f" ► Public Server:       http://localhost:{config.public_server_port}")
-    print(f"   ├── Control Portal:  http://localhost:{config.public_server_port}/")
-    print(f"   ├── Voice Player:    http://localhost:{config.public_server_port}/player")
-    print(f"   └── OBS Overlay:     http://localhost:{config.public_server_port}/obs")
+    def get_public_url(path=""):
+        if config.site_domain:
+            domain = config.site_domain.strip().rstrip("/")
+            if domain.startswith("http://") or domain.startswith("https://"):
+                base = domain
+            elif ":" in domain:
+                base = f"http://{domain}"
+            elif config.public_server_port and config.public_server_port not in (80, 443):
+                base = f"http://{domain}:{config.public_server_port}"
+            else:
+                base = f"http://{domain}"
+        else:
+            base = f"http://localhost:{config.public_server_port}"
+        return f"{base}{path}"
+
+    domain_info = f" ({config.site_domain})" if config.site_domain else ""
+    print(f" ► Public Server:       {get_public_url()}{domain_info}")
+    print(f"   ├── Control Portal:  {get_public_url('/')}")
+    print(f"   ├── Voice Player:    {get_public_url('/player')}")
+    print(f"   └── OBS Overlay:     {get_public_url('/obs')}")
     print(f" ► Local TTS API:       {config.tts_api_url}")
     print(f" ► Twitch Channel:      #{config.twitch_channel if config.twitch_channel else '(None - enter in Web UI)'}")
     print("=" * 60)

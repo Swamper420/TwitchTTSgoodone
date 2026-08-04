@@ -685,10 +685,26 @@ document.addEventListener('DOMContentLoaded', () => {
             connectBtn.textContent = 'Connect';
         }
 
-        // Update OBS Overlay links display (uses public server port)
+        // Update OBS Overlay links display (uses public server port or configured site domain)
         const publicPort = data.config && (data.config.public_server_port || data.config.obs_server_port) ? (data.config.public_server_port || data.config.obs_server_port) : 5001;
-        const host = window.location.hostname || 'localhost';
-        const publicBaseUrl = `http://${host}:${publicPort}`;
+        const siteDomain = data.config && (data.config.site_domain || data.config.public_domain || data.config.domain) ? String(data.config.site_domain || data.config.public_domain || data.config.domain).trim() : '';
+
+        let publicBaseUrl;
+        if (siteDomain) {
+            let cleanDomain = siteDomain.replace(/\/+$/, '');
+            if (cleanDomain.startsWith('http://') || cleanDomain.startsWith('https://')) {
+                publicBaseUrl = cleanDomain;
+            } else if (cleanDomain.includes(':')) {
+                publicBaseUrl = `http://${cleanDomain}`;
+            } else if (publicPort && publicPort !== 80 && publicPort !== 443) {
+                publicBaseUrl = `http://${cleanDomain}:${publicPort}`;
+            } else {
+                publicBaseUrl = `http://${cleanDomain}`;
+            }
+        } else {
+            const host = window.location.hostname || 'localhost';
+            publicBaseUrl = `http://${host}:${publicPort}`;
+        }
         const obsBaseUrl = `${publicBaseUrl}/obs`;
 
         // Update navbar links to point to the public server
