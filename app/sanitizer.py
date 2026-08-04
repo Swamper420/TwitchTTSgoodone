@@ -5,6 +5,18 @@ from typing import Any, Optional, Set
 ALLOWED_AUDIO_FORMATS: Set[str] = {"wav", "mp3", "ogg", "flac", "json"}
 
 
+def escape_html(val: Any) -> str:
+    """Safely convert value to string and HTML-escape characters to prevent XSS."""
+    if val is None:
+        return ""
+    s = str(val)
+    return (s.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+            .replace("'", "&#039;"))
+
+
 def sanitize_string(val: Any, max_len: int = 2000, default: str = "") -> str:
     """Safely convert value to string, strip control chars/null bytes, and enforce max length."""
     if val is None:

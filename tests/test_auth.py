@@ -50,6 +50,23 @@ class TestAuthModule(unittest.TestCase):
         manager.revoke_session(token)
         self.assertFalse(manager.verify_session(token))
 
+    def test_password_hashing_and_verification(self):
+        from app.auth import hash_password, verify_password
+        plain = "MySecretPassword123"
+        hashed = hash_password(plain)
+        self.assertTrue(hashed.startswith("pbkdf2_sha256$"))
+        self.assertTrue(verify_password(plain, hashed))
+        self.assertFalse(verify_password("WrongPassword", hashed))
+
+    def test_session_token_bearer_cleaning(self):
+        manager = DashboardAuthManager(admin_password="Password123")
+        success, token, err, role = manager.authenticate("Password123")
+        self.assertTrue(success)
+        # Test verification with Bearer prefix and whitespace/quotes
+        self.assertTrue(manager.verify_session(f"Bearer {token}"))
+        self.assertTrue(manager.verify_session(f' "Bearer {token}" '))
+        self.assertEqual(manager.get_session_role(f"Bearer {token}"), "admin")
+
     @patch("urllib.request.urlopen")
     def test_twitch_token_validator_success(self, mock_urlopen):
         mock_response = MagicMock()

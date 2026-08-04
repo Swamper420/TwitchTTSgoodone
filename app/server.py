@@ -1330,9 +1330,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(content)
         except Exception as e:
             logger.error(f"Error reading static file {filepath}: {e}")
-            self.send_error(500, "Internal server error")
-
-
+            
 class PublicRequestHandler(BaseHTTPRequestHandler):
     """
     Unified internet-facing HTTP handler for public pages:
@@ -1987,6 +1985,93 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(content)
         except Exception as e:
             logger.error(f"Error reading static file {filepath} on public server: {e}")
+            self.send_error(500, "Internal server error")
+
+
+class OBSRequestHandler(BaseHTTPRequestHandler):
+    """Dedicated read-only handler for OBS Overlay Browser Source."""
+
+    def log_message(self, format, *args):
+        pass
+
+    def _send_security_headers(self):
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Content-Security-Policy", "default-src 'self' 'unsafe-inline' data: blob:;")
+
+    def _send_json(self, code: int, data: dict):
+        body = json.dumps(data).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self._send_security_headers()
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self):
+        self.send_error(405, "Method Not Allowed")
+
+    def do_PUT(self):
+        self.send_error(405, "Method Not Allowed")
+
+    def do_DELETE(self):
+        self.send_error(405, "Method Not Allowed")
+
+    def do_PATCH(self):
+        self.send_error(405, "Method Not Allowed")
+
+    def do_OPTIONS(self):
+        self.send_error(405, "Method Not Allowed")
+
+    def do_GET(self):
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+
+        if path in ("/", "/obs", "/obs.html"):
+            safe_path = os.path.join(STATIC_DIR, "obs.html")
+            self._serve_file(safe_path, "text/html; charset=utf-8")
+            return
+        if path == "/obs.css":
+            safe_path = os.path.join(STATIC_DIR, "obs.css")
+            self._serve_file(safe_path, "text/css")
+            return
+        if path == "/obs.js":
+            safe_path = os.path.join(STATIC_DIR, "obs.js")
+            self._serve_file(safe_path, "application/javascript")
+            return
+
+        if path.startswith("/api/audio/"):
+            chunk_id = path[len("/api/audio/"):]
+            if chunk_id in audio_store:
+                audio_bytes, mime_type, _ = audio_store[chunk_id]
+                self.send_response(200)
+                self.send_header("Content-Type", mime_type)
+                self.send_header("Content-Length", str(len(audio_bytes)))
+                self._send_security_headers()
+                self.end_headers()
+                self.wfile.write(audio_bytes)
+                return
+            else:
+                self.send_error(404, "Audio chunk not found")
+                return
+
+        if path == "/api/events":
+            handle_sse_stream(self)
+            return
+
+        self.send_error(404, "Not Found")
+
+    def _serve_file(self, filepath: str, mime_type: str):
+        try:
+            with open(filepath, "rb") as f:
+                content = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", mime_type)
+            self.send_header("Content-Length", str(len(content)))
+            self._send_security_headers()
+            self.end_headers()
+            self.wfile.write(content)
+        except Exception as e:
             self.send_error(500, "Internal server error")
 
 

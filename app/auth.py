@@ -241,6 +241,20 @@ class DashboardAuthManager:
         """Returns True if any password protection is configured."""
         return self.is_admin_auth_required() or self.is_user_auth_required()
 
+    def _clean_session_token(self, token: Optional[str]) -> str:
+        """Strip prefixes, quotes, and whitespace from a session token."""
+        if not token:
+            return ""
+        tok = token.strip().strip('"').strip("'")
+        import re
+        while True:
+            m = re.match(r'^(bearer:|bearer)\s*', tok, flags=re.IGNORECASE)
+            if m:
+                tok = tok[m.end():].strip().strip('"').strip("'")
+            else:
+                break
+        return tok
+
     def authenticate(self, password: str) -> Tuple[bool, Optional[str], Optional[str], str]:
         """
         Authenticate with password.
@@ -248,11 +262,12 @@ class DashboardAuthManager:
         Checks User password second (grants 'user' role).
         Returns: (success, session_token, error_message, role)
         """
+        self.cleanup_expired_sessions()
         pwd = password.strip() if password else ""
 
         # Check Admin password first
         if self.admin_password and verify_password(pwd, self.admin_password):
-            token = secrets.token_hex(24)
+            token = secrets.token_urlsafe(32)
             self._active_sessions[token] = {
                 "exp": time.time() + self._session_ttl_seconds,
                 "role": "admin"
@@ -262,7 +277,7 @@ class DashboardAuthManager:
 
         # Check User / Control page password
         if self.user_password and verify_password(pwd, self.user_password):
-            token = secrets.token_hex(24)
+            token = secrets.token_urlsafe(32)
             self._active_sessions[token] = {
                 "exp": time.time() + self._session_ttl_seconds,
                 "role": "user"
@@ -272,7 +287,7 @@ class DashboardAuthManager:
 
         # If no password set on server at all, grant admin guest token
         if not self.is_admin_auth_required() and not self.is_user_auth_required():
-            token = secrets.token_hex(24)
+            token = secrets.token_urlsafe(32)
             self._active_sessions[token] = {
                 "exp": time.time() + self._session_ttl_seconds,
                 "role": "admin"
@@ -293,12 +308,9 @@ class DashboardAuthManager:
         if required_role == "user" and not self.is_user_auth_required():
             return True
 
-        if not token:
+        clean_token = self._clean_session_token(token)
+        if not clean_token:
             return False
-
-        clean_token = token.strip()
-        if clean_token.lower().startswith("bearer "):
-            clean_token = clean_token[7:].strip()
 
         sess = self._active_sessions.get(clean_token)
         if not sess:
@@ -316,11 +328,9 @@ class DashboardAuthManager:
         return True
 
     def get_session_role(self, token: str) -> Optional[str]:
-        if not token:
+        clean_token = self._clean_session_token(token)
+        if not clean_token:
             return None
-        clean_token = token.strip()
-        if clean_token.lower().startswith("bearer "):
-            clean_token = clean_token[7:].strip()
         sess = self._active_sessions.get(clean_token)
         if sess and time.time() <= sess.get("exp", 0):
             return sess.get("role", "user")
@@ -328,11 +338,9 @@ class DashboardAuthManager:
 
     def revoke_session(self, token: str):
         """Revoke a session token."""
-        if not token:
+        clean_token = self._clean_session_token(token)
+        if not clean_token:
             return
-        clean_token = token.strip()
-        if clean_token.lower().startswith("bearer "):
-            clean_token = clean_token[7:].strip()
         if clean_token in self._active_sessions:
             del self._active_sessions[clean_token]
 

@@ -480,7 +480,7 @@ document.addEventListener('DOMContentLoaded', () => {
             div.className = 'queue-item';
             div.innerHTML = `
                 <div class="queue-item-info">
-                    <span class="queue-item-user">#${idx + 1} - ${escapeHtml(item.user)} (${item.voice || 'default'})</span>
+                    <span class="queue-item-user">#${idx + 1} - ${escapeHtml(item.user)} (${escapeHtml(item.voice || 'default')})</span>
                     <span class="queue-item-text">"${escapeHtml(item.text)}"</span>
                 </div>
                 <button class="queue-item-remove" title="Remove from queue" data-index="${idx}">✖</button>
@@ -1267,7 +1267,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function escapeHtml(str) {
-        return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
     }
 
     // Toast Notification Helper

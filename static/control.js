@@ -112,6 +112,16 @@ document.addEventListener("DOMContentLoaded", () => {
     // Current OBS Position Selection
     let selectedPosition = "bottom-right";
 
+    function escapeHtml(str) {
+        if (str === null || str === undefined) return "";
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
     // --- Toast Notifications ---
     function showToast(message, type = "info") {
         const toast = document.createElement("div");
@@ -549,8 +559,8 @@ document.addEventListener("DOMContentLoaded", () => {
             const card = document.createElement("div");
             card.className = "sound-card";
             card.innerHTML = `
-                <div class="sound-title"><span class="material-symbols-outlined" style="font-size:16px;">volume_up</span> ${soundName}</div>
-                <div class="sound-trigger-code">(${soundName})</div>
+                <div class="sound-title"><span class="material-symbols-outlined" style="font-size:16px;">volume_up</span> ${escapeHtml(soundName)}</div>
+                <div class="sound-trigger-code">(${escapeHtml(soundName)})</div>
                 <div class="sound-actions">
                     <button class="btn btn-small btn-primary trigger-btn" title="Trigger in OBS overlay">
                         <span class="material-symbols-outlined" style="font-size:12px;">play_arrow</span> Overlay
@@ -684,13 +694,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
             const tr = document.createElement("tr");
             tr.innerHTML = `
-                <td style="font-weight:700; color:var(--accent-cyan);">@${user}</td>
+                <td style="font-weight:700; color:var(--accent-cyan);">@${escapeHtml(user)}</td>
                 <td>
-                    <span class="badge badge-purple">${voiceName}</span>
+                    <span class="badge badge-purple">${escapeHtml(voiceName)}</span>
                     ${isLocked ? '<span class="material-symbols-outlined" style="font-size:14px; vertical-align:middle; color:var(--warning-amber); margin-left:4px;" title="Voice Locked">lock</span>' : ''}
                 </td>
                 <td>
-                    <button class="btn btn-small btn-danger delete-voice-btn" data-user="${user}">
+                    <button class="btn btn-small btn-danger delete-voice-btn" data-user="${escapeHtml(user)}">
                         <span class="material-symbols-outlined" style="font-size:12px;">delete</span> Delete
                     </button>
                 </td>
@@ -792,7 +802,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         const item = document.createElement("div");
         item.className = "chat-item";
-        item.innerHTML = `<span class="user">@${user}:</span> ${message}`;
+        item.innerHTML = `<span class="user">@${escapeHtml(user)}:</span> ${escapeHtml(message)}`;
         elements.chatLogList.prepend(item);
 
         // Keep last 30 log items
