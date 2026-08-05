@@ -325,8 +325,16 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!status) return;
         state.connected = status.connected !== undefined ? status.connected : (status.twitch_connected || false);
         state.channels = status.channels || [];
-        state.obsPort = status.config?.public_server_port || status.config?.obs_server_port || 5001;
-        state.siteDomain = status.config?.site_domain || status.config?.public_domain || status.config?.domain || "";
+        if (status.config) {
+            const domainVal = status.config.site_domain || status.config.public_domain || status.config.domain;
+            if (domainVal) {
+                state.siteDomain = String(domainVal).trim();
+            }
+            const portVal = status.config.public_server_port || status.config.obs_server_port;
+            if (portVal) {
+                state.obsPort = portVal;
+            }
+        }
 
         // Status pill
         if (state.connected) {
@@ -451,16 +459,19 @@ document.addEventListener("DOMContentLoaded", () => {
             let cleanDomain = domain.replace(/\/+$/, '');
             if (cleanDomain.startsWith('http://') || cleanDomain.startsWith('https://')) {
                 baseUrl = `${cleanDomain}/obs`;
-            } else if (cleanDomain.includes(':')) {
-                baseUrl = `http://${cleanDomain}/obs`;
-            } else if (port && port !== 80 && port !== 443) {
-                baseUrl = `http://${cleanDomain}:${port}/obs`;
             } else {
-                baseUrl = `http://${cleanDomain}/obs`;
+                baseUrl = `https://${cleanDomain}/obs`;
             }
         } else {
             const host = state.serverHost || window.location.hostname || "localhost";
-            baseUrl = `http://${host}:${port}/obs`;
+            const protocol = window.location.protocol || "http:";
+            if (window.location.port) {
+                baseUrl = `${protocol}//${window.location.host}/obs`;
+            } else if (port && port !== 80 && port !== 443) {
+                baseUrl = `${protocol}//${host}:${port}/obs`;
+            } else {
+                baseUrl = `${protocol}//${host}/obs`;
+            }
         }
 
         const params = new URLSearchParams();

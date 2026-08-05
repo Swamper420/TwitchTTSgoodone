@@ -68,19 +68,7 @@ def main():
     print(f" ► Environment:         {env_status}")
     print(f" ► Admin Dashboard:     http://localhost:{config.server_port} (Private)")
     def get_public_url(path=""):
-        if config.site_domain:
-            domain = config.site_domain.strip().rstrip("/")
-            if domain.startswith("http://") or domain.startswith("https://"):
-                base = domain
-            elif ":" in domain:
-                base = f"http://{domain}"
-            elif config.public_server_port and config.public_server_port not in (80, 443):
-                base = f"http://{domain}:{config.public_server_port}"
-            else:
-                base = f"http://{domain}"
-        else:
-            base = f"http://localhost:{config.public_server_port}"
-        return f"{base}{path}"
+        return f"{config.get_public_base_url()}{path}"
 
     domain_info = f" ({config.site_domain})" if config.site_domain else ""
     print(f" ► Public Server:       {get_public_url()}{domain_info}")

@@ -304,7 +304,30 @@ class Config:
             "effect_8d_speed": self.effect_8d_speed,
             "same_user_timeout": self.same_user_timeout,
             "enable_kill_counter": self.enable_kill_counter,
+            "site_domain": self.site_domain,
+            "public_domain": self.site_domain,
+            "domain": self.site_domain,
         }
+
+    def get_public_base_url(self) -> str:
+        """Returns the formatted public base URL (e.g. 'https://tts.domain.com' or 'http://localhost:5001').
+
+        If site_domain is configured:
+          - Preserves explicit http:// or https:// scheme if present.
+          - Defaults scheme to https:// if scheme is missing.
+          - Does NOT attach internal public_server_port unless explicitly part of site_domain.
+        If site_domain is empty:
+          - Defaults to http://localhost:{public_server_port}
+        """
+        if self.site_domain:
+            domain = self.site_domain.strip().rstrip("/")
+            if domain.startswith("http://") or domain.startswith("https://"):
+                return domain
+            return f"https://{domain}"
+        port = self.public_server_port or 5001
+        if port in (80, 443):
+            return "http://localhost"
+        return f"http://localhost:{port}"
 
     def to_masked_dict(self) -> Dict[str, Any]:
         """Returns config dict with sensitive tokens/passwords masked for authenticated admin endpoints.

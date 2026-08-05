@@ -72,6 +72,26 @@ class TestConfigDotenv(unittest.TestCase):
         self.assertEqual(d.get("site_domain"), "tts.example.com")
         self.assertEqual(d.get("public_domain"), "tts.example.com")
 
+        pub = cfg.to_public_dict()
+        self.assertEqual(pub.get("site_domain"), "tts.example.com")
+        self.assertEqual(cfg.get_public_base_url(), "https://tts.example.com")
+
+    def test_get_public_base_url_variations(self):
+        cfg = Config()
+
+        cfg.site_domain = "https://tts.domain.com"
+        self.assertEqual(cfg.get_public_base_url(), "https://tts.domain.com")
+
+        cfg.site_domain = "http://tts.domain.com"
+        self.assertEqual(cfg.get_public_base_url(), "http://tts.domain.com")
+
+        cfg.site_domain = "tts.domain.com:8443"
+        self.assertEqual(cfg.get_public_base_url(), "https://tts.domain.com:8443")
+
+        cfg.site_domain = ""
+        cfg.public_server_port = 5001
+        self.assertEqual(cfg.get_public_base_url(), "http://localhost:5001")
+
 
 if __name__ == "__main__":
     unittest.main()

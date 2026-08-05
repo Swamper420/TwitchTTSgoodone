@@ -73,6 +73,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentItem = null;
     let bufferTimer = null;
 
+    // Config Cache State for Public Links
+    let cachedSiteDomain = '';
+    let cachedPublicPort = 5001;
+
     // Web Audio API State
     let audioCtx = null;
     let analyser = null;
@@ -686,24 +690,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Update OBS Overlay links display (uses public server port or configured site domain)
-        const publicPort = data.config && (data.config.public_server_port || data.config.obs_server_port) ? (data.config.public_server_port || data.config.obs_server_port) : 5001;
-        const siteDomain = data.config && (data.config.site_domain || data.config.public_domain || data.config.domain) ? String(data.config.site_domain || data.config.public_domain || data.config.domain).trim() : '';
+        if (data.config) {
+            const domainVal = data.config.site_domain || data.config.public_domain || data.config.domain;
+            if (domainVal) cachedSiteDomain = String(domainVal).trim();
+            const portVal = data.config.public_server_port || data.config.obs_server_port;
+            if (portVal) cachedPublicPort = portVal;
+        }
+
+        const publicPort = cachedPublicPort || 5001;
+        const siteDomain = (cachedSiteDomain || '').trim();
 
         let publicBaseUrl;
         if (siteDomain) {
             let cleanDomain = siteDomain.replace(/\/+$/, '');
             if (cleanDomain.startsWith('http://') || cleanDomain.startsWith('https://')) {
                 publicBaseUrl = cleanDomain;
-            } else if (cleanDomain.includes(':')) {
-                publicBaseUrl = `http://${cleanDomain}`;
-            } else if (publicPort && publicPort !== 80 && publicPort !== 443) {
-                publicBaseUrl = `http://${cleanDomain}:${publicPort}`;
             } else {
-                publicBaseUrl = `http://${cleanDomain}`;
+                publicBaseUrl = `https://${cleanDomain}`;
             }
         } else {
             const host = window.location.hostname || 'localhost';
-            publicBaseUrl = `http://${host}:${publicPort}`;
+            const protocol = window.location.protocol || 'http:';
+            if (window.location.port) {
+                publicBaseUrl = `${protocol}//${window.location.host}`;
+            } else if (publicPort && publicPort !== 80 && publicPort !== 443) {
+                publicBaseUrl = `${protocol}//${host}:${publicPort}`;
+            } else {
+                publicBaseUrl = `${protocol}//${host}`;
+            }
         }
         const obsBaseUrl = `${publicBaseUrl}/obs`;
 
