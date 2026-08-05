@@ -43,8 +43,8 @@ logger = logging.getLogger("Server")
 audio_store: Dict[str, Tuple[bytes, str, dict]] = {}
 audio_queue: List[dict] = []
 
-# Event subscriptions (SSE): list of (queue, filter_channel) tuples
-sse_clients: List[Tuple[queue.Queue, Optional[str]]] = []
+# Event subscriptions (SSE): list of (queue, filter_channel, client_ip, is_admin) tuples
+sse_clients: List[Tuple[queue.Queue, Optional[str], Optional[str], bool]] = []
 
 # SSE connection limits (OWASP API4:2023 - Unrestricted Resource Consumption)
 MAX_SSE_CLIENTS = 50
@@ -56,9 +56,25 @@ twitch_bot: Optional[TwitchListener] = None
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 
 
-def broadcast_event(event_type: str, payload: dict):
-    """Send SSE event to all connected web clients, filtered by target channel if set."""
-    msg = f"event: {event_type}\ndata: {json.dumps(payload)}\n\n"
+def get_public_status_dict() -> dict:
+    """Return sanitized status dict safe for internet exposure (no admin creds, no infrastructure, no TTS API URL)."""
+    return {
+        "channel": config.twitch_channel,
+        "channels": config.channels,
+        "connected": bool(twitch_bot and twitch_bot.running and (twitch_bot.channels or twitch_bot.channel)),
+        "authenticated": bool(twitch_bot and twitch_bot.is_authenticated),
+        "config": config.to_public_dict(),
+        "user_voices": user_voice_manager.get_all(),
+        "auth_required": dashboard_auth_manager.is_auth_required(),
+        "counter": {
+            "enabled": bool(config.enable_kill_counter),
+            "count": kill_counter_monitor.current_count,
+        }
+    }
+
+
+def broadcast_event(event_type: str, payload: dict, admin_only: bool = False):
+    """Send SSE event to connected web clients, filtered by channel and client permission level."""
     event_chan = payload.get("channel")
     event_chan_clean = str(event_chan).strip().lstrip("#").lower() if event_chan else None
 
@@ -67,8 +83,13 @@ def broadcast_event(event_type: str, payload: dict):
         if isinstance(item, tuple):
             q = item[0]
             filter_chan = item[1] if len(item) > 1 else None
+            client_ip = item[2] if len(item) > 2 else None
+            is_admin = item[3] if len(item) > 3 else True
         else:
-            q, filter_chan = item, None
+            q, filter_chan, client_ip, is_admin = item, None, None, True
+
+        if admin_only and not is_admin:
+            continue
 
         if filter_chan:
             # Client requested strict channel filtering (e.g. /obs?channel=channelname)
@@ -78,6 +99,14 @@ def broadcast_event(event_type: str, payload: dict):
             elif event_type in ("audio_chunk", "chat_message", "skip_audio", "clear_audio", "soundboard_trigger"):
                 # Channel-specific event without a matching channel tag must not leak to a channel-filtered client
                 continue
+
+        # Filter admin-level status payload from public SSE clients (CWE-200)
+        if event_type == "status" and not is_admin:
+            client_payload = get_public_status_dict()
+        else:
+            client_payload = payload
+
+        msg = f"event: {event_type}\ndata: {json.dumps(client_payload)}\n\n"
 
         try:
             q.put_nowait(msg)
@@ -667,7 +696,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
             client_q = queue.Queue()
-            client_item = (client_q, filter_chan, client_ip)
+            client_item = (client_q, filter_chan, client_ip, True)
             sse_clients.append(client_item)
 
             # Send initial status
@@ -1529,7 +1558,7 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
             client_q = queue.Queue()
-            client_item = (client_q, filter_chan, client_ip)
+            client_item = (client_q, filter_chan, client_ip, False)
             sse_clients.append(client_item)
 
             # Send initial status (sanitized — no admin creds)
@@ -2081,19 +2110,7 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
 
     def _get_public_status_dict(self) -> dict:
         """Return sanitized status dict safe for internet exposure (no admin creds, no infrastructure, no TTS API URL)."""
-        return {
-            "channel": config.twitch_channel,
-            "channels": config.channels,
-            "connected": bool(twitch_bot and twitch_bot.running and (twitch_bot.channels or twitch_bot.channel)),
-            "authenticated": bool(twitch_bot and twitch_bot.is_authenticated),
-            "config": config.to_public_dict(),
-            "user_voices": user_voice_manager.get_all(),
-            "auth_required": dashboard_auth_manager.is_auth_required(),
-            "counter": {
-                "enabled": bool(config.enable_kill_counter),
-                "count": kill_counter_monitor.current_count,
-            }
-        }
+        return get_public_status_dict()
 
     def _send_json(self, code: int, data: dict, cookies: list = None):
         body = json.dumps(data).encode("utf-8")

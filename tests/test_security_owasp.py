@@ -156,6 +156,70 @@ class TestStatusDictSanitization(unittest.TestCase):
         self.assertNotIn("file", counter)
         self.assertNotIn("template", counter)
 
+    def test_broadcast_event_filters_admin_status_for_public_clients(self):
+        """broadcast_event("status", admin_dict) must sanitize payload for public SSE clients (is_admin=False)."""
+        import queue
+        from app.server import broadcast_event, sse_clients
+
+        q_admin = queue.Queue()
+        q_public = queue.Queue()
+        admin_client = (q_admin, None, "127.0.0.1", True)
+        public_client = (q_public, None, "127.0.0.1", False)
+
+        sse_clients.append(admin_client)
+        sse_clients.append(public_client)
+
+        try:
+            admin_status_payload = {
+                "channel": "test_channel",
+                "config": {
+                    "tts_api_url": "http://secret-internal-api:5000",
+                    "admin_password": "****",
+                },
+                "twitch_auth": {"token": "secret_token"},
+            }
+            broadcast_event("status", admin_status_payload)
+
+            # Admin client receives the full admin status payload
+            admin_msg = q_admin.get_nowait()
+            self.assertIn("tts_api_url", admin_msg)
+            self.assertIn("secret-internal-api", admin_msg)
+
+            # Public client receives sanitized status payload (no tts_api_url, no secret tokens)
+            public_msg = q_public.get_nowait()
+            self.assertNotIn("tts_api_url", public_msg)
+            self.assertNotIn("secret-internal-api", public_msg)
+            self.assertNotIn("twitch_auth", public_msg)
+        finally:
+            if admin_client in sse_clients:
+                sse_clients.remove(admin_client)
+            if public_client in sse_clients:
+                sse_clients.remove(public_client)
+
+    def test_broadcast_event_admin_only_flag(self):
+        """broadcast_event with admin_only=True must not deliver to public SSE clients."""
+        import queue
+        from app.server import broadcast_event, sse_clients
+
+        q_admin = queue.Queue()
+        q_public = queue.Queue()
+        admin_client = (q_admin, None, "127.0.0.1", True)
+        public_client = (q_public, None, "127.0.0.1", False)
+
+        sse_clients.append(admin_client)
+        sse_clients.append(public_client)
+
+        try:
+            broadcast_event("admin_alert", {"secret": "data"}, admin_only=True)
+
+            self.assertFalse(q_admin.empty())
+            self.assertTrue(q_public.empty())
+        finally:
+            if admin_client in sse_clients:
+                sse_clients.remove(admin_client)
+            if public_client in sse_clients:
+                sse_clients.remove(public_client)
+
 
 class TestAdminSSEAuthGating(unittest.TestCase):
     """OWASP API2:2023 — Verify admin SSE requires auth when passwords are configured."""
