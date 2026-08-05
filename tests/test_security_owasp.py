@@ -357,6 +357,40 @@ class TestKillCounterTemplateResilience(unittest.TestCase):
                 self.assertIn("Kuolema 5. John 3:16", raw_text_used)
 
 
+class TestKillCounterFilePathTraversal(unittest.TestCase):
+    """CWE-22 — Verify kill_counter_file cannot be set to path outside BASE_DIR."""
+
+    def test_valid_kill_counter_file_path(self):
+        from app.config import config, BASE_DIR
+        old_val = config.kill_counter_file
+        try:
+            valid_path = "storage/counter.txt"
+            base_abs = os.path.abspath(BASE_DIR)
+            resolved = os.path.abspath(os.path.join(base_abs, valid_path))
+            self.assertTrue(resolved.startswith(base_abs + os.sep))
+
+            if resolved == base_abs or resolved.startswith(base_abs + os.sep):
+                config.kill_counter_file = valid_path
+            self.assertEqual(config.kill_counter_file, valid_path)
+        finally:
+            config.kill_counter_file = old_val
+
+    def test_invalid_kill_counter_file_traversal_path(self):
+        from app.config import config, BASE_DIR
+        old_val = config.kill_counter_file
+        try:
+            config.kill_counter_file = "values/deaths"
+            for malicious in ["/etc/passwd", "../../etc/passwd", "../../../etc/shadow"]:
+                base_abs = os.path.abspath(BASE_DIR)
+                resolved = os.path.abspath(os.path.join(base_abs, malicious))
+                if resolved == base_abs or resolved.startswith(base_abs + os.sep):
+                    config.kill_counter_file = malicious
+                self.assertEqual(config.kill_counter_file, "values/deaths")
+        finally:
+            config.kill_counter_file = old_val
+
+
 if __name__ == "__main__":
     unittest.main()
+
 

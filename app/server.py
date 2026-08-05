@@ -13,7 +13,7 @@ from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
 from typing import Dict, Tuple, List, Optional
 import urllib.parse
 
-from app.config import config
+from app.config import config, BASE_DIR
 from app.text_chunker import process_message_to_chunks, TTSChunk
 from app.tts_client import tts_client, TTSClient
 from app.twitch_listener import TwitchListener
@@ -1335,7 +1335,12 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             if "enable_kill_counter" in body:
                 config.enable_kill_counter = sanitize_bool(body["enable_kill_counter"], default=config.enable_kill_counter)
             if "kill_counter_file" in body:
-                config.kill_counter_file = sanitize_string(body["kill_counter_file"], max_len=500, default=config.kill_counter_file)
+                candidate = sanitize_string(body["kill_counter_file"], max_len=500, default=config.kill_counter_file)
+                if candidate:
+                    base_abs = os.path.abspath(BASE_DIR)
+                    resolved = os.path.abspath(os.path.join(base_abs, candidate))
+                    if resolved == base_abs or resolved.startswith(base_abs + os.sep):
+                        config.kill_counter_file = candidate
             if "kill_counter_poll_interval" in body:
                 config.kill_counter_poll_interval = sanitize_float(body["kill_counter_poll_interval"], default=config.kill_counter_poll_interval, min_val=0.1, max_val=60.0)
             if "kill_counter_voice" in body:
