@@ -283,16 +283,48 @@ class Config:
             "bible_api_url": self.bible_api_url,
         }
 
+    def to_public_dict(self) -> Dict[str, Any]:
+        """Returns minimal config safe for unauthenticated public clients (OBS, player, SSE).
+
+        Strips all infrastructure details (IPs, ports, file paths, API URLs, credentials).
+        Only includes fields that public UI consumers actually need to render.
+        """
+        return {
+            "tts_voice": self.tts_voice or "",
+            "tts_format": self.tts_format,
+            "tts_language": self.tts_language,
+            "tts_speed": self.tts_speed,
+            "voice_presets": self.voice_presets,
+            "shouting_voices": self.shouting_voices,
+            "user_template": self.user_template,
+            "enable_chat_responses": self.enable_chat_responses,
+            "enable_soundboard": self.enable_soundboard,
+            "enable_8d_audio": self.enable_8d_audio,
+            "effect_8d_speed": self.effect_8d_speed,
+            "same_user_timeout": self.same_user_timeout,
+            "enable_kill_counter": self.enable_kill_counter,
+        }
+
     def to_masked_dict(self) -> Dict[str, Any]:
-        """Returns config dict with sensitive tokens and passwords masked for public/SSE endpoints."""
-        d = self.to_dict()
+        """Returns config dict with sensitive tokens/passwords masked for authenticated admin endpoints.
+
+        Strips infrastructure internals (internal IPs, server ports, file paths, API URLs)
+        that have no business in browser-facing API responses. Masks credential values.
+        """
         from app.auth import mask_token
+        d = self.to_dict()
+        # Mask credential values
         d["twitch_oauth_token"] = mask_token(self.twitch_oauth_token)
         d["kill_counter_api_token"] = mask_token(self.kill_counter_api_token)
         d["has_admin_password"] = bool(self.admin_password)
         d["admin_password"] = "••••••••" if self.admin_password else ""
         d["has_user_password"] = bool(self.user_password)
         d["user_password"] = "••••••••" if self.user_password else ""
+        # Strip infrastructure fields that should not appear in browser responses
+        for key in ("server_host", "server_port", "public_server_host", "public_server_port",
+                     "obs_server_host", "obs_server_port", "soundboard_dir",
+                     "kill_counter_file", "bible_api_url", "twitch_client_id"):
+            d.pop(key, None)
         return d
 
 config = Config()

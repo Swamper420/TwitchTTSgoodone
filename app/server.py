@@ -45,6 +45,10 @@ audio_queue: List[dict] = []
 # Event subscriptions (SSE): list of (queue, filter_channel) tuples
 sse_clients: List[Tuple[queue.Queue, Optional[str]]] = []
 
+# SSE connection limits (OWASP API4:2023 - Unrestricted Resource Consumption)
+MAX_SSE_CLIENTS = 50
+MAX_SSE_PER_IP = 5
+
 # Twitch Listener instance
 twitch_bot: Optional[TwitchListener] = None
 
@@ -60,7 +64,8 @@ def broadcast_event(event_type: str, payload: dict):
     to_remove = []
     for item in sse_clients:
         if isinstance(item, tuple):
-            q, filter_chan = item
+            q = item[0]
+            filter_chan = item[1] if len(item) > 1 else None
         else:
             q, filter_chan = item, None
 
@@ -410,7 +415,7 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                 "channels": config.channels,
                 "connected": bool(twitch_bot and twitch_bot.running and (twitch_bot.channels or twitch_bot.channel)),
                 "authenticated": bool(twitch_bot and twitch_bot.is_authenticated),
-                "config": config.to_dict(),
+                "config": config.to_public_dict(),
                 "user_voices": user_voice_manager.get_all()
             })
 
@@ -542,7 +547,7 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
             
         except Exception as e:
             logger.error(f"Failed to synthesize chunk '{chunk.text}': {e}")
-            broadcast_event("error", {"message": f"TTS synthesis failed for '{chunk.text}': {str(e)}"})
+            broadcast_event("error", {"message": "TTS synthesis failed for a message chunk."})
 
 
 def on_twitch_message(user: str, message: str, channel: str = ""):
@@ -557,6 +562,10 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         # Quiet standard HTTP logs to avoid spam
         pass
+
+    def version_string(self):
+        """Override to suppress server version fingerprinting (OWASP A05:2021)."""
+        return "TwitchTTS"
 
     def _send_cors_headers(self):
         origin = self.headers.get("Origin", "")
@@ -580,6 +589,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         self.send_header("X-Frame-Options", "SAMEORIGIN")
         self.send_header("X-XSS-Protection", "1; mode=block")
         self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        self.send_header("Content-Security-Policy", "default-src 'self' 'unsafe-inline' data: blob:;")
 
     def _get_client_ip(self) -> str:
         """Get client IP address for rate limiting."""
@@ -620,8 +630,28 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         path = parsed.path
         query = urllib.parse.parse_qs(parsed.query)
 
-        # Route: SSE Event Stream
+        # Route: SSE Event Stream (auth-gated on admin server — OWASP API2:2023)
         if path == "/api/events":
+            # Require authentication when passwords are configured
+            if dashboard_auth_manager.is_auth_required():
+                token = self._get_request_auth_token()
+                if not dashboard_auth_manager.verify_session(token, required_role="user"):
+                    self._send_json(401, {
+                        "error": "Unauthorized: Authentication required for event stream",
+                        "auth_required": True
+                    })
+                    return
+
+            # SSE connection limits (OWASP API4:2023)
+            client_ip = self._get_client_ip()
+            if len(sse_clients) >= MAX_SSE_CLIENTS:
+                self._send_json(503, {"error": "Too many active connections. Try again later."})
+                return
+            ip_count = sum(1 for item in sse_clients if isinstance(item, tuple) and len(item) >= 3 and item[2] == client_ip)
+            if ip_count >= MAX_SSE_PER_IP:
+                self._send_json(429, {"error": "Too many connections from this IP."})
+                return
+
             req_chan = query.get("channel", [None])[0] or query.get("ch", [None])[0]
             filter_chan = req_chan.strip().lstrip('#').lower() if req_chan else None
 
@@ -633,7 +663,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
             client_q = queue.Queue()
-            client_item = (client_q, filter_chan)
+            client_item = (client_q, filter_chan, client_ip)
             sse_clients.append(client_item)
 
             # Send initial status
@@ -719,10 +749,8 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/soundboard":
             sounds = soundboard_manager.get_available_sounds()
             self._send_json(200, {
-                "directory": soundboard_manager.directory,
                 "enabled": config.enable_soundboard,
                 "sounds": list(sounds.keys()),
-                "sound_files": sounds
             })
             return
 
@@ -1291,6 +1319,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         self.send_error(404, "Not Found")
 
     def _get_status_dict(self) -> dict:
+        """Status dict for admin server — uses masked config (never raw to_dict)."""
         return {
             "channel": config.twitch_channel,
             "channels": config.channels,
@@ -1357,6 +1386,10 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
+    def version_string(self):
+        """Override to suppress server version fingerprinting (OWASP A05:2021)."""
+        return "TwitchTTS"
+
     def _send_cors_headers(self):
         origin = self.headers.get("Origin", "")
         if origin:
@@ -1378,6 +1411,7 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-XSS-Protection", "1; mode=block")
         self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        self.send_header("Content-Security-Policy", "default-src 'self' 'unsafe-inline' data: blob:;")
         if allow_framing:
             self.send_header("X-Frame-Options", "ALLOWALL")
         else:
@@ -1421,8 +1455,18 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
         path = parsed.path
         query = urllib.parse.parse_qs(parsed.query)
 
-        # ── SSE Event Stream ──
+        # ── SSE Event Stream (public — with connection limits) ──
         if path == "/api/events":
+            # SSE connection limits (OWASP API4:2023)
+            client_ip = self._get_client_ip()
+            if len(sse_clients) >= MAX_SSE_CLIENTS:
+                self._send_json(503, {"error": "Too many active connections. Try again later."})
+                return
+            ip_count = sum(1 for item in sse_clients if isinstance(item, tuple) and len(item) >= 3 and item[2] == client_ip)
+            if ip_count >= MAX_SSE_PER_IP:
+                self._send_json(429, {"error": "Too many connections from this IP."})
+                return
+
             req_chan = query.get("channel", [None])[0] or query.get("ch", [None])[0]
             filter_chan = req_chan.strip().lstrip('#').lower() if req_chan else None
 
@@ -1435,7 +1479,7 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
             client_q = queue.Queue()
-            client_item = (client_q, filter_chan)
+            client_item = (client_q, filter_chan, client_ip)
             sse_clients.append(client_item)
 
             # Send initial status (sanitized — no admin creds)
@@ -1513,7 +1557,7 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
                 self.send_error(404, "Sound effect not found")
                 return
 
-        # ── Auth Status (public) ──
+        # ── Auth Status (public — no twitch_auth metadata) ──
         if path == "/api/auth/status":
             tok = self._get_request_auth_token()
             role = dashboard_auth_manager.get_session_role(tok)
@@ -1524,7 +1568,6 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
                 "user_auth_required": dashboard_auth_manager.is_user_auth_required(),
                 "authenticated": authenticated,
                 "role": role or ("admin" if not dashboard_auth_manager.is_auth_required() else None),
-                "twitch_auth": twitch_bot.get_auth_info() if twitch_bot else {}
             })
             return
 
@@ -1547,14 +1590,12 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(500, {"error": f"Failed to fetch voices from TTS API: {str(e)}"})
             return
 
-        # ── Soundboard List (public) ──
+        # ── Soundboard List (public — no filesystem paths) ──
         if path == "/api/soundboard":
             sounds = soundboard_manager.get_available_sounds()
             self._send_json(200, {
-                "directory": soundboard_manager.directory,
                 "enabled": config.enable_soundboard,
                 "sounds": list(sounds.keys()),
-                "sound_files": sounds
             })
             return
 
@@ -1948,18 +1989,19 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
         self.send_error(404, "Not Found")
 
     def _get_public_status_dict(self) -> dict:
-        """Return sanitized status dict safe for internet exposure (no admin creds, no TTS API URL, etc.)."""
+        """Return sanitized status dict safe for internet exposure (no admin creds, no infrastructure, no TTS API URL)."""
         return {
             "channel": config.twitch_channel,
             "channels": config.channels,
             "connected": bool(twitch_bot and twitch_bot.running and (twitch_bot.channels or twitch_bot.channel)),
             "authenticated": bool(twitch_bot and twitch_bot.is_authenticated),
-            "config": config.to_masked_dict(),
+            "config": config.to_public_dict(),
             "user_voices": user_voice_manager.get_all(),
             "auth_required": dashboard_auth_manager.is_auth_required(),
-            "twitch_auth": twitch_bot.get_auth_info() if twitch_bot else {},
-            "bot_status": twitch_bot.get_status() if twitch_bot else {},
-            "counter": kill_counter_monitor.get_status_dict()
+            "counter": {
+                "enabled": bool(config.enable_kill_counter),
+                "count": kill_counter_monitor.current_count,
+            }
         }
 
     def _send_json(self, code: int, data: dict):
@@ -1993,6 +2035,10 @@ class OBSRequestHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
         pass
+
+    def version_string(self):
+        """Override to suppress server version fingerprinting (OWASP A05:2021)."""
+        return "TwitchTTS"
 
     def _send_security_headers(self):
         self.send_header("X-Content-Type-Options", "nosniff")
