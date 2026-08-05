@@ -50,3 +50,6 @@ class RateLimiter:
 login_limiter = RateLimiter(max_attempts=5, window_seconds=60)
 tts_limiter = RateLimiter(max_attempts=30, window_seconds=60)
 counter_limiter = RateLimiter(max_attempts=30, window_seconds=60)
+soundboard_limiter = RateLimiter(max_attempts=20, window_seconds=60)
+validate_limiter = RateLimiter(max_attempts=10, window_seconds=60)
+

@@ -96,14 +96,18 @@ class KillCounterMonitor:
         ref = verse.get("reference", "")
         text = verse.get("text", "")
 
-        # Format message template
+        # Format message template safely
         template = config.kill_counter_template or "Kuolema {count}. {reference}: {text}"
-        formatted = template.format(
-            count=count,
-            reference=ref,
-            text=text,
-            user="Bible"
-        )
+        try:
+            formatted = template.format(
+                count=count,
+                reference=ref,
+                text=text,
+                user="Bible"
+            )
+        except (KeyError, ValueError, IndexError) as e:
+            logger.warning(f"Invalid kill_counter_template pattern '{template}': {e}. Using fallback format.")
+            formatted = f"Kuolema {count}. {ref}: {text}"
 
         logger.info(f"Triggering Bible TTS for Kill Count #{count}: '{formatted[:60]}...' ({ref})")
 

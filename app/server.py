@@ -21,7 +21,7 @@ from app.user_voices import user_voice_manager
 from app.soundboard import soundboard_manager
 from app.kill_counter import kill_counter_monitor
 from app.auth import dashboard_auth_manager, twitch_token_validator, mask_token, hash_password
-from app.rate_limiter import login_limiter, tts_limiter, counter_limiter
+from app.rate_limiter import login_limiter, tts_limiter, counter_limiter, soundboard_limiter, validate_limiter
 from app.sanitizer import (
     sanitize_string,
     sanitize_username,
@@ -472,6 +472,8 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
 
     def emit_chunk(item_meta: dict):
         audio_queue.append(item_meta)
+        while len(audio_queue) > 200:
+            audio_queue.pop(0)
         while len(audio_store) > 200:
             oldest_id = next(iter(audio_store))
             del audio_store[oldest_id]
@@ -590,7 +592,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         self.send_header("X-Frame-Options", "SAMEORIGIN")
         self.send_header("X-XSS-Protection", "1; mode=block")
         self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
-        self.send_header("Content-Security-Policy", "default-src 'self' 'unsafe-inline' data: blob:;")
+        self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; media-src 'self' blob: data:; connect-src 'self' ws: wss:; img-src 'self' data: blob:; object-src 'none'; frame-ancestors 'self';")
 
     def _get_client_ip(self) -> str:
         """Get client IP address for rate limiting."""
@@ -904,6 +906,9 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
 
         # Route: Validate Twitch Token (Public/Auth tool)
         if path == "/api/auth/validate_twitch":
+            if not validate_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
             token = sanitize_string(body.get("oauth_token"), max_len=500)
             res = twitch_token_validator.validate_token(token)
             self._send_json(200, res)
@@ -911,6 +916,9 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
 
         # Route: Trigger Soundboard Effect (Public/End-user)
         if path in ("/api/soundboard/trigger", "/api/soundboard/play"):
+            if not soundboard_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
             if not config.enable_soundboard:
                 self._send_json(400, {"error": "Soundboard is currently disabled"})
                 return
@@ -943,19 +951,11 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             })
             return
 
-        # Route: Toggle Soundboard
-        if path == "/api/soundboard/toggle":
-            if "enabled" in body:
-                config.enable_soundboard = sanitize_bool(body["enabled"], default=config.enable_soundboard)
-            else:
-                config.enable_soundboard = not config.enable_soundboard
-            config.save()
-            broadcast_event("status", self._get_status_dict())
-            self._send_json(200, {"success": True, "enabled": config.enable_soundboard})
-            return
-
         # Route: Set Pieruta Target
         if path == "/api/pieruta":
+            if not soundboard_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
             raw_user = body.get("user") or body.get("username") or ""
             target_user = sanitize_identifier(raw_user.lstrip('@'), max_len=100) if raw_user else ""
             if not target_user:
@@ -1079,6 +1079,17 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
 
         # Check user/streamer authentication for control portal routes
         if not self._check_auth(required_role="user"):
+            return
+
+        # Route: Toggle Soundboard
+        if path == "/api/soundboard/toggle":
+            if "enabled" in body:
+                config.enable_soundboard = sanitize_bool(body["enabled"], default=config.enable_soundboard)
+            else:
+                config.enable_soundboard = not config.enable_soundboard
+            config.save()
+            broadcast_event("status", self._get_status_dict())
+            self._send_json(200, {"success": True, "enabled": config.enable_soundboard})
             return
 
         # Route: Save user/control settings
@@ -1366,6 +1377,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(content)
         except Exception as e:
             logger.error(f"Error reading static file {filepath}: {e}")
+            self.send_error(500, "Internal server error")
             
 class PublicRequestHandler(BaseHTTPRequestHandler):
     """
@@ -1418,7 +1430,8 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-XSS-Protection", "1; mode=block")
         self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
-        self.send_header("Content-Security-Policy", "default-src 'self' 'unsafe-inline' data: blob:;")
+        frame_policy = "*" if allow_framing else "'self'"
+        self.send_header("Content-Security-Policy", f"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; media-src 'self' blob: data:; connect-src 'self' ws: wss:; img-src 'self' data: blob:; object-src 'none'; frame-ancestors {frame_policy};")
         if allow_framing:
             self.send_header("X-Frame-Options", "ALLOWALL")
         else:
@@ -1678,8 +1691,9 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
         # Serve whitelisted static assets (CSS, JS) for public pages only
         rel_path = path.lstrip('/')
         if rel_path in self._ALLOWED_STATIC_FILES:
-            safe_path = os.path.join(STATIC_DIR, rel_path)
-            if os.path.isfile(safe_path):
+            safe_path = os.path.abspath(os.path.join(STATIC_DIR, rel_path))
+            static_dir_abs = os.path.abspath(STATIC_DIR)
+            if os.path.isfile(safe_path) and (os.path.commonpath([static_dir_abs, safe_path]) == static_dir_abs):
                 if rel_path.endswith(".css"):
                     mime = "text/css"
                 elif rel_path.endswith(".js"):
@@ -1730,6 +1744,9 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
 
         # Validate Twitch Token
         if path == "/api/auth/validate_twitch":
+            if not validate_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
             token = sanitize_string(body.get("oauth_token"), max_len=500)
             res = twitch_token_validator.validate_token(token)
             self._send_json(200, res)
@@ -1761,6 +1778,9 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
 
         # Soundboard Trigger (public)
         if path in ("/api/soundboard/trigger", "/api/soundboard/play"):
+            if not soundboard_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
             if not config.enable_soundboard:
                 self._send_json(400, {"error": "Soundboard is currently disabled"})
                 return
@@ -1791,19 +1811,11 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             })
             return
 
-        # Soundboard Toggle
-        if path == "/api/soundboard/toggle":
-            if "enabled" in body:
-                config.enable_soundboard = sanitize_bool(body["enabled"], default=config.enable_soundboard)
-            else:
-                config.enable_soundboard = not config.enable_soundboard
-            config.save()
-            broadcast_event("status", self._get_public_status_dict())
-            self._send_json(200, {"success": True, "enabled": config.enable_soundboard})
-            return
-
         # Set Pieruta Target
         if path == "/api/pieruta":
+            if not soundboard_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
             raw_user = body.get("user") or body.get("username") or ""
             target_user = sanitize_identifier(raw_user.lstrip('@'), max_len=100) if raw_user else ""
             if not target_user:
@@ -1900,6 +1912,17 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
 
         # ── Authenticated POST routes (user role required) ──
         if not self._check_auth(required_role="user"):
+            return
+
+        # Soundboard Toggle (authenticated)
+        if path == "/api/soundboard/toggle":
+            if "enabled" in body:
+                config.enable_soundboard = sanitize_bool(body["enabled"], default=config.enable_soundboard)
+            else:
+                config.enable_soundboard = not config.enable_soundboard
+            config.save()
+            broadcast_event("status", self._get_public_status_dict())
+            self._send_json(200, {"success": True, "enabled": config.enable_soundboard})
             return
 
         # Save user/control settings
@@ -2056,7 +2079,7 @@ class OBSRequestHandler(BaseHTTPRequestHandler):
     def _send_security_headers(self):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("Content-Security-Policy", "default-src 'self' 'unsafe-inline' data: blob:;")
+        self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; media-src 'self' blob: data:; connect-src 'self' ws: wss:; img-src 'self' data: blob:; object-src 'none'; frame-ancestors *;")
 
     def _send_json(self, code: int, data: dict):
         body = json.dumps(data).encode("utf-8")

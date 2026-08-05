@@ -231,5 +231,68 @@ class TestLoginCookieResponse(unittest.TestCase):
         handler.send_header.assert_any_call("Set-Cookie", "session=test_token_123; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400")
 
 
+class TestSoundboardToggleAuthGating(unittest.TestCase):
+    """OWASP API2:2023 — Verify /api/soundboard/toggle requires authentication."""
+
+    def test_soundboard_toggle_requires_auth(self):
+        from app.auth import dashboard_auth_manager
+        with patch.object(dashboard_auth_manager, 'user_password', 'userpass123'):
+            with patch.object(dashboard_auth_manager, 'admin_password', 'adminpass123'):
+                self.assertTrue(dashboard_auth_manager.is_user_auth_required())
+                self.assertFalse(dashboard_auth_manager.verify_session("", required_role="user"))
+
+
+class TestNewRateLimiters(unittest.TestCase):
+    """OWASP API4:2023 — Verify rate limiting on soundboard triggers and token validation."""
+
+    def test_soundboard_limiter_exists(self):
+        from app.rate_limiter import soundboard_limiter, validate_limiter
+        self.assertEqual(soundboard_limiter.max_attempts, 20)
+        self.assertEqual(validate_limiter.max_attempts, 10)
+
+    def test_soundboard_limiter_blocks_excessive_attempts(self):
+        from app.rate_limiter import RateLimiter
+        limiter = RateLimiter(max_attempts=3, window_seconds=60)
+        ip = "192.168.1.50"
+        self.assertTrue(limiter.check_and_record(ip))
+        self.assertTrue(limiter.check_and_record(ip))
+        self.assertTrue(limiter.check_and_record(ip))
+        self.assertFalse(limiter.check_and_record(ip), "Should block 4th attempt when max_attempts=3")
+
+
+class TestAudioQueueMaxBound(unittest.TestCase):
+    """OWASP API4:2023 — Verify audio_queue is bounded to prevent memory growth."""
+
+    def test_audio_queue_bounded(self):
+        from app.server import audio_queue
+        audio_queue.clear()
+        for i in range(250):
+            audio_queue.append({"id": f"chunk_{i}"})
+            while len(audio_queue) > 200:
+                audio_queue.pop(0)
+        self.assertEqual(len(audio_queue), 200)
+        self.assertEqual(audio_queue[0]["id"], "chunk_50")
+        self.assertEqual(audio_queue[-1]["id"], "chunk_249")
+        audio_queue.clear()
+
+
+class TestKillCounterTemplateResilience(unittest.TestCase):
+    """OWASP A03:2021 — Verify template.format() handles malformed template strings gracefully."""
+
+    def test_malformed_template_fallback(self):
+        from app.kill_counter import KillCounterMonitor
+        monitor = KillCounterMonitor()
+        monitor.process_text_func = MagicMock()
+        
+        with patch("app.config.config.kill_counter_template", "Death {count} {invalid_placeholder}"):
+            with patch("app.bible_client.bible_client.fetch_random_verse", return_value={"reference": "John 3:16", "text": "For God so loved the world"}):
+                res = monitor.trigger_bible_tts(count=5)
+                self.assertEqual(res["reference"], "John 3:16")
+                monitor.process_text_func.assert_called_once()
+                raw_text_used = monitor.process_text_func.call_args[1]["raw_text"]
+                self.assertIn("Kuolema 5. John 3:16", raw_text_used)
+
+
 if __name__ == "__main__":
     unittest.main()
+
