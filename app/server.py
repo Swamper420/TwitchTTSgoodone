@@ -1821,12 +1821,10 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(429, {"error": "Too many login attempts. Try again later."})
                 return
             password = sanitize_string(body.get("password"), max_len=500)
-            success, session_token, err, role = dashboard_auth_manager.authenticate(password)
+            success, session_token, err, role = dashboard_auth_manager.authenticate(password, max_role="user")
             if success:
-                # On the public server, cap the role to 'user' — never grant 'admin' externally
-                public_role = "user" if role == "admin" else role
                 cookie_str = f"session={session_token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400"
-                self._send_json(200, {"success": True, "token": session_token, "role": public_role}, cookies=[cookie_str])
+                self._send_json(200, {"success": True, "token": session_token, "role": role}, cookies=[cookie_str])
             else:
                 self._send_json(401, {"error": err or "Invalid password"})
             return

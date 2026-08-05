@@ -255,44 +255,52 @@ class DashboardAuthManager:
                 break
         return tok
 
-    def authenticate(self, password: str) -> Tuple[bool, Optional[str], Optional[str], str]:
+    def authenticate(self, password: str, max_role: Optional[str] = None) -> Tuple[bool, Optional[str], Optional[str], str]:
         """
         Authenticate with password.
-        Checks Admin password first (grants 'admin' role).
+        Checks Admin password first (grants 'admin' role, unless capped by max_role).
         Checks User password second (grants 'user' role).
         Returns: (success, session_token, error_message, role)
         """
         self.cleanup_expired_sessions()
         pwd = password.strip() if password else ""
 
+        def cap_role(role: str) -> str:
+            if max_role == "user" and role == "admin":
+                return "user"
+            return role
+
         # Check Admin password first
         if self.admin_password and verify_password(pwd, self.admin_password):
             token = secrets.token_urlsafe(32)
+            role = cap_role("admin")
             self._active_sessions[token] = {
                 "exp": time.time() + self._session_ttl_seconds,
-                "role": "admin"
+                "role": role
             }
-            logger.info("Successful Dashboard Admin Login.")
-            return True, token, None, "admin"
+            logger.info("Successful Dashboard Admin Login." if role == "admin" else "Successful Dashboard User Login (role capped).")
+            return True, token, None, role
 
         # Check User / Control page password
         if self.user_password and verify_password(pwd, self.user_password):
             token = secrets.token_urlsafe(32)
+            role = cap_role("user")
             self._active_sessions[token] = {
                 "exp": time.time() + self._session_ttl_seconds,
-                "role": "user"
+                "role": role
             }
             logger.info("Successful Streamer Control Portal User Login.")
-            return True, token, None, "user"
+            return True, token, None, role
 
-        # If no password set on server at all, grant admin guest token
+        # If no password set on server at all, grant guest token (or user token if max_role='user')
         if not self.is_admin_auth_required() and not self.is_user_auth_required():
             token = secrets.token_urlsafe(32)
+            role = cap_role("admin")
             self._active_sessions[token] = {
                 "exp": time.time() + self._session_ttl_seconds,
-                "role": "admin"
+                "role": role
             }
-            return True, token, None, "admin"
+            return True, token, None, role
 
         logger.warning("Failed Login attempt.")
         return False, None, "Invalid password", ""

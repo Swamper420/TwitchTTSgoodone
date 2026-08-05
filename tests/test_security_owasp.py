@@ -390,6 +390,22 @@ class TestKillCounterFilePathTraversal(unittest.TestCase):
             config.kill_counter_file = old_val
 
 
+class TestPublicLoginRoleCapping(unittest.TestCase):
+    """CWE-269 — Verify public login endpoint caps session role to 'user'."""
+
+    def test_public_login_creates_user_session_only(self):
+        from app.auth import dashboard_auth_manager
+        with patch.object(dashboard_auth_manager, 'admin_password', 'adminsecret123'):
+            with patch.object(dashboard_auth_manager, '_active_sessions', {}):
+                # Public login with admin password
+                success, token, err, role = dashboard_auth_manager.authenticate("adminsecret123", max_role="user")
+                self.assertTrue(success)
+                self.assertEqual(role, "user")
+                # Ensure the token in active sessions has role 'user' and cannot be used for admin access
+                self.assertFalse(dashboard_auth_manager.verify_session(token, required_role="admin"))
+                self.assertTrue(dashboard_auth_manager.verify_session(token, required_role="user"))
+
+
 if __name__ == "__main__":
     unittest.main()
 

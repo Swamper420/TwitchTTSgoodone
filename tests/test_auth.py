@@ -50,6 +50,15 @@ class TestAuthModule(unittest.TestCase):
         manager.revoke_session(token)
         self.assertFalse(manager.verify_session(token))
 
+    def test_dashboard_auth_manager_max_role_capping(self):
+        manager = DashboardAuthManager(admin_password="SuperSecretPassword123!")
+        success, token, err, role = manager.authenticate("SuperSecretPassword123!", max_role="user")
+        self.assertTrue(success)
+        self.assertEqual(role, "user")
+        self.assertEqual(manager.get_session_role(token), "user")
+        self.assertTrue(manager.verify_session(token, required_role="user"))
+        self.assertFalse(manager.verify_session(token, required_role="admin"))
+
     def test_password_hashing_and_verification(self):
         from app.auth import hash_password, verify_password
         plain = "MySecretPassword123"
