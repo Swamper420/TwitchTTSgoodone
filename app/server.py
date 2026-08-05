@@ -35,6 +35,7 @@ from app.sanitizer import (
     sanitize_float,
     sanitize_speaker_name_for_tts,
 )
+from app.chat_commands import parse_chat_command, match_voice_preset, match_voice_action
 
 logger = logging.getLogger("Server")
 
@@ -214,8 +215,15 @@ def get_random_preset_voice() -> str:
 
 
 def send_bot_helpful_info() -> str:
-    """Send helpful info about TTS bot features to chat & SSE UI."""
-    info_text = f"🎙️ Twitch TTS Bot Info: Set your default voice with '!myvoice <voice>' (e.g. !myvoice mieto or !myvoice random) or reset with '!myvoice reset'. Preset voices: [{config.voice_presets}]. Use [voicename] tags in chat for multi-voice! Skip audio with !skip."
+    """Send helpful info about TTS bot features & commands to chat & SSE UI."""
+    presets_str = config.voice_presets if config.voice_presets else "none"
+    info_text = (
+        f"🎙️ Twitch TTS Bot Info & Commands: "
+        f"!myvoice <voice|random|reset> (Presets: [{presets_str}]) | "
+        f"!voices | !sounds (trigger (soundname)) | !skip | !clear | "
+        f"!pieruta <user> | Tags: [voice] multi-voice, {{8D}} 8D audio. "
+        f"(All commands support fuzzy auto-correction!)"
+    )
     broadcast_event("chat_message", {"user": "System", "message": info_text, "timestamp": time.time()})
     if config.enable_chat_responses and twitch_bot:
         twitch_bot.send_chat(info_text)
@@ -389,152 +397,138 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
             raw_text = re.sub(r'\{\s*8d\s*\}', '', raw_text, flags=re.IGNORECASE).strip()
             logger.info(f"🌀 Detected {{8D}} tag in message from '{user}'. Enabling 8D audio effect.")
 
-        raw_lower = raw_text.strip().lower()
+        parsed_cmd = parse_chat_command(raw_text)
+        if parsed_cmd:
+            cmd_name, cmd_args, _score = parsed_cmd
 
-        # Command: !pieruta <username>
-        if raw_lower.startswith("!pieruta"):
-            parts = raw_text.strip().split(maxsplit=1)
-            raw_target_arg = parts[1].strip() if len(parts) > 1 else ""
-            if not raw_target_arg:
-                msg_text = "💨 Usage: !pieruta <username>"
-            else:
-                target_user = sanitize_identifier(raw_target_arg.lstrip('@'), max_len=100)
-                if target_user:
-                    pieruta_targets[target_user.lower()] = True
-                    msg_text = f"💨 Fart background sound queued for @{target_user}'s next TTS message!"
-                    logger.info(f"Chat command '!pieruta' set fartbackground target for user '{target_user}'.")
+            if cmd_name == "pieruta":
+                raw_target_arg = cmd_args.strip()
+                if not raw_target_arg:
+                    msg_text = "💨 Usage: !pieruta <username>"
                 else:
-                    msg_text = "💨 Invalid username specified."
+                    target_user = sanitize_identifier(raw_target_arg.lstrip('@'), max_len=100)
+                    if target_user:
+                        pieruta_targets[target_user.lower()] = True
+                        msg_text = f"💨 Fart background sound queued for @{target_user}'s next TTS message!"
+                        logger.info(f"Chat command '!pieruta' set fartbackground target for user '{target_user}'.")
+                    else:
+                        msg_text = "💨 Invalid username specified."
 
-            broadcast_event("chat_message", {"user": "System", "message": msg_text, "channel": clean_chan, "timestamp": time.time()})
-            if config.enable_chat_responses and twitch_bot:
-                twitch_bot.send_chat(msg_text, channel=clean_chan)
-            return
-
-        # Command: !skip / !next / !ohita
-        is_skip_cmd = (
-            raw_lower in ("!skip", "!next", "!ohita", "!skippa", "!skippaa") or
-            raw_lower.startswith(("!skip ", "!next ", "!ohita ", "!skippa ", "!skippaa "))
-        )
-        if is_skip_cmd:
-            logger.info(f"Chat command '!skip' received from user '{user}'.")
-            broadcast_event("skip_audio", {"user": user, "channel": clean_chan, "timestamp": time.time()})
-            skip_msg = f"⏭️ Audio skipped by @{user}." if user else "⏭️ Audio skipped."
-            broadcast_event("chat_message", {"user": "System", "message": skip_msg, "channel": clean_chan, "timestamp": time.time()})
-            if config.enable_chat_responses and twitch_bot:
-                twitch_bot.send_chat(skip_msg, channel=clean_chan)
-            return
-
-        is_clear_cmd = (
-            raw_lower in ("!clear", "!clearqueue", "!stop") or
-            raw_lower.startswith(("!clear ", "!clearqueue ", "!stop "))
-        )
-        if is_clear_cmd:
-            logger.info(f"Chat command '!clear' received from user '{user}'.")
-            audio_queue.clear()
-            broadcast_event("clear_audio", {"user": user, "channel": clean_chan, "timestamp": time.time()})
-            clear_msg = f"🛑 Audio queue cleared by @{user}." if user else "🛑 Audio queue cleared."
-            broadcast_event("chat_message", {"user": "System", "message": clear_msg, "channel": clean_chan, "timestamp": time.time()})
-            if config.enable_chat_responses and twitch_bot:
-                twitch_bot.send_chat(clear_msg, channel=clean_chan)
-            return
-
-        # Command: !help, !tts, !botinfo, !info, !about
-        if raw_lower in ("!help", "!tts", "!botinfo", "!info", "!about"):
-            now = time.time()
-            if now - last_command_broadcast_time > 3.0:
-                last_command_broadcast_time = now
-                send_bot_helpful_info()
-            return
-
-        # Command: !voices
-        if raw_lower in ("!voices", "!preset", "!presets"):
-            now = time.time()
-            if now - last_command_broadcast_time > 3.0:
-                last_command_broadcast_time = now
-                voices_msg = f"🎙️ Available TTS Voice Presets: [{config.voice_presets}]. Type !myvoice <voicename> to set your signature voice!"
-                broadcast_event("chat_message", {"user": "System", "message": voices_msg, "channel": clean_chan, "timestamp": time.time()})
-                if config.enable_chat_responses and twitch_bot:
-                    twitch_bot.send_chat(voices_msg, channel=clean_chan)
-            return
-
-        # Command / Query: Soundboard sound effects request (!sounds, !soundboard, !sfx, "what sound effects", etc.)
-        is_sound_query = (
-            raw_lower in ("!soundboard", "!sounds", "!sound", "!sfx", "!effects", "!soundslist", "!audioeffects") or
-            (raw_lower.startswith("!") and any(k in raw_lower for k in ("sound", "sfx", "effect"))) or
-            any(phrase in raw_lower for phrase in (
-                "what sound effects", "which sound effects", "list sound effects",
-                "available sound effects", "show sound effects", "what sounds",
-                "mitä soundeja", "mitä ääniefektejä", "mitä efektejä"
-            ))
-        )
-        if is_sound_query:
-            now = time.time()
-            if now - last_command_broadcast_time > 3.0:
-                last_command_broadcast_time = now
-                available_sounds = list(soundboard_manager.get_available_sounds().keys())
-                if available_sounds:
-                    sounds_str = ", ".join(available_sounds[:25])
-                    sb_msg = f"🔊 Available sound effects: {sounds_str}. Type (soundname) in chat to play!"
-                    tts_speech = f"Saatavilla olevat ääniefektit ovat: {sounds_str}"
-                else:
-                    sb_msg = f"🔊 Soundboard is active! Add soundboard .mp3 files into {soundboard_manager.directory} to play them using (soundname) in chat."
-                    tts_speech = "Soundboardilla ei ole vielä ääniefektejä."
-
-                broadcast_event("chat_message", {"user": "System", "message": sb_msg, "channel": clean_chan, "timestamp": time.time()})
-                if config.enable_chat_responses and twitch_bot:
-                    twitch_bot.send_chat(sb_msg, channel=clean_chan)
-
-                # Synthesize and speak available sound effect filenames aloud via TTS
-                process_incoming_text(user=None, raw_text=tts_speech, channel=clean_chan)
-            return
-
-        # Command: !myvoice / !voice
-        if raw_lower.startswith("!myvoice") or raw_lower.startswith("!voice"):
-            parts = raw_text.strip().split(maxsplit=1)
-            raw_voice_arg = parts[1].strip() if len(parts) > 1 else ""
-            user_name = user or "Chatter"
-
-            if user_voice_manager.is_locked(user_name):
-                msg_text = f"🔒 @{user_name}, your signature voice is locked by the streamer and cannot be changed."
                 broadcast_event("chat_message", {"user": "System", "message": msg_text, "channel": clean_chan, "timestamp": time.time()})
                 if config.enable_chat_responses and twitch_bot:
                     twitch_bot.send_chat(msg_text, channel=clean_chan)
                 return
 
-            if not raw_voice_arg:
-                curr_voice = user_voice_manager.get_voice(user_name) or config.tts_voice
-                msg_text = f"@{user_name} Usage: !myvoice <voicename>, !myvoice random, or !myvoice reset. Your active voice: '{curr_voice}'. Presets: {config.voice_presets}"
-                broadcast_event("chat_message", {"user": "System", "message": msg_text, "channel": clean_chan, "timestamp": time.time()})
+            elif cmd_name == "skip":
+                logger.info(f"Chat command '!skip' received from user '{user}'.")
+                broadcast_event("skip_audio", {"user": user, "channel": clean_chan, "timestamp": time.time()})
+                skip_msg = f"⏭️ Audio skipped by @{user}." if user else "⏭️ Audio skipped."
+                broadcast_event("chat_message", {"user": "System", "message": skip_msg, "channel": clean_chan, "timestamp": time.time()})
                 if config.enable_chat_responses and twitch_bot:
-                    twitch_bot.send_chat(msg_text, channel=clean_chan)
+                    twitch_bot.send_chat(skip_msg, channel=clean_chan)
                 return
 
-            if raw_voice_arg.lower() in ("random", "rand", "rng", "satunnainen", "?"):
-                chosen_voice = get_random_preset_voice()
-                saved_voice = user_voice_manager.set_voice(user_name, chosen_voice)
-                msg_text = f"🎲 Picked random signature TTS voice for @{user_name}: '{saved_voice}'!"
-            else:
-                clean_requested = sanitize_identifier(raw_voice_arg, max_len=100)
-                if not clean_requested or raw_voice_arg.lower() in ("reset", "clear", "default", "none"):
+            elif cmd_name == "clear":
+                logger.info(f"Chat command '!clear' received from user '{user}'.")
+                audio_queue.clear()
+                broadcast_event("clear_audio", {"user": user, "channel": clean_chan, "timestamp": time.time()})
+                clear_msg = f"🛑 Audio queue cleared by @{user}." if user else "🛑 Audio queue cleared."
+                broadcast_event("chat_message", {"user": "System", "message": clear_msg, "channel": clean_chan, "timestamp": time.time()})
+                if config.enable_chat_responses and twitch_bot:
+                    twitch_bot.send_chat(clear_msg, channel=clean_chan)
+                return
+
+            elif cmd_name == "help":
+                now = time.time()
+                if now - last_command_broadcast_time > 3.0:
+                    last_command_broadcast_time = now
+                    send_bot_helpful_info()
+                return
+
+            elif cmd_name == "voices":
+                now = time.time()
+                if now - last_command_broadcast_time > 3.0:
+                    last_command_broadcast_time = now
+                    voices_msg = f"🎙️ Available TTS Voice Presets: [{config.voice_presets}]. Type !myvoice <voicename> to set your signature voice!"
+                    broadcast_event("chat_message", {"user": "System", "message": voices_msg, "channel": clean_chan, "timestamp": time.time()})
+                    if config.enable_chat_responses and twitch_bot:
+                        twitch_bot.send_chat(voices_msg, channel=clean_chan)
+                return
+
+            elif cmd_name == "sounds":
+                now = time.time()
+                if now - last_command_broadcast_time > 3.0:
+                    last_command_broadcast_time = now
+                    available_sounds = list(soundboard_manager.get_available_sounds().keys())
+                    if available_sounds:
+                        sounds_str = ", ".join(available_sounds[:25])
+                        sb_msg = f"🔊 Available sound effects: {sounds_str}. Type (soundname) in chat to play!"
+                        tts_speech = f"Saatavilla olevat ääniefektit ovat: {sounds_str}"
+                    else:
+                        sb_msg = f"🔊 Soundboard is active! Add soundboard .mp3 files into {soundboard_manager.directory} to play them using (soundname) in chat."
+                        tts_speech = "Soundboardilla ei ole vielä ääniefektejä."
+
+                    broadcast_event("chat_message", {"user": "System", "message": sb_msg, "channel": clean_chan, "timestamp": time.time()})
+                    if config.enable_chat_responses and twitch_bot:
+                        twitch_bot.send_chat(sb_msg, channel=clean_chan)
+
+                    # Synthesize and speak available sound effect filenames aloud via TTS
+                    process_incoming_text(user=None, raw_text=tts_speech, channel=clean_chan)
+                return
+
+            elif cmd_name == "myvoice":
+                raw_voice_arg = cmd_args.strip()
+                user_name = user or "Chatter"
+
+                if user_voice_manager.is_locked(user_name):
+                    msg_text = f"🔒 @{user_name}, your signature voice is locked by the streamer and cannot be changed."
+                    broadcast_event("chat_message", {"user": "System", "message": msg_text, "channel": clean_chan, "timestamp": time.time()})
+                    if config.enable_chat_responses and twitch_bot:
+                        twitch_bot.send_chat(msg_text, channel=clean_chan)
+                    return
+
+                if not raw_voice_arg:
+                    curr_voice = user_voice_manager.get_voice(user_name) or config.tts_voice
+                    msg_text = f"@{user_name} Usage: !myvoice <voicename>, !myvoice random, or !myvoice reset. Your active voice: '{curr_voice}'. Presets: {config.voice_presets}"
+                    broadcast_event("chat_message", {"user": "System", "message": msg_text, "channel": clean_chan, "timestamp": time.time()})
+                    if config.enable_chat_responses and twitch_bot:
+                        twitch_bot.send_chat(msg_text, channel=clean_chan)
+                    return
+
+                action_match = match_voice_action(raw_voice_arg)
+                if action_match and action_match[0] == "random":
+                    chosen_voice = get_random_preset_voice()
+                    saved_voice = user_voice_manager.set_voice(user_name, chosen_voice)
+                    msg_text = f"🎲 Picked random signature TTS voice for @{user_name}: '{saved_voice}'!"
+                elif action_match and action_match[0] == "reset":
                     user_voice_manager.clear_user(user_name)
                     msg_text = f"Reset @{user_name}'s signature TTS voice to global default ('{config.tts_voice}')."
                 else:
-                    saved_voice = user_voice_manager.set_voice(user_name, clean_requested)
-                    msg_text = f"Saved signature TTS voice for @{user_name} to '{saved_voice}'!"
+                    clean_requested = sanitize_identifier(raw_voice_arg, max_len=100)
+                    if not clean_requested:
+                        user_voice_manager.clear_user(user_name)
+                        msg_text = f"Reset @{user_name}'s signature TTS voice to global default ('{config.tts_voice}')."
+                    else:
+                        presets_list = [v.strip() for v in config.voice_presets.replace(';', ',').split(',') if v.strip()]
+                        preset_match = match_voice_preset(clean_requested, presets_list)
+                        if preset_match:
+                            clean_requested = preset_match[0]
+                        saved_voice = user_voice_manager.set_voice(user_name, clean_requested)
+                        msg_text = f"Saved signature TTS voice for @{user_name} to '{saved_voice}'!"
 
-            broadcast_event("chat_message", {"user": "System", "message": msg_text, "channel": clean_chan, "timestamp": time.time()})
-            if config.enable_chat_responses and twitch_bot:
-                twitch_bot.send_chat(msg_text, channel=clean_chan)
+                broadcast_event("chat_message", {"user": "System", "message": msg_text, "channel": clean_chan, "timestamp": time.time()})
+                if config.enable_chat_responses and twitch_bot:
+                    twitch_bot.send_chat(msg_text, channel=clean_chan)
 
-            broadcast_event("status", {
-                "channel": config.twitch_channel,
-                "channels": config.channels,
-                "connected": bool(twitch_bot and twitch_bot.running and (twitch_bot.channels or twitch_bot.channel)),
-                "authenticated": bool(twitch_bot and twitch_bot.is_authenticated),
-                "config": config.to_public_dict(),
-                "user_voices": user_voice_manager.get_all()
-            })
+                broadcast_event("status", {
+                    "channel": config.twitch_channel,
+                    "channels": config.channels,
+                    "connected": bool(twitch_bot and twitch_bot.running and (twitch_bot.channels or twitch_bot.channel)),
+                    "authenticated": bool(twitch_bot and twitch_bot.is_authenticated),
+                    "config": config.to_public_dict(),
+                    "user_voices": user_voice_manager.get_all()
+                })
+                return
 
     now = time.time()
     skip_user_prefix = False
