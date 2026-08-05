@@ -51,6 +51,8 @@ ENV_KEYS = {
     "eight_d_speed": "EFFECT_8D_SPEED",
     "8d_speed": "EFFECT_8D_SPEED",
     "enable_8d_audio": "ENABLE_8D_AUDIO",
+    "enable_chaos_mode": "ENABLE_CHAOS_MODE",
+    "chaos_mode": "ENABLE_CHAOS_MODE",
 }
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -139,6 +141,7 @@ class Config:
     shouting_voices: str = field(default_factory=lambda: os.getenv("SHOUTING_VOICES", "mertaranta_fi"))
     effect_8d_speed: float = field(default_factory=lambda: float(os.getenv("EFFECT_8D_SPEED", "0.5")))
     enable_8d_audio: bool = field(default_factory=lambda: os.getenv("ENABLE_8D_AUDIO", "true").lower() in ("true", "1", "yes"))
+    enable_chaos_mode: bool = field(default_factory=lambda: os.getenv("ENABLE_CHAOS_MODE", "false").lower() in ("true", "1", "yes"))
 
     def load(self, filepath: str = CONFIG_FILE):
         """Load configuration from JSON file if present, respecting environment variable overrides."""
@@ -276,6 +279,7 @@ class Config:
             "shouting_voices": self.shouting_voices,
             "effect_8d_speed": self.effect_8d_speed,
             "enable_8d_audio": self.enable_8d_audio,
+            "enable_chaos_mode": self.enable_chaos_mode,
             "enable_kill_counter": self.enable_kill_counter,
             "kill_counter_file": self.kill_counter_file,
             "kill_counter_poll_interval": self.kill_counter_poll_interval,
@@ -301,6 +305,7 @@ class Config:
             "enable_chat_responses": self.enable_chat_responses,
             "enable_soundboard": self.enable_soundboard,
             "enable_8d_audio": self.enable_8d_audio,
+            "enable_chaos_mode": self.enable_chaos_mode,
             "effect_8d_speed": self.effect_8d_speed,
             "same_user_timeout": self.same_user_timeout,
             "enable_kill_counter": self.enable_kill_counter,

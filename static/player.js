@@ -38,6 +38,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentItem = null;
     let playedCount = 0;
     let audioUnlocked = false;
+    let chaosMode = false;
 
     // Web Audio API State
     let audioCtx = null;
@@ -243,6 +244,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     statusPill.className = `status-pill ${conn ? 'connected' : ''}`;
                     statusText.textContent = conn ? `Connected (${data.channel || 'Twitch'})` : 'Listening for Events';
                 }
+                if (data.config && data.config.enable_chaos_mode !== undefined) {
+                    chaosMode = !!data.config.enable_chaos_mode;
+                    if (chaosMode) flushChaosQueue();
+                }
+            } catch (err) {}
+        });
+
+        evtSource.addEventListener('chaos_mode_update', (e) => {
+            try {
+                const data = JSON.parse(e.data);
+                if (data.chaos_mode !== undefined) {
+                    chaosMode = !!data.chaos_mode;
+                    if (chaosMode) flushChaosQueue();
+                }
             } catch (err) {}
         });
 
@@ -251,9 +266,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const item = JSON.parse(e.data);
                 if (!item || !item.url) return;
                 
-                audioQueue.push(item);
-                updateQueueDisplay();
-                checkAndPlayNext();
+                if (chaosMode) {
+                    playChaosAudio(item);
+                } else {
+                    audioQueue.push(item);
+                    updateQueueDisplay();
+                    checkAndPlayNext();
+                }
             } catch (err) {
                 console.error('Failed to process incoming audio chunk:', err);
             }
@@ -279,6 +298,43 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     let currentFartBgAudio = null;
+
+    // Chaos Mode Playback Handler: Plays sounds immediately on top of each other!
+    function playChaosAudio(item) {
+        playNotificationChime();
+        const chaosAudio = new Audio(item.url);
+        if (audioPlayer && audioPlayer.volume !== undefined) {
+            chaosAudio.volume = audioPlayer.volume;
+        }
+        chaosAudio.play().catch((err) => console.log('Chaos audio play error:', err));
+
+        if (currentSpeaker) currentSpeaker.textContent = `🔥 [CHAOS] ${item.user || 'Anonymous'}`;
+        if (currentText) currentText.textContent = item.text || '';
+        if (voiceTag) voiceTag.textContent = `Voice: ${item.voice || 'Default'}${item.has_8d ? ' (8D)' : ''}`;
+        if (chunkTag) chunkTag.textContent = `Chunk ${item.chunk_index || 1}/${item.total_chunks || 1}`;
+
+        if (speakerAvatar) speakerAvatar.classList.add('active');
+        if (equalizerVisualizer) equalizerVisualizer.classList.add('playing');
+
+        addHistoryItem(item);
+
+        if (item.has_fart_bg) {
+            try {
+                const fartUrl = item.fart_bg_url || '/api/soundboard/fartbackground';
+                const fartAudio = new Audio(fartUrl);
+                fartAudio.volume = (audioPlayer && audioPlayer.volume !== undefined) ? audioPlayer.volume : 1.0;
+                fartAudio.play().catch(() => {});
+            } catch (err) {}
+        }
+    }
+
+    function flushChaosQueue() {
+        while (audioQueue.length > 0) {
+            const item = audioQueue.shift();
+            playChaosAudio(item);
+        }
+        updateQueueDisplay();
+    }
 
     // Sequential Audio Player Logic
     function checkAndPlayNext() {

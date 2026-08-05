@@ -1115,10 +1115,28 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 config.enable_chat_responses = sanitize_bool(body["enable_chat_responses"], default=config.enable_chat_responses)
             if "enable_kill_counter" in body:
                 config.enable_kill_counter = sanitize_bool(body["enable_kill_counter"], default=config.enable_kill_counter)
+            if "enable_chaos_mode" in body or "chaos_mode" in body:
+                raw_chaos = body.get("enable_chaos_mode", body.get("chaos_mode"))
+                config.enable_chaos_mode = sanitize_bool(raw_chaos, default=config.enable_chaos_mode)
 
             config.save()
             broadcast_event("status", self._get_status_dict())
+            broadcast_event("chaos_mode_update", {"chaos_mode": config.enable_chaos_mode})
             self._send_json(200, {"success": True, "config": self._get_config_dict()})
+            return
+
+        # Route: Toggle Chaos Mode directly
+        if path in ("/api/chaos", "/api/chaos/toggle"):
+            if "enabled" in body:
+                config.enable_chaos_mode = sanitize_bool(body["enabled"], default=config.enable_chaos_mode)
+            elif "enable_chaos_mode" in body:
+                config.enable_chaos_mode = sanitize_bool(body["enable_chaos_mode"], default=config.enable_chaos_mode)
+            else:
+                config.enable_chaos_mode = not config.enable_chaos_mode
+            config.save()
+            broadcast_event("status", self._get_status_dict())
+            broadcast_event("chaos_mode_update", {"chaos_mode": config.enable_chaos_mode})
+            self._send_json(200, {"success": True, "chaos_mode": config.enable_chaos_mode})
             return
 
         # Route: Connect Twitch Channel
@@ -1959,9 +1977,27 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
                 config.enable_chat_responses = sanitize_bool(body["enable_chat_responses"], default=config.enable_chat_responses)
             if "enable_kill_counter" in body:
                 config.enable_kill_counter = sanitize_bool(body["enable_kill_counter"], default=config.enable_kill_counter)
+            if "enable_chaos_mode" in body or "chaos_mode" in body:
+                raw_chaos = body.get("enable_chaos_mode", body.get("chaos_mode"))
+                config.enable_chaos_mode = sanitize_bool(raw_chaos, default=config.enable_chaos_mode)
             config.save()
             broadcast_event("status", self._get_public_status_dict())
+            broadcast_event("chaos_mode_update", {"chaos_mode": config.enable_chaos_mode})
             self._send_json(200, {"success": True, "config": config.to_masked_dict()})
+            return
+
+        # Toggle Chaos Mode directly
+        if path in ("/api/chaos", "/api/chaos/toggle"):
+            if "enabled" in body:
+                config.enable_chaos_mode = sanitize_bool(body["enabled"], default=config.enable_chaos_mode)
+            elif "enable_chaos_mode" in body:
+                config.enable_chaos_mode = sanitize_bool(body["enable_chaos_mode"], default=config.enable_chaos_mode)
+            else:
+                config.enable_chaos_mode = not config.enable_chaos_mode
+            config.save()
+            broadcast_event("status", self._get_public_status_dict())
+            broadcast_event("chaos_mode_update", {"chaos_mode": config.enable_chaos_mode})
+            self._send_json(200, {"success": True, "chaos_mode": config.enable_chaos_mode})
             return
 
         # Connect Twitch Channel

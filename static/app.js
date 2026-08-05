@@ -72,6 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let isPlaying = false;
     let currentItem = null;
     let bufferTimer = null;
+    let chaosMode = false;
 
     // Config Cache State for Public Links
     let cachedSiteDomain = '';
@@ -227,9 +228,30 @@ document.addEventListener('DOMContentLoaded', () => {
     // ----------------------------------------------------
 
     function enqueueAudioChunk(chunk) {
-        audioQueue.push(chunk);
+        if (chaosMode) {
+            playChaosAudioApp(chunk);
+        } else {
+            audioQueue.push(chunk);
+            updateQueueUI();
+            checkAndPlayNext();
+        }
+    }
+
+    function playChaosAudioApp(chunk) {
+        const chaosAudio = new Audio(chunk.url);
+        if (audioPlayer && audioPlayer.volume !== undefined) {
+            chaosAudio.volume = audioPlayer.volume;
+        }
+        chaosAudio.play().catch(err => console.log('App chaos audio error:', err));
+        updateNowPlayingUI(chunk);
+    }
+
+    function flushChaosQueueApp() {
+        while (audioQueue.length > 0) {
+            const item = audioQueue.shift();
+            playChaosAudioApp(item);
+        }
         updateQueueUI();
-        checkAndPlayNext();
     }
 
     function checkAndPlayNext() {
@@ -550,6 +572,18 @@ document.addEventListener('DOMContentLoaded', () => {
         evtSource.addEventListener('status', (e) => {
             const data = JSON.parse(e.data);
             updateStatusUI(data);
+            if (data.config && data.config.enable_chaos_mode !== undefined) {
+                chaosMode = !!data.config.enable_chaos_mode;
+                if (chaosMode) flushChaosQueueApp();
+            }
+        });
+
+        evtSource.addEventListener('chaos_mode_update', (e) => {
+            const data = JSON.parse(e.data);
+            if (data.chaos_mode !== undefined) {
+                chaosMode = !!data.chaos_mode;
+                if (chaosMode) flushChaosQueueApp();
+            }
         });
 
         evtSource.addEventListener('audio_chunk', (e) => {

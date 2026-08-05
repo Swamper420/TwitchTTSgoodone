@@ -42,6 +42,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let audioQueue = [];
     let isPlaying = false;
     let currentItem = null;
+    let audioUnlocked = false;
+    let chaosMode = false;
     let audioCtx = null;
     let analyser = null;
     let audioSource = null;
@@ -196,6 +198,26 @@ document.addEventListener('DOMContentLoaded', () => {
             if (liveText) liveText.textContent = 'RECONNECTING...';
         };
 
+        evtSource.addEventListener('status', (e) => {
+            try {
+                const data = JSON.parse(e.data);
+                if (data.config && data.config.enable_chaos_mode !== undefined) {
+                    chaosMode = !!data.config.enable_chaos_mode;
+                    if (chaosMode) flushChaosQueue();
+                }
+            } catch (err) {}
+        });
+
+        evtSource.addEventListener('chaos_mode_update', (e) => {
+            try {
+                const data = JSON.parse(e.data);
+                if (data.chaos_mode !== undefined) {
+                    chaosMode = !!data.chaos_mode;
+                    if (chaosMode) flushChaosQueue();
+                }
+            } catch (err) {}
+        });
+
         evtSource.addEventListener('audio_chunk', (e) => {
             try {
                 const item = JSON.parse(e.data);
@@ -208,8 +230,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
 
-                audioQueue.push(item);
-                checkAndPlayNext();
+                if (chaosMode) {
+                    playChaosAudio(item);
+                } else {
+                    audioQueue.push(item);
+                    checkAndPlayNext();
+                }
             } catch (err) {
                 console.error('OBS Overlay audio chunk error:', err);
             }
@@ -271,6 +297,41 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     let currentFartBgAudio = null;
+
+    // Chaos Mode Playback Handler for OBS Overlay
+    function playChaosAudio(item) {
+        silentUnlock();
+        playChimeSound();
+        renderSpectrum();
+
+        const chaosAudio = new Audio(item.url);
+        if (audioPlayer && audioPlayer.volume !== undefined) {
+            chaosAudio.volume = audioPlayer.volume;
+        }
+        chaosAudio.play().catch((err) => console.warn('OBS chaos playback note:', err));
+
+        if (obsSpeaker) obsSpeaker.textContent = `🔥 ${item.user || 'Chatter'}`;
+        if (obsText) obsText.textContent = item.text || '';
+
+        overlayCard.classList.remove('idle');
+        overlayCard.classList.add('speaking');
+
+        if (item.has_fart_bg) {
+            try {
+                const fartUrl = item.fart_bg_url || '/api/soundboard/fartbackground';
+                const fartAudio = new Audio(fartUrl);
+                fartAudio.volume = (audioPlayer && audioPlayer.volume !== undefined) ? audioPlayer.volume : 1.0;
+                fartAudio.play().catch(() => {});
+            } catch (err) {}
+        }
+    }
+
+    function flushChaosQueue() {
+        while (audioQueue.length > 0) {
+            const item = audioQueue.shift();
+            playChaosAudio(item);
+        }
+    }
 
     // Sequential Audio Playback
     function checkAndPlayNext() {

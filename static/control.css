@@ -1030,3 +1030,44 @@ body {
     .control-grid, .builder-layout { grid-template-columns: 1fr; }
     .obs-builder-card { grid-column: 1; }
 }
+
+/* Chaos Mode Button & Toggle Styles */
+.btn-chaos {
+    background: linear-gradient(135deg, #ff4500 0%, #ff8c00 100%);
+    color: #ffffff;
+    border: 1px solid rgba(255, 140, 0, 0.5);
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    box-shadow: 0 0 12px rgba(255, 69, 0, 0.35);
+    transition: all 0.25s ease-in-out;
+}
+
+.btn-chaos:hover {
+    background: linear-gradient(135deg, #ff5722 0%, #ffa000 100%);
+    box-shadow: 0 0 20px rgba(255, 87, 34, 0.65);
+    transform: translateY(-1px);
+}
+
+.btn-chaos.active {
+    background: linear-gradient(135deg, #e60000 0%, #ff3300 100%);
+    border-color: #ff8888;
+    color: #ffffff;
+    box-shadow: 0 0 22px rgba(255, 0, 0, 0.8), inset 0 0 10px rgba(255, 255, 255, 0.4);
+    animation: chaosPulse 1.2s infinite alternate ease-in-out;
+}
+
+@keyframes chaosPulse {
+    0% {
+        box-shadow: 0 0 10px rgba(255, 0, 0, 0.6), inset 0 0 4px rgba(255, 255, 255, 0.2);
+        transform: scale(1);
+    }
+    100% {
+        box-shadow: 0 0 26px rgba(255, 69, 0, 0.95), 0 0 8px #ffffff, inset 0 0 12px rgba(255, 255, 255, 0.5);
+        transform: scale(1.03);
+    }
+}
+
+.chaos-toggle-card input:checked + .toggle-slider {
+    background: linear-gradient(135deg, #ff4500 0%, #e60000 100%) !important;
+    box-shadow: 0 0 10px rgba(255, 69, 0, 0.7);
+}

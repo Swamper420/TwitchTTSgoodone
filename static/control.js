@@ -23,7 +23,8 @@ document.addEventListener("DOMContentLoaded", () => {
         serverPort: window.location.port || 5000,
         serverHost: window.location.hostname || "localhost",
         authRequired: false,
-        authenticated: false
+        authenticated: false,
+        chaosMode: false
     };
 
     // DOM Elements
@@ -72,6 +73,8 @@ document.addEventListener("DOMContentLoaded", () => {
         queueBadge: document.getElementById("queueBadge"),
         currentSpeaker: document.getElementById("currentSpeaker"),
         currentText: document.getElementById("currentText"),
+        chaosToggleBtn: document.getElementById("chaosToggleBtn"),
+        chaosBtnText: document.getElementById("chaosBtnText"),
         skipAudioBtn: document.getElementById("skipAudioBtn"),
         clearQueueBtn: document.getElementById("clearQueueBtn"),
         chatLogList: document.getElementById("chatLogList"),
@@ -103,6 +106,7 @@ document.addEventListener("DOMContentLoaded", () => {
         pref8dSpeedVal: document.getElementById("pref8dSpeedVal"),
         prefChatResponses: document.getElementById("prefChatResponses"),
         prefKillCounter: document.getElementById("prefKillCounter"),
+        prefChaosMode: document.getElementById("prefChaosMode"),
         prefCooldown: document.getElementById("prefCooldown"),
         prefCooldownVal: document.getElementById("prefCooldownVal"),
         
@@ -333,6 +337,10 @@ document.addEventListener("DOMContentLoaded", () => {
             const portVal = status.config.public_server_port || status.config.obs_server_port;
             if (portVal) {
                 state.obsPort = portVal;
+            }
+            if (status.config.enable_chaos_mode !== undefined) {
+                state.chaosMode = !!status.config.enable_chaos_mode;
+                updateChaosUI(state.chaosMode);
             }
         }
 
@@ -788,6 +796,47 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (e) {}
     });
 
+    // --- Chaos Mode UI Sync & Event Handlers ---
+    function updateChaosUI(isChaos) {
+        state.chaosMode = isChaos;
+        if (elements.chaosToggleBtn) {
+            if (isChaos) {
+                elements.chaosToggleBtn.classList.add("active");
+                if (elements.chaosBtnText) elements.chaosBtnText.textContent = "Chaos Mode: ON 🔥";
+            } else {
+                elements.chaosToggleBtn.classList.remove("active");
+                if (elements.chaosBtnText) elements.chaosBtnText.textContent = "Chaos Mode: OFF";
+            }
+        }
+        if (elements.prefChaosMode && elements.prefChaosMode.checked !== isChaos) {
+            elements.prefChaosMode.checked = isChaos;
+        }
+    }
+
+    async function toggleChaosMode(enable) {
+        try {
+            const body = (enable !== undefined) ? { enabled: enable } : {};
+            const res = await apiRequest("/api/chaos/toggle", {
+                method: "POST",
+                body: JSON.stringify(body)
+            });
+            updateChaosUI(res.chaos_mode);
+            if (res.chaos_mode) {
+                showToast("🔥 Chaos Mode Activated! All sounds play simultaneously!", "warning");
+            } else {
+                showToast("Chaos Mode Deactivated. Standard queue resumed.", "info");
+            }
+        } catch (e) {
+            showToast("Failed to toggle Chaos Mode", "error");
+        }
+    }
+
+    if (elements.chaosToggleBtn) {
+        elements.chaosToggleBtn.addEventListener("click", () => {
+            toggleChaosMode(!state.chaosMode);
+        });
+    }
+
     // --- Audio Queue Controls ---
     elements.skipAudioBtn.addEventListener("click", async () => {
         try {
@@ -837,6 +886,15 @@ document.addEventListener("DOMContentLoaded", () => {
             } catch (e) {}
         });
 
+        sse.addEventListener("chaos_mode_update", (evt) => {
+            try {
+                const data = JSON.parse(evt.data);
+                if (data.chaos_mode !== undefined) {
+                    updateChaosUI(!!data.chaos_mode);
+                }
+            } catch (e) {}
+        });
+
         sse.addEventListener("tts_chunk", (evt) => {
             try {
                 const data = JSON.parse(evt.data);
@@ -875,6 +933,7 @@ document.addEventListener("DOMContentLoaded", () => {
             effect_8d_speed: elements.pref8dSpeed ? parseFloat(elements.pref8dSpeed.value) : 0.5,
             enable_chat_responses: elements.prefChatResponses ? elements.prefChatResponses.checked : true,
             enable_kill_counter: elements.prefKillCounter ? elements.prefKillCounter.checked : true,
+            enable_chaos_mode: elements.prefChaosMode ? elements.prefChaosMode.checked : false,
             same_user_timeout: elements.prefCooldown ? parseFloat(elements.prefCooldown.value) : 10
         };
 
@@ -913,6 +972,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (elements.prefKillCounter) {
         elements.prefKillCounter.addEventListener("change", saveControlSettings);
+    }
+
+    if (elements.prefChaosMode) {
+        elements.prefChaosMode.addEventListener("change", () => {
+            toggleChaosMode(elements.prefChaosMode.checked);
+        });
     }
 
     if (elements.prefCooldown) {

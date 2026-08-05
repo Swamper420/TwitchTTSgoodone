@@ -258,6 +258,9 @@
                         </div>
 
                         <div class="player-actions">
+                            <button type="button" id="chaosToggleBtn" class="btn btn-chaos" title="Toggle Chaos Mode: Play all sounds immediately on top of each other as soon as ready!">
+                                <span class="material-symbols-outlined">local_fire_department</span> <span id="chaosBtnText">Chaos Mode: OFF</span>
+                            </button>
                             <button type="button" id="skipAudioBtn" class="btn btn-warning" title="Skip currently playing audio">
                                 <span class="material-symbols-outlined">skip_next</span> Skip Audio
                             </button>
@@ -347,6 +350,14 @@
                                 <span class="toggle-text">
                                     <strong>Death Counter</strong>
                                     <small>Enable death widget</small>
+                                </span>
+                            </label>
+                            <label class="toggle-card mini-toggle chaos-toggle-card">
+                                <input type="checkbox" id="prefChaosMode" />
+                                <span class="toggle-slider"></span>
+                                <span class="toggle-text">
+                                    <strong>🔥 Chaos Mode</strong>
+                                    <small>Play sounds concurrently</small>
                                 </span>
                             </label>
                         </div>
