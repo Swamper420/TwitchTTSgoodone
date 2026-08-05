@@ -118,6 +118,93 @@ def broadcast_event(event_type: str, payload: dict, admin_only: bool = False):
             sse_clients.remove(item)
 
 
+def handle_sse_stream(handler, is_admin: bool = False):
+    """Handle SSE event stream connection for a request handler."""
+    if hasattr(handler, "_get_client_ip"):
+        client_ip = handler._get_client_ip()
+    elif getattr(handler, "client_address", None):
+        client_ip = handler.client_address[0]
+    else:
+        client_ip = "unknown"
+
+    # SSE connection limits (OWASP API4:2023)
+    if len(sse_clients) >= MAX_SSE_CLIENTS:
+        if hasattr(handler, "_send_json"):
+            handler._send_json(503, {"error": "Too many active connections. Try again later."})
+        else:
+            body = json.dumps({"error": "Too many active connections. Try again later."}).encode("utf-8")
+            handler.send_response(503)
+            handler.send_header("Content-Type", "application/json")
+            handler.send_header("Content-Length", str(len(body)))
+            handler.end_headers()
+            handler.wfile.write(body)
+        return
+
+    ip_count = sum(1 for item in sse_clients if isinstance(item, tuple) and len(item) >= 3 and item[2] == client_ip)
+    if ip_count >= MAX_SSE_PER_IP:
+        if hasattr(handler, "_send_json"):
+            handler._send_json(429, {"error": "Too many connections from this IP."})
+        else:
+            body = json.dumps({"error": "Too many connections from this IP."}).encode("utf-8")
+            handler.send_response(429)
+            handler.send_header("Content-Type", "application/json")
+            handler.send_header("Content-Length", str(len(body)))
+            handler.end_headers()
+            handler.wfile.write(body)
+        return
+
+    parsed = urllib.parse.urlparse(handler.path)
+    query = urllib.parse.parse_qs(parsed.query)
+    req_chan = query.get("channel", [None])[0] or query.get("ch", [None])[0]
+    filter_chan = req_chan.strip().lstrip('#').lower() if req_chan else None
+
+    handler.send_response(200)
+    handler.send_header("Content-Type", "text/event-stream")
+    handler.send_header("Cache-Control", "no-cache")
+    handler.send_header("Connection", "keep-alive")
+    if hasattr(handler, "_send_cors_headers"):
+        handler._send_cors_headers()
+    if hasattr(handler, "_send_security_headers"):
+        try:
+            handler._send_security_headers(allow_framing=True)
+        except TypeError:
+            handler._send_security_headers()
+    handler.end_headers()
+
+    client_q = queue.Queue()
+    client_item = (client_q, filter_chan, client_ip, is_admin)
+    sse_clients.append(client_item)
+
+    if is_admin and hasattr(handler, "_get_status_dict"):
+        init_status = handler._get_status_dict()
+    else:
+        init_status = get_public_status_dict()
+
+    init_payload = f"event: status\ndata: {json.dumps(init_status)}\n\n"
+    try:
+        handler.wfile.write(init_payload.encode("utf-8"))
+        handler.wfile.flush()
+    except Exception:
+        if client_item in sse_clients:
+            sse_clients.remove(client_item)
+        return
+
+    try:
+        while True:
+            try:
+                msg = client_q.get(timeout=450)
+                handler.wfile.write(msg.encode("utf-8"))
+                handler.wfile.flush()
+            except queue.Empty:
+                handler.wfile.write(b": ping\n\n")
+                handler.wfile.flush()
+    except (ConnectionResetError, BrokenPipeError, OSError):
+        pass
+    finally:
+        if client_item in sse_clients:
+            sse_clients.remove(client_item)
+
+
 def get_random_preset_voice() -> str:
     """Return a random voice from available preset voices or fallback default."""
     presets = [v.strip() for v in config.voice_presets.replace(';', ',').split(',') if v.strip()]
@@ -686,55 +773,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                     })
                     return
 
-            # SSE connection limits (OWASP API4:2023)
-            client_ip = self._get_client_ip()
-            if len(sse_clients) >= MAX_SSE_CLIENTS:
-                self._send_json(503, {"error": "Too many active connections. Try again later."})
-                return
-            ip_count = sum(1 for item in sse_clients if isinstance(item, tuple) and len(item) >= 3 and item[2] == client_ip)
-            if ip_count >= MAX_SSE_PER_IP:
-                self._send_json(429, {"error": "Too many connections from this IP."})
-                return
-
-            req_chan = query.get("channel", [None])[0] or query.get("ch", [None])[0]
-            filter_chan = req_chan.strip().lstrip('#').lower() if req_chan else None
-
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("Connection", "keep-alive")
-            self._send_cors_headers()
-            self.end_headers()
-
-            client_q = queue.Queue()
-            client_item = (client_q, filter_chan, client_ip, True)
-            sse_clients.append(client_item)
-
-            # Send initial status
-            init_payload = f"event: status\ndata: {json.dumps(self._get_status_dict())}\n\n"
-            try:
-                self.wfile.write(init_payload.encode("utf-8"))
-                self.wfile.flush()
-            except Exception:
-                if client_item in sse_clients:
-                    sse_clients.remove(client_item)
-                return
-
-            try:
-                while True:
-                    try:
-                        msg = client_q.get(timeout=450)
-                        self.wfile.write(msg.encode("utf-8"))
-                        self.wfile.flush()
-                    except queue.Empty:
-                        # Heartbeat ping to keep SSE connection open
-                        self.wfile.write(b": ping\n\n")
-                        self.wfile.flush()
-            except (ConnectionResetError, BrokenPipeError):
-                pass
-            finally:
-                if client_item in sse_clients:
-                    sse_clients.remove(client_item)
+            handle_sse_stream(self, is_admin=True)
             return
 
         # Route: Stream Audio File
@@ -1565,56 +1604,7 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
 
         # ── SSE Event Stream (public — with connection limits) ──
         if path == "/api/events":
-            # SSE connection limits (OWASP API4:2023)
-            client_ip = self._get_client_ip()
-            if len(sse_clients) >= MAX_SSE_CLIENTS:
-                self._send_json(503, {"error": "Too many active connections. Try again later."})
-                return
-            ip_count = sum(1 for item in sse_clients if isinstance(item, tuple) and len(item) >= 3 and item[2] == client_ip)
-            if ip_count >= MAX_SSE_PER_IP:
-                self._send_json(429, {"error": "Too many connections from this IP."})
-                return
-
-            req_chan = query.get("channel", [None])[0] or query.get("ch", [None])[0]
-            filter_chan = req_chan.strip().lstrip('#').lower() if req_chan else None
-
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("Connection", "keep-alive")
-            self._send_cors_headers()
-            self._send_security_headers(allow_framing=True)
-            self.end_headers()
-
-            client_q = queue.Queue()
-            client_item = (client_q, filter_chan, client_ip, False)
-            sse_clients.append(client_item)
-
-            # Send initial status (sanitized — no admin creds)
-            init_status = self._get_public_status_dict()
-            init_payload = f"event: status\ndata: {json.dumps(init_status)}\n\n"
-            try:
-                self.wfile.write(init_payload.encode("utf-8"))
-                self.wfile.flush()
-            except Exception:
-                if client_item in sse_clients:
-                    sse_clients.remove(client_item)
-                return
-
-            try:
-                while True:
-                    try:
-                        msg = client_q.get(timeout=450)
-                        self.wfile.write(msg.encode("utf-8"))
-                        self.wfile.flush()
-                    except queue.Empty:
-                        self.wfile.write(b": ping\n\n")
-                        self.wfile.flush()
-            except (ConnectionResetError, BrokenPipeError):
-                pass
-            finally:
-                if client_item in sse_clients:
-                    sse_clients.remove(client_item)
+            handle_sse_stream(self, is_admin=False)
             return
 
         # ── Audio Chunk Streaming ──
@@ -2180,6 +2170,14 @@ class OBSRequestHandler(BaseHTTPRequestHandler):
         """Override to suppress server version fingerprinting (OWASP A05:2021)."""
         return "TwitchTTS"
 
+    def _get_client_ip(self) -> str:
+        return self.client_address[0] if self.client_address else "unknown"
+
+    def _send_cors_headers(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+
     def _send_security_headers(self):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
@@ -2242,7 +2240,7 @@ class OBSRequestHandler(BaseHTTPRequestHandler):
                 return
 
         if path == "/api/events":
-            handle_sse_stream(self)
+            handle_sse_stream(self, is_admin=False)
             return
 
         self.send_error(404, "Not Found")

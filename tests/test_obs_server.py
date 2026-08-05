@@ -98,5 +98,16 @@ class TestOBSServer(unittest.TestCase):
         # Cleanup
         audio_store.pop(test_chunk_id, None)
 
+    def test_obs_server_events_stream(self):
+        """Verify OBS port can connect to /api/events SSE stream without NameError crash."""
+        url = f"{self.base_url}/api/events"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            self.assertEqual(resp.status, 200)
+            self.assertIn("text/event-stream", resp.headers.get("Content-Type", ""))
+            line1 = resp.readline().decode("utf-8")
+            self.assertTrue(line1.startswith("event: status"))
+
 if __name__ == "__main__":
     unittest.main()
+
