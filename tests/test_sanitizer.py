@@ -13,6 +13,7 @@ from app.sanitizer import (
     sanitize_bool,
     sanitize_audio_format,
     sanitize_url,
+    sanitize_tts_url,
 )
 
 
@@ -80,6 +81,21 @@ class TestSanitizer(unittest.TestCase):
         self.assertEqual(sanitize_url("http://localhost:8880/"), "http://localhost:8880")
         self.assertEqual(sanitize_url("https://api.elevenlabs.io"), "https://api.elevenlabs.io")
         self.assertEqual(sanitize_url("javascript:alert(1)", default="http://localhost:8880"), "http://localhost:8880")
+
+    def test_sanitize_tts_url(self):
+        # Allowed local/private URLs
+        self.assertEqual(sanitize_tts_url("http://localhost:8880/"), "http://localhost:8880")
+        self.assertEqual(sanitize_tts_url("http://127.0.0.1:8880"), "http://127.0.0.1:8880")
+        self.assertEqual(sanitize_tts_url("http://192.168.1.100:6969"), "http://192.168.1.100:6969")
+        self.assertEqual(sanitize_tts_url("http://10.0.0.5:8080"), "http://10.0.0.5:8080")
+        self.assertEqual(sanitize_tts_url("http://my-tts.local:8880"), "http://my-tts.local:8880")
+
+        # Rejected external or cloud metadata URLs (SSRF prevention)
+        default_url = "http://localhost:8880"
+        self.assertEqual(sanitize_tts_url("http://169.254.169.254/latest/meta-data", default=default_url), default_url)
+        self.assertEqual(sanitize_tts_url("http://8.8.8.8:8080", default=default_url), default_url)
+        self.assertEqual(sanitize_tts_url("http://evil-external-site.com", default=default_url), default_url)
+        self.assertEqual(sanitize_tts_url("javascript:alert(1)", default=default_url), default_url)
 
 
 if __name__ == "__main__":

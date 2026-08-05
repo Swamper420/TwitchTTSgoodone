@@ -1,3 +1,4 @@
+import ipaddress
 import re
 import urllib.parse
 from typing import Any, Optional, Set
@@ -135,3 +136,30 @@ def sanitize_url(val: Any, default: str = "http://localhost:8880") -> str:
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         return default
     return s.rstrip('/')
+
+
+def sanitize_tts_url(val: Any, default: str = "http://localhost:8880") -> str:
+    """Sanitize and validate TTS API URL against SSRF by restricting to local and private networks (OWASP API10:2023)."""
+    s = sanitize_url(val, default="")
+    if not s:
+        return default
+    parsed = urllib.parse.urlparse(s)
+    hostname = parsed.hostname
+    if not hostname:
+        return default
+
+    hostname = hostname.lower().strip("[]")
+    if hostname in ("localhost", "localhost.localdomain", "::1") or hostname.endswith(".local"):
+        return s.rstrip('/')
+
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
+            return default
+        if ip.is_private or ip.is_loopback:
+            return s.rstrip('/')
+    except ValueError:
+        if hostname.startswith("192.168.") or hostname.startswith("10."):
+            return s.rstrip('/')
+
+    return default

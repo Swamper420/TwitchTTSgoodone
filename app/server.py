@@ -31,6 +31,7 @@ from app.sanitizer import (
     sanitize_bool,
     sanitize_audio_format,
     sanitize_url,
+    sanitize_tts_url,
     sanitize_float,
     sanitize_speaker_name_for_tts,
 )
@@ -1201,7 +1202,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         # Route: Save Config/Settings
         if path == "/api/settings":
             if "tts_api_url" in body:
-                config.tts_api_url = sanitize_url(body["tts_api_url"], default=config.tts_api_url)
+                config.tts_api_url = sanitize_tts_url(body["tts_api_url"], default=config.tts_api_url)
                 tts_client.base_url = config.tts_api_url.rstrip('/')
             if "tts_voice" in body:
                 config.tts_voice = sanitize_identifier(body["tts_voice"], max_len=100, default=config.tts_voice)
