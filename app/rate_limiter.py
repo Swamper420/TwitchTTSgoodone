@@ -12,11 +12,21 @@ class RateLimiter:
         self._attempts: Dict[str, List[float]] = {}
         self._lock = threading.Lock()
 
-    def check_and_record(self, key: str) -> bool:
+    def check_and_record(self, key: str, multiplier: int = 1) -> bool:
         """Atomically check if allowed and record the attempt.
 
         Returns True if the request is allowed, False if rate-limited.
+        Increases rate limit capacity when Chaos Mode is enabled.
         """
+        try:
+            from app.config import config
+            if getattr(config, "enable_chaos_mode", False):
+                multiplier = max(multiplier, 10)
+        except Exception:
+            pass
+
+        effective_max = self.max_attempts * multiplier
+
         with self._lock:
             now = time.time()
             cutoff = now - self.window_seconds
@@ -27,7 +37,7 @@ class RateLimiter:
             # Prune expired timestamps
             self._attempts[key] = [t for t in self._attempts[key] if t > cutoff]
 
-            if len(self._attempts[key]) >= self.max_attempts:
+            if len(self._attempts[key]) >= effective_max:
                 return False
 
             self._attempts[key].append(now)

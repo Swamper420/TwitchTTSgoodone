@@ -290,11 +290,12 @@ class TwitchListener:
                 except queue.Empty:
                     continue
 
-                # Wait for rate limit if needed
+                # Wait for rate limit if needed (in Chaos Mode, throughput increases with reduced delay)
                 now = time.time()
                 elapsed = now - self._last_send_time
-                if elapsed < self._rate_limit_delay:
-                    time.sleep(self._rate_limit_delay - elapsed)
+                effective_delay = 0.1 if getattr(config, "enable_chaos_mode", False) else self._rate_limit_delay
+                if elapsed < effective_delay:
+                    time.sleep(effective_delay - elapsed)
 
                 with self._lock:
                     sock_ref = self.sock

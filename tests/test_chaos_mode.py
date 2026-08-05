@@ -78,6 +78,23 @@ class TestChaosMode(unittest.TestCase):
             self.assertIn("prefChaosMode", body)
             self.assertIn("Chaos Mode", body)
 
+    def test_rate_limiter_increases_in_chaos_mode(self):
+        """Test that RateLimiter allows 10x capacity when chaos mode is active."""
+        from app.rate_limiter import RateLimiter
+        limiter = RateLimiter(max_attempts=3, window_seconds=60)
+        
+        # In normal mode, 4th attempt should be blocked
+        config.enable_chaos_mode = False
+        self.assertTrue(limiter.check_and_record("test_ip"))
+        self.assertTrue(limiter.check_and_record("test_ip"))
+        self.assertTrue(limiter.check_and_record("test_ip"))
+        self.assertFalse(limiter.check_and_record("test_ip"))
+
+        # In Chaos mode, capacity increases (effective max = 3 * 10 = 30)
+        config.enable_chaos_mode = True
+        self.assertTrue(limiter.check_and_record("test_ip"))
+
 
 if __name__ == "__main__":
     unittest.main()
+
