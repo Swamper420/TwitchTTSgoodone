@@ -242,6 +242,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 skipCurrentAudio();
             }
         });
+
+        evtSource.addEventListener('soundboard_trigger', (e) => {
+            try {
+                const data = JSON.parse(e.data);
+                if (!data || !data.sound_name) return;
+                if (filterChannel) {
+                    const cmdChan = data.channel ? String(data.channel).toLowerCase().replace(/^#/, '').trim() : '';
+                    if (cmdChan && cmdChan !== filterChannel) return;
+                }
+                const sbUrl = data.file_path || `/api/soundboard/${data.sound_name}`;
+                const isDuplicate = audioQueue.some(q => q.url === sbUrl) || (currentItem && currentItem.url === sbUrl && isPlaying);
+                if (!isDuplicate) {
+                    audioQueue.push({
+                        id: `sb_${data.timestamp || Date.now()}`,
+                        url: sbUrl,
+                        speaker: data.user || 'Soundboard',
+                        text: `(${data.sound_name})`,
+                        voice: 'Soundboard',
+                        is_soundboard: true
+                    });
+                    checkAndPlayNext();
+                }
+            } catch (err) {
+                console.error('OBS Overlay soundboard trigger error:', err);
+            }
+        });
     }
 
     let currentFartBgAudio = null;

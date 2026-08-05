@@ -75,7 +75,7 @@ def broadcast_event(event_type: str, payload: dict):
             if event_chan_clean:
                 if filter_chan != event_chan_clean:
                     continue
-            elif event_type in ("audio_chunk", "chat_message", "skip_audio", "clear_audio"):
+            elif event_type in ("audio_chunk", "chat_message", "skip_audio", "clear_audio", "soundboard_trigger"):
                 # Channel-specific event without a matching channel tag must not leak to a channel-filtered client
                 continue
 
@@ -936,6 +936,17 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             user = sanitize_string(body.get("user", "Control Portal"), max_len=50, default="Control Portal")
             
             # Broadcast soundboard play event via SSE
+            sb_chunk = {
+                "id": f"sb_{int(time.time()*1000)}",
+                "url": f"/api/soundboard/{matched_name}",
+                "speaker": user,
+                "text": f"({matched_name})",
+                "voice": "Soundboard",
+                "channel": req_chan,
+                "timestamp": time.time(),
+                "is_soundboard": True
+            }
+            broadcast_event("audio_chunk", sb_chunk)
             broadcast_event("soundboard_trigger", {
                 "sound_name": matched_name,
                 "file_path": f"/api/soundboard/{matched_name}",
@@ -1796,6 +1807,17 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             matched_name, file_path = sound_match
             req_chan = sanitize_string(body.get("channel") or config.twitch_channel, max_len=100)
             user = sanitize_string(body.get("user", "Control Portal"), max_len=50, default="Control Portal")
+            sb_chunk = {
+                "id": f"sb_{int(time.time()*1000)}",
+                "url": f"/api/soundboard/{matched_name}",
+                "speaker": user,
+                "text": f"({matched_name})",
+                "voice": "Soundboard",
+                "channel": req_chan,
+                "timestamp": time.time(),
+                "is_soundboard": True
+            }
+            broadcast_event("audio_chunk", sb_chunk)
             broadcast_event("soundboard_trigger", {
                 "sound_name": matched_name,
                 "file_path": f"/api/soundboard/{matched_name}",

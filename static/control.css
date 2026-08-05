@@ -693,45 +693,73 @@ body {
 
 .soundboard-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-    gap: 6px;
-    max-height: 220px;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 10px;
+    max-height: 320px;
     overflow-y: auto;
-    padding-right: 4px;
+    padding-right: 6px;
 }
 
 .sound-card {
-    background: rgba(0, 0, 0, 0.3);
+    background: rgba(14, 18, 28, 0.7);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
-    padding: 6px 8px;
+    padding: 10px 12px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    justify-content: space-between;
+    gap: 6px;
     transition: all 0.2s ease;
 }
 
 .sound-card:hover {
     border-color: var(--accent-cyan);
+    background: rgba(20, 26, 40, 0.85);
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    box-shadow: 0 4px 16px rgba(0, 240, 255, 0.15);
 }
 
 .sound-title {
     font-size: 13px;
-    font-weight: 700;
+    font-weight: 600;
     color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .sound-trigger-code {
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
     color: var(--accent-cyan);
+    background: rgba(0, 240, 255, 0.08);
+    border: 1px solid rgba(0, 240, 255, 0.2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    display: inline-block;
+    width: fit-content;
 }
 
 .sound-actions {
     display: flex;
     gap: 6px;
+    width: 100%;
+    margin-top: 4px;
+}
+
+.sound-actions .btn {
+    flex: 1;
+    padding: 5px 8px;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    border-radius: 4px;
+    white-space: nowrap;
 }
 
 /* Player & Queue Section */
