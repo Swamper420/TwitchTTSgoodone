@@ -196,9 +196,10 @@ class Config:
         self._sync_auth_manager()
 
     def save(self, filepath: str = CONFIG_FILE):
-        """Save configuration to JSON file."""
+        """Save configuration to JSON file with restrictive permissions (0600)."""
         try:
-            with open(filepath, "w", encoding="utf-8") as f:
+            fd = os.open(filepath, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(self.to_dict(), f, indent=2, ensure_ascii=False)
             logger.info(f"Saved configuration to {filepath}")
         except Exception as e:

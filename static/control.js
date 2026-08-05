@@ -813,9 +813,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // --- Server-Sent Events (SSE) Stream ---
     function initSseEvents() {
-        const token = localStorage.getItem("admin_token") || "";
-        const sseUrl = token ? `/api/events?token=${encodeURIComponent(token)}` : "/api/events";
-        const sse = new EventSource(sseUrl);
+        const sse = new EventSource("/api/events");
 
         sse.addEventListener("status", (evt) => {
             try {

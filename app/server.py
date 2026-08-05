@@ -596,16 +596,17 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         return self.client_address[0] if self.client_address else "unknown"
 
     def _get_request_auth_token(self) -> str:
+        cookie_header = self.headers.get("Cookie", "")
+        if cookie_header:
+            for part in cookie_header.split(";"):
+                k, _, v = part.strip().partition("=")
+                if k.strip() == "session" and v.strip():
+                    return v.strip()
         token = self.headers.get("X-Admin-Token")
         if not token:
             token = self.headers.get("Authorization", "")
-        if not token:
-            parsed = urllib.parse.urlparse(self.path)
-            query = urllib.parse.parse_qs(parsed.query)
-            if "token" in query:
-                token = query["token"][0]
-            elif "admin_token" in query:
-                token = query["admin_token"][0]
+            if token.startswith("Bearer "):
+                token = token[7:]
         return token.strip() if token else ""
 
     def _check_auth(self, required_role: str = "admin") -> bool:
@@ -1020,7 +1021,8 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             password = sanitize_string(body.get("password"), max_len=500)
             success, session_token, err, role = dashboard_auth_manager.authenticate(password)
             if success:
-                self._send_json(200, {"success": True, "token": session_token, "role": role})
+                cookie_str = f"session={session_token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400"
+                self._send_json(200, {"success": True, "token": session_token, "role": role}, cookies=[cookie_str])
             else:
                 self._send_json(401, {"error": err or "Invalid password"})
             return
@@ -1029,7 +1031,8 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/auth/logout":
             tok = self._get_request_auth_token()
             dashboard_auth_manager.revoke_session(tok)
-            self._send_json(200, {"success": True})
+            cookie_str = "session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"
+            self._send_json(200, {"success": True}, cookies=[cookie_str])
             return
 
         # Route: Proxy POST /api/tts
@@ -1336,11 +1339,14 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
     def _get_config_dict(self) -> dict:
         return config.to_masked_dict()
 
-    def _send_json(self, code: int, data: dict):
+    def _send_json(self, code: int, data: dict, cookies: list = None):
         body = json.dumps(data).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        if cookies:
+            for c in cookies:
+                self.send_header("Set-Cookie", c)
         self._send_cors_headers()
         self._send_security_headers()
         self.end_headers()
@@ -1421,16 +1427,17 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
         return self.client_address[0] if self.client_address else "unknown"
 
     def _get_request_auth_token(self) -> str:
+        cookie_header = self.headers.get("Cookie", "")
+        if cookie_header:
+            for part in cookie_header.split(";"):
+                k, _, v = part.strip().partition("=")
+                if k.strip() == "session" and v.strip():
+                    return v.strip()
         token = self.headers.get("X-Admin-Token")
         if not token:
             token = self.headers.get("Authorization", "")
-        if not token:
-            parsed = urllib.parse.urlparse(self.path)
-            query = urllib.parse.parse_qs(parsed.query)
-            if "token" in query:
-                token = query["token"][0]
-            elif "admin_token" in query:
-                token = query["admin_token"][0]
+            if token.startswith("Bearer "):
+                token = token[7:]
         return token.strip() if token else ""
 
     def _check_auth(self, required_role: str = "user") -> bool:
@@ -1737,7 +1744,8 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             if success:
                 # On the public server, cap the role to 'user' — never grant 'admin' externally
                 public_role = "user" if role == "admin" else role
-                self._send_json(200, {"success": True, "token": session_token, "role": public_role})
+                cookie_str = f"session={session_token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400"
+                self._send_json(200, {"success": True, "token": session_token, "role": public_role}, cookies=[cookie_str])
             else:
                 self._send_json(401, {"error": err or "Invalid password"})
             return
@@ -1746,7 +1754,8 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/auth/logout":
             tok = self._get_request_auth_token()
             dashboard_auth_manager.revoke_session(tok)
-            self._send_json(200, {"success": True})
+            cookie_str = "session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"
+            self._send_json(200, {"success": True}, cookies=[cookie_str])
             return
 
         # Soundboard Trigger (public)
@@ -2004,11 +2013,14 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             }
         }
 
-    def _send_json(self, code: int, data: dict):
+    def _send_json(self, code: int, data: dict, cookies: list = None):
         body = json.dumps(data).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        if cookies:
+            for c in cookies:
+                self.send_header("Set-Cookie", c)
         self._send_cors_headers()
         self._send_security_headers()
         self.end_headers()

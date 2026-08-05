@@ -120,6 +120,11 @@ class TestAuthModule(unittest.TestCase):
         from app.server import TTSRequestHandler
         
         handler = MagicMock(spec=TTSRequestHandler)
+        handler.headers = {"Cookie": "session=cookie_token_123; other=val"}
+        handler.path = "/api/connect"
+        token = TTSRequestHandler._get_request_auth_token(handler)
+        self.assertEqual(token, "cookie_token_123")
+
         handler.headers = {"X-Admin-Token": "test_token_123"}
         handler.path = "/api/connect"
         token = TTSRequestHandler._get_request_auth_token(handler)
@@ -128,12 +133,12 @@ class TestAuthModule(unittest.TestCase):
         handler.headers = {"Authorization": "Bearer bearer_token_456"}
         handler.path = "/api/connect"
         token = TTSRequestHandler._get_request_auth_token(handler)
-        self.assertEqual(token, "Bearer bearer_token_456")
+        self.assertEqual(token, "bearer_token_456")
 
         handler.headers = {}
         handler.path = "/api/connect?token=query_tok_789"
         token = TTSRequestHandler._get_request_auth_token(handler)
-        self.assertEqual(token, "query_tok_789")
+        self.assertEqual(token, "")
 
     def test_tts_request_handler_check_auth(self):
         from app.server import TTSRequestHandler

@@ -199,5 +199,37 @@ class TestErrorBroadcastSanitization(unittest.TestCase):
                          "Error broadcasts should not include str(e) exception details")
 
 
+class TestConfigFilePermissions(unittest.TestCase):
+    """OWASP A02:2021 — Verify config.save() sets restrictive file permissions (0600)."""
+
+    def test_config_save_file_permissions(self):
+        import tempfile
+        import stat
+        cfg = Config()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as f:
+            temp_path = f.name
+
+        try:
+            cfg.save(filepath=temp_path)
+            mode = stat.S_IMODE(os.stat(temp_path).st_mode)
+            # Verify owner has read/write (0600) and no group/other permissions (0077 mask is 0)
+            self.assertEqual(mode & 0o077, 0, f"Config file permissions {oct(mode)} must not be readable/writable by group or others")
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+
+class TestLoginCookieResponse(unittest.TestCase):
+    """OWASP A07:2021 — Verify login sends HttpOnly session cookies."""
+
+    def test_send_json_includes_set_cookie(self):
+        from app.server import TTSRequestHandler
+        handler = MagicMock(spec=TTSRequestHandler)
+        handler.send_header = MagicMock()
+        handler.wfile = MagicMock()
+        TTSRequestHandler._send_json(handler, 200, {"success": True}, cookies=["session=test_token_123; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400"])
+        handler.send_header.assert_any_call("Set-Cookie", "session=test_token_123; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400")
+
+
 if __name__ == "__main__":
     unittest.main()
