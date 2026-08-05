@@ -23,6 +23,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const customVol = params.get('volume') ? parseInt(params.get('volume'), 10) : 80;
     const playChime = params.get('chime') !== '0' && params.get('chime') !== 'false';
     const fontSize = params.get('font_size');
+    const isPreviewMode = params.get('preview') === '1' || params.get('preview') === 'true' || params.get('test') === '1';
+
+    const unlockBanner = document.getElementById('obsAudioUnlock');
 
     // Apply classes/styles from URL params
     if (isAutoHide) {
@@ -36,6 +39,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (audioPlayer) {
         audioPlayer.volume = Math.max(0, Math.min(100, customVol)) / 100;
+    }
+
+    if (isPreviewMode && overlayCard) {
+        overlayCard.classList.remove('idle');
+        overlayCard.classList.add('speaking');
+        if (obsSpeaker) obsSpeaker.textContent = 'Preview Mode (Chatter)';
+        if (obsText) obsText.textContent = 'Twitch TTS Voice Overlay ready.';
     }
 
     // State
@@ -81,22 +91,51 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function silentUnlock() {
+    function unlockAudio() {
+        audioUnlocked = true;
         initWebAudio();
         if (audioCtx && audioCtx.state === 'suspended') {
             audioCtx.resume();
         }
+        if (unlockBanner) {
+            unlockBanner.classList.add('hidden');
+        }
         try {
             audioPlayer.src = SILENT_WAV;
-            audioPlayer.play().then(() => {
-                audioPlayer.pause();
-            }).catch(() => {});
+            const p = audioPlayer.play();
+            if (p && p.then) {
+                p.then(() => {
+                    if (audioPlayer.src === SILENT_WAV) {
+                        audioPlayer.pause();
+                    }
+                }).catch(() => {});
+            }
         } catch (e) {}
+
+        if (!isPlaying && audioQueue.length > 0) {
+            checkAndPlayNext();
+        }
     }
 
-    // Trigger silent unlock on load for OBS
+    function silentUnlock() {
+        if (audioUnlocked) {
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            return;
+        }
+        unlockAudio();
+    }
+
+    // Trigger unlock on load & click
     silentUnlock();
-    document.addEventListener('click', silentUnlock, { once: true });
+    document.addEventListener('click', unlockAudio);
+    if (unlockBanner) {
+        unlockBanner.addEventListener('click', unlockAudio);
+        if (!window.obsstudio && !audioUnlocked) {
+            unlockBanner.classList.remove('hidden');
+        }
+    }
 
     // Notification Chime Sound
     function playChimeSound() {
@@ -340,7 +379,9 @@ document.addEventListener('DOMContentLoaded', () => {
         currentItem = audioQueue.shift();
         isPlaying = true;
 
-        silentUnlock();
+        if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
         playChimeSound();
         renderSpectrum();
 
@@ -371,10 +412,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Play Main Audio
         audioPlayer.src = currentItem.url;
-        audioPlayer.play().catch((err) => {
-            console.warn('OBS Overlay playback note:', err);
-            onAudioEnded();
-        });
+        const playPromise = audioPlayer.play();
+        if (playPromise !== undefined) {
+            playPromise.then(() => {
+                audioUnlocked = true;
+                if (unlockBanner) unlockBanner.classList.add('hidden');
+            }).catch((err) => {
+                console.warn('OBS Overlay playback note:', err);
+                if (err.name === 'NotAllowedError') {
+                    audioUnlocked = false;
+                    if (unlockBanner) unlockBanner.classList.remove('hidden');
+                    audioQueue.unshift(currentItem);
+                    isPlaying = false;
+                    currentItem = null;
+                    stopFartBgAudio();
+                    if (!isPreviewMode) {
+                        overlayCard.classList.remove('speaking');
+                        overlayCard.classList.add('idle');
+                    }
+                } else {
+                    onAudioEnded();
+                }
+            });
+        }
     }
 
     function stopFartBgAudio() {
@@ -392,14 +452,23 @@ document.addEventListener('DOMContentLoaded', () => {
         currentItem = null;
         stopFartBgAudio();
 
-        overlayCard.classList.remove('speaking');
-        overlayCard.classList.add('idle');
+        if (isPreviewMode) {
+            overlayCard.classList.remove('idle');
+            overlayCard.classList.add('speaking');
+            if (obsSpeaker) obsSpeaker.textContent = 'Preview Mode (Chatter)';
+            if (obsText) obsText.textContent = 'Twitch TTS Voice Overlay ready.';
+        } else {
+            overlayCard.classList.remove('speaking');
+            overlayCard.classList.add('idle');
+        }
 
         if (audioQueue.length > 0) {
             setTimeout(checkAndPlayNext, 180);
         } else {
-            if (obsSpeaker) obsSpeaker.textContent = 'Waiting for TTS...';
-            if (obsText) obsText.textContent = 'Twitch TTS Voice Overlay ready.';
+            if (!isPreviewMode) {
+                if (obsSpeaker) obsSpeaker.textContent = 'Waiting for TTS...';
+                if (obsText) obsText.textContent = 'Twitch TTS Voice Overlay ready.';
+            }
         }
     }
 
