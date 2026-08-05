@@ -623,6 +623,17 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
         self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; media-src 'self' blob: data:; connect-src 'self' ws: wss:; img-src 'self' data: blob:; object-src 'none'; frame-ancestors 'self';")
 
+    def _is_secure_request(self) -> bool:
+        """Check if request is secure via config site_domain or HTTPS header."""
+        if getattr(config, "site_domain", ""):
+            return True
+        if hasattr(self, "headers") and self.headers:
+            proto = self.headers.get("X-Forwarded-Proto", "").lower()
+            scheme = self.headers.get("X-Forwarded-Scheme", "").lower()
+            if proto == "https" or scheme == "https":
+                return True
+        return False
+
     def _get_client_ip(self) -> str:
         """Get client IP address for rate limiting."""
         return self.client_address[0] if self.client_address else "unknown"
@@ -1062,7 +1073,8 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             password = sanitize_string(body.get("password"), max_len=500)
             success, session_token, err, role = dashboard_auth_manager.authenticate(password)
             if success:
-                cookie_str = f"session={session_token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400"
+                secure_flag = "; Secure" if self._is_secure_request() else ""
+                cookie_str = f"session={session_token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400{secure_flag}"
                 self._send_json(200, {"success": True, "token": session_token, "role": role}, cookies=[cookie_str])
             else:
                 self._send_json(401, {"error": err or "Invalid password"})
@@ -1072,7 +1084,8 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/auth/logout":
             tok = self._get_request_auth_token()
             dashboard_auth_manager.revoke_session(tok)
-            cookie_str = "session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"
+            secure_flag = "; Secure" if self._is_secure_request() else ""
+            cookie_str = f"session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0{secure_flag}"
             self._send_json(200, {"success": True}, cookies=[cookie_str])
             return
 
@@ -1500,6 +1513,17 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
         else:
             self.send_header("X-Frame-Options", "SAMEORIGIN")
 
+    def _is_secure_request(self) -> bool:
+        """Check if request is secure via config site_domain or HTTPS header."""
+        if getattr(config, "site_domain", ""):
+            return True
+        if hasattr(self, "headers") and self.headers:
+            proto = self.headers.get("X-Forwarded-Proto", "").lower()
+            scheme = self.headers.get("X-Forwarded-Scheme", "").lower()
+            if proto == "https" or scheme == "https":
+                return True
+        return False
+
     def _get_client_ip(self) -> str:
         return self.client_address[0] if self.client_address else "unknown"
 
@@ -1823,7 +1847,8 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             password = sanitize_string(body.get("password"), max_len=500)
             success, session_token, err, role = dashboard_auth_manager.authenticate(password, max_role="user")
             if success:
-                cookie_str = f"session={session_token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400"
+                secure_flag = "; Secure" if self._is_secure_request() else ""
+                cookie_str = f"session={session_token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400{secure_flag}"
                 self._send_json(200, {"success": True, "token": session_token, "role": role}, cookies=[cookie_str])
             else:
                 self._send_json(401, {"error": err or "Invalid password"})
@@ -1833,7 +1858,8 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/auth/logout":
             tok = self._get_request_auth_token()
             dashboard_auth_manager.revoke_session(tok)
-            cookie_str = "session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"
+            secure_flag = "; Secure" if self._is_secure_request() else ""
+            cookie_str = f"session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0{secure_flag}"
             self._send_json(200, {"success": True}, cookies=[cookie_str])
             return
 

@@ -284,7 +284,7 @@ class TestConfigFilePermissions(unittest.TestCase):
 
 
 class TestLoginCookieResponse(unittest.TestCase):
-    """OWASP A07:2021 — Verify login sends HttpOnly session cookies."""
+    """OWASP A07:2021 — Verify login sends HttpOnly session cookies with Secure flag when applicable."""
 
     def test_send_json_includes_set_cookie(self):
         from app.server import TTSRequestHandler
@@ -293,6 +293,28 @@ class TestLoginCookieResponse(unittest.TestCase):
         handler.wfile = MagicMock()
         TTSRequestHandler._send_json(handler, 200, {"success": True}, cookies=["session=test_token_123; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400"])
         handler.send_header.assert_any_call("Set-Cookie", "session=test_token_123; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400")
+
+    def test_is_secure_request_with_site_domain(self):
+        from app.server import TTSRequestHandler, config
+        handler = MagicMock(spec=TTSRequestHandler)
+        handler.headers = {}
+        with patch.object(config, 'site_domain', 'https://example.com'):
+            self.assertTrue(TTSRequestHandler._is_secure_request(handler))
+
+    def test_is_secure_request_with_x_forwarded_proto(self):
+        from app.server import TTSRequestHandler, config
+        handler = MagicMock(spec=TTSRequestHandler)
+        handler.headers = {"X-Forwarded-Proto": "https"}
+        with patch.object(config, 'site_domain', ''):
+            self.assertTrue(TTSRequestHandler._is_secure_request(handler))
+
+    def test_is_secure_request_insecure(self):
+        from app.server import TTSRequestHandler, config
+        handler = MagicMock(spec=TTSRequestHandler)
+        handler.headers = {"X-Forwarded-Proto": "http"}
+        with patch.object(config, 'site_domain', ''):
+            self.assertFalse(TTSRequestHandler._is_secure_request(handler))
+
 
 
 class TestSoundboardToggleAuthGating(unittest.TestCase):
