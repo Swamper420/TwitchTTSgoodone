@@ -3,129 +3,174 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Steam 2004 Twitch TTS - Voice Player</title>
-    <meta name="description" content="Safe, lightweight real-time voice output player in Steam 2004 green theme for Twitch TTS listeners and OBS overlays.">
-    <link rel="stylesheet" href="player.css">
+    <title>Voice Player - Twitch TTS v1.0 (Win95 Edition)</title>
+    <meta name="description" content="Safe, lightweight real-time voice output player in Windows 95 retro theme for Twitch TTS listeners and OBS overlays.">
+    <!-- Retro Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Pixelify+Sans:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="viewer.css">
 </head>
 <body>
     <!-- Hidden HTML5 Audio Element -->
     <audio id="audioPlayer" preload="auto"></audio>
 
-    <!-- Audio Autoplay Unlock Overlay -->
-    <div id="audioUnlockOverlay" class="audio-unlock-overlay">
-        <div class="audio-unlock-card">
-            <div class="unlock-icon">🕹️</div>
-            <h2>Steam TTS - Enable Voice Output</h2>
-            <p>Click below to activate live audio stream playback and retro spectrum visualizer.</p>
-            <button id="enableAudioBtn" class="btn btn-primary btn-large">
-                <span>🔊</span> Start Listening Now
-            </button>
+    <!-- Audio Autoplay Unlock Overlay (Win95 Dialog Style) -->
+    <div id="audioUnlockOverlay" class="win95-modal-overlay">
+        <div class="win95-window win95-dialog">
+            <div class="win95-titlebar">
+                <div class="win95-titlebar-text">
+                    <span class="win95-icon">🔊</span>
+                    <span>Sound Blaster Audio Output Activation</span>
+                </div>
+            </div>
+            <div class="win95-body">
+                <div style="display: flex; gap: 12px; align-items: flex-start; margin-bottom: 14px;">
+                    <div style="font-size: 32px;">🎙️</div>
+                    <div>
+                        <p style="font-weight: bold; margin-bottom: 4px;">Enable Live Voice Output</p>
+                        <p style="color: #444; margin-bottom: 10px;">Click below to activate audio stream playback and initialize the retro spectrum visualizer for C:\TWITCH_TTS\VOICE_PLAYER.EXE:</p>
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: flex-end;">
+                    <button type="button" id="enableAudioBtn" class="win95-btn win95-btn-primary" style="min-width: 140px;">
+                        🔊 Start Listening Now
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
     <!-- Main Application Container -->
-    <div id="playerApp" class="player-container">
-        <!-- Header Bar -->
-        <header class="player-header">
-            <div class="brand">
-                <div class="brand-icon">🕹️</div>
-                <div class="brand-info">
-                    <h1>Steam 2004 <span>TTS</span> Player</h1>
-                    <span class="safe-badge">SAFE PUBLIC PLAYER</span>
+    <div id="playerApp" class="app-container">
+        <!-- Main Win95 Window Container -->
+        <div class="win95-window">
+            <!-- Window Title Bar -->
+            <div class="win95-titlebar">
+                <div class="win95-titlebar-text">
+                    <span class="win95-icon">📻</span>
+                    <span>C:\TWITCH_TTS\VOICE_PLAYER.EXE</span>
+                </div>
+                <div class="win95-titlebar-controls">
+                    <button class="win95-title-btn" title="Help">?</button>
+                    <button class="win95-title-btn" title="Minimize">_</button>
+                    <button class="win95-title-btn" title="Close">X</button>
                 </div>
             </div>
 
-            <div class="header-right">
-                <div class="status-pill" id="statusPill">
-                    <span class="status-dot"></span>
-                    <span id="statusText">Connecting...</span>
-                </div>
-
-                <div class="queue-pill" id="queueBadge">
-                    0 in queue
-                </div>
-
-                <a href="/viewer" class="btn btn-outline" style="text-decoration:none;" title="Open Public Viewer Hub">
-                    <span>explore</span> Viewer Hub
-                </a>
-                <button id="overlayModeBtn" class="btn btn-outline" title="Toggle minimal overlay mode for OBS Streamers">
-                    <span>📺</span> <span id="overlayBtnText">OBS Mode</span>
+            <!-- Win95 Menu Bar -->
+            <div class="win95-menubar">
+                <a href="/player" class="win95-menu-item active"><u>F</u>ile</a>
+                <a href="/viewer" class="win95-menu-item"><u>V</u>iewer Hub</a>
+                <a href="/control" class="win95-menu-item"><u>C</u>ontrol Portal</a>
+                <a href="/obs" class="win95-menu-item" target="_blank"><u>O</u>BS Overlay</a>
+                <button type="button" id="overlayModeBtn" class="win95-btn win95-btn-small" style="margin-left: auto;">
+                    📺 <span id="overlayBtnText">OBS Mode</span>
                 </button>
             </div>
-        </header>
 
-
-        <!-- Main Content Area -->
-        <main class="player-main">
-            <!-- Hero Audio Player Card -->
-            <section class="card hero-card" id="nowSpeakingCard">
-                <div class="card-top">
-                    <span class="live-indicator"><span class="pulse-dot"></span> VOICE STREAM ACTIVE</span>
-                    <div class="meta-tags">
-                        <span class="tag tag-purple" id="voiceTag">Voice: Default</span>
-                        <span class="tag tag-cyan" id="chunkTag">Ready</span>
+            <!-- Window Content Body -->
+            <div class="win95-body">
+                <!-- Top Hero / Banner -->
+                <div class="win95-hero">
+                    <div class="win95-hero-text">
+                        <h1>Twitch TTS Standalone Voice Player</h1>
+                        <p>Real-time lightweight speech audio stream output, spectrum visualizer, and message history feed.</p>
+                    </div>
+                    <div class="win95-badges">
+                        <span class="retro-badge retro-badge-netscape">NETSCAPE 3.0</span>
+                        <span class="retro-badge retro-badge-sound">SOUND BLASTER 16</span>
+                        <span class="retro-badge">PLAYER v1.0</span>
                     </div>
                 </div>
 
-                <!-- Visualizer Display -->
-                <div class="visualizer-container">
-                    <canvas id="spectrumCanvas" width="280" height="70" class="spectrum-canvas"></canvas>
-                </div>
+                <!-- Main Content Grid -->
+                <div class="control-grid-2col">
+                    <!-- Left Column: Hero Audio Player -->
+                    <div>
+                        <fieldset class="win95-fieldset" id="nowSpeakingCard">
+                            <legend class="win95-legend">Live Voice Output & Spectrum Monitor</legend>
 
-                <!-- Now Speaking Details -->
-                <div class="speaker-details">
-                    <div class="speaker-avatar" id="speakerAvatar">🎙️</div>
-                    <div class="speaker-info">
-                        <span class="speaker-label">NOW SPEAKING</span>
-                        <h2 id="currentSpeaker" class="speaker-name">Idle / Listening</h2>
-                        <p id="currentText" class="spoken-text">Waiting for incoming voice messages from chat stream...</p>
+                            <!-- Status & Tags Bar -->
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 6px;">
+                                <div class="win95-status-panel" id="statusPill" style="padding: 3px 8px;">
+                                    <span class="status-dot"></span>
+                                    <span id="statusText">Connecting...</span>
+                                </div>
+                                <div style="display: flex; gap: 4px; align-items: center;">
+                                    <span class="retro-badge" id="queueBadge">0 IN QUEUE</span>
+                                    <span class="retro-badge retro-badge-sound" id="voiceTag">Voice: Default</span>
+                                    <span class="retro-badge retro-badge-netscape" id="chunkTag">Ready</span>
+                                </div>
+                            </div>
+
+                            <!-- Retro Spectrum Canvas -->
+                            <div class="win95-lcd" style="flex-direction: column; align-items: stretch; padding: 6px;">
+                                <canvas id="spectrumCanvas" width="280" height="60" class="spectrum-canvas" style="width: 100%; height: 60px;"></canvas>
+                            </div>
+
+                            <!-- Speaker & Message Display -->
+                            <div style="display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px;" class="win95-inset-box">
+                                <div id="speakerAvatar" style="font-size: 28px; line-height: 1;">🎙️</div>
+                                <div style="flex: 1;">
+                                    <div style="font-size: 9px; font-weight: bold; color: var(--win-blue);">NOW SPEAKING</div>
+                                    <h2 id="currentSpeaker" style="font-size: 14px; font-weight: bold; margin-bottom: 4px; color: var(--win-text);">Idle / Listening</h2>
+                                    <p id="currentText" class="spoken-message">Waiting for incoming voice messages from chat stream...</p>
+                                </div>
+                            </div>
+
+                            <!-- Controls Bar -->
+                            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                <button type="button" id="muteBtn" class="win95-btn" title="Mute/Unmute audio">🔊</button>
+                                <div style="display: flex; align-items: center; gap: 4px; flex: 1; min-width: 140px;">
+                                    <input type="range" id="volumeSlider" min="0" max="100" value="80" class="form-slider" title="Adjust Volume" />
+                                    <span id="volumeValue" class="val-highlight" style="font-size: 10px;">80%</span>
+                                </div>
+                                <label class="toggle-card" title="Play subtle chime before voice messages">
+                                    <input type="checkbox" id="chimeToggle" checked>
+                                    <span>Notification Chime</span>
+                                </label>
+                                <button type="button" id="skipBtn" class="win95-btn win95-btn-warning" title="Skip currently playing voice chunk">
+                                    ⏭️ Skip Chunk
+                                </button>
+                            </div>
+                        </fieldset>
+                    </div>
+
+                    <!-- Right Column: Voice History Feed -->
+                    <div>
+                        <fieldset class="win95-fieldset">
+                            <legend class="win95-legend">
+                                Recent Voice Messages History 
+                                <span id="historyCount" class="retro-badge" style="margin-left: 6px;">0 PLAYED</span>
+                            </legend>
+                            <div id="voiceHistoryFeed" class="chat-log-list" style="max-height: 280px; min-height: 220px;">
+                                <div style="color: #666; text-align: center; padding: 12px;">No voice messages played yet.</div>
+                            </div>
+                        </fieldset>
                     </div>
                 </div>
 
-                <!-- Player Controls -->
-                <div class="controls-bar">
-                    <div class="volume-group">
-                        <button id="muteBtn" class="btn-icon" title="Mute/Unmute audio">🔊</button>
-                        <input type="range" id="volumeSlider" min="0" max="100" value="80" title="Adjust Volume" />
-                        <span id="volumeValue" class="volume-val">80%</span>
+                <!-- Win95 Status Bar Footer -->
+                <div class="win95-statusbar">
+                    <div class="win95-status-panel" style="flex: 1;">
+                        <span>🔒 READ-ONLY VOICE PLAYER</span>
                     </div>
-
-                    <div class="toggle-group">
-                        <label class="toggle-switch" title="Play subtle chime before voice messages">
-                            <input type="checkbox" id="chimeToggle" checked>
-                            <span class="slider"></span>
-                        </label>
-                        <span class="toggle-label">Notification Chime</span>
+                    <div class="win95-status-panel">
+                        <span>OBS URL: <code>/obs</code></span>
                     </div>
-
-                    <button id="skipBtn" class="btn btn-secondary" title="Skip currently playing voice chunk">
-                        <span>⏭️</span> Skip Chunk
-                    </button>
+                    <div class="win95-status-panel">
+                        <span>BAUD: 28,800 BPS</span>
+                    </div>
                 </div>
-            </section>
-
-            <!-- Voice History Section -->
-            <section class="card history-card">
-                <div class="card-header">
-                    <h3><span class="icon">📜</span> Recent Voice Messages</h3>
-                    <span class="history-count" id="historyCount">0 played</span>
-                </div>
-                <div id="voiceHistoryFeed" class="history-feed">
-                    <div class="feed-empty">No voice messages played yet.</div>
-                </div>
-            </section>
-        </main>
-
-        <!-- Footer -->
-        <footer class="player-footer">
-            <div class="footer-info">
-                <span>🔒 Read-Only Voice Player</span>
-                <span class="dot">•</span>
-                <span>Dedicated OBS Overlay URL: <code><a href="/obs" target="_blank" style="color:var(--accent-cyan);">/obs</a></code> (or <code>/obs?autohide=1</code>)</span>
             </div>
-        </footer>
+        </div>
     </div>
 
+    <!-- Main JavaScript App Logic -->
     <script src="player.js"></script>
 </body>
 </html>

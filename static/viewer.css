@@ -936,4 +936,31 @@ body {
     font-family: var(--font-mono);
 }
 
+/* History Items (Player Page) */
+.history-item {
+    padding: 6px;
+    border-bottom: 1px dashed var(--win-gray-dark);
+    font-family: var(--font-mono);
+    font-size: 11px;
+}
+
+.history-user {
+    font-weight: bold;
+    color: var(--win-blue);
+    font-size: 11px;
+}
+
+.history-text {
+    color: var(--win-text);
+    margin: 2px 0;
+}
+
+.history-meta {
+    font-size: 10px;
+    color: #666;
+    display: flex;
+    gap: 6px;
+}
+
+
 
