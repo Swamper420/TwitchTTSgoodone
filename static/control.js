@@ -24,7 +24,8 @@ document.addEventListener("DOMContentLoaded", () => {
         serverHost: window.location.hostname || "localhost",
         authRequired: false,
         authenticated: false,
-        chaosMode: false
+        chaosMode: false,
+        selectedChannel: localStorage.getItem("control_selected_channel") || ""
     };
 
     // DOM Elements
@@ -38,12 +39,13 @@ document.addEventListener("DOMContentLoaded", () => {
         lockBtnIcon: document.getElementById("lockBtnIcon"),
         lockBtnText: document.getElementById("lockBtnText"),
 
-        // Channel connect
+        // Channel connect & Channel Selector
         statusPill: document.getElementById("statusPill"),
         statusText: document.getElementById("statusText"),
         channelInput: document.getElementById("channelInput"),
         connectBtn: document.getElementById("connectBtn"),
         channelsChips: document.getElementById("channelsChips"),
+        controlChannelSelect: document.getElementById("controlChannelSelect"),
         
         // OBS Builder
         obsChannelSelect: document.getElementById("obsChannelSelect"),
@@ -377,34 +379,95 @@ document.addEventListener("DOMContentLoaded", () => {
         elements.optChan2.textContent = state.channels[1] ? `Channel 2 (${state.channels[1]})` : "Channel 2";
         elements.optChan2.value = state.channels[1] || "";
 
-        const config = status.config || {};
-        
-        // Sync preferences settings in UI
-        if (elements.prefEnable8D) {
-            elements.prefEnable8D.checked = config.enable_8d_audio !== false;
-            const speedGroup = document.getElementById("pref8dSpeedGroup");
-            if (speedGroup) {
-                speedGroup.style.opacity = elements.prefEnable8D.checked ? "1" : "0.5";
-                speedGroup.style.pointerEvents = elements.prefEnable8D.checked ? "auto" : "none";
+        // Mandatory Control Channel Selector sync
+        const chanSelect = elements.controlChannelSelect;
+        if (chanSelect) {
+            chanSelect.innerHTML = "";
+            if (state.channels.length === 0) {
+                const opt = document.createElement("option");
+                opt.value = "";
+                opt.textContent = "No channels available";
+                chanSelect.appendChild(opt);
+                state.selectedChannel = "";
+            } else {
+                state.channels.forEach(ch => {
+                    const opt = document.createElement("option");
+                    opt.value = ch;
+                    opt.textContent = `#${ch}`;
+                    chanSelect.appendChild(opt);
+                });
+                // Mandatory selection: default to active/saved channel or first available channel
+                if (!state.selectedChannel || !state.channels.includes(state.selectedChannel)) {
+                    state.selectedChannel = state.channels[0];
+                }
+                chanSelect.value = state.selectedChannel;
             }
+            localStorage.setItem("control_selected_channel", state.selectedChannel);
         }
-        if (elements.pref8dSpeed) {
-            elements.pref8dSpeed.value = config.effect_8d_speed !== undefined ? config.effect_8d_speed : 0.5;
-            if (elements.pref8dSpeedVal) elements.pref8dSpeedVal.textContent = `${elements.pref8dSpeed.value}s`;
-        }
-        if (elements.prefChatResponses) {
-            elements.prefChatResponses.checked = config.enable_chat_responses !== false;
-        }
-        if (elements.prefKillCounter) {
-            elements.prefKillCounter.checked = config.enable_kill_counter !== false;
-        }
-        if (elements.prefCooldown) {
-            elements.prefCooldown.value = config.same_user_timeout !== undefined ? config.same_user_timeout : 10;
-            if (elements.prefCooldownVal) elements.prefCooldownVal.textContent = `${elements.prefCooldown.value}s`;
+
+        // Sync preferences settings for selected channel
+        if (state.selectedChannel) {
+            loadChannelSettings(state.selectedChannel);
         }
 
         updateObsUrl();
     }
+
+    // Handle mandatory Channel Selector change
+    if (elements.controlChannelSelect) {
+        elements.controlChannelSelect.addEventListener("change", () => {
+            const chosen = elements.controlChannelSelect.value;
+            if (chosen) {
+                state.selectedChannel = chosen;
+                localStorage.setItem("control_selected_channel", chosen);
+                if (elements.obsChannelSelect) {
+                    elements.obsChannelSelect.value = chosen;
+                    updateObsUrl();
+                }
+                loadChannelSettings(chosen);
+                showToast(`Switched active control channel to #${chosen}`, "info");
+            }
+        });
+    }
+
+    async function loadChannelSettings(channel) {
+        if (!channel) return;
+        try {
+            const res = await apiRequest(`/api/control/settings?channel=${encodeURIComponent(channel)}`);
+            if (res && res.config) {
+                const config = res.config;
+                if (elements.prefEnable8D) {
+                    elements.prefEnable8D.checked = config.enable_8d_audio !== false;
+                    const speedGroup = document.getElementById("pref8dSpeedGroup");
+                    if (speedGroup) {
+                        speedGroup.style.opacity = elements.prefEnable8D.checked ? "1" : "0.5";
+                        speedGroup.style.pointerEvents = elements.prefEnable8D.checked ? "auto" : "none";
+                    }
+                }
+                if (elements.pref8dSpeed) {
+                    elements.pref8dSpeed.value = config.effect_8d_speed !== undefined ? config.effect_8d_speed : 0.5;
+                    if (elements.pref8dSpeedVal) elements.pref8dSpeedVal.textContent = `${elements.pref8dSpeed.value}s`;
+                }
+                if (elements.prefChatResponses) {
+                    elements.prefChatResponses.checked = config.enable_chat_responses !== false;
+                }
+                if (elements.prefKillCounter) {
+                    elements.prefKillCounter.checked = config.enable_kill_counter !== false;
+                }
+                if (elements.prefChaosMode) {
+                    elements.prefChaosMode.checked = config.enable_chaos_mode !== false;
+                    updateChaosUI(!!config.enable_chaos_mode);
+                }
+                if (elements.prefCooldown) {
+                    elements.prefCooldown.value = config.same_user_timeout !== undefined ? config.same_user_timeout : 10;
+                    if (elements.prefCooldownVal) elements.prefCooldownVal.textContent = `${elements.prefCooldown.value}s`;
+                }
+            }
+        } catch (e) {
+            console.error("Could not load channel settings", e);
+        }
+    }
+
 
     // --- Channel Connect Action ---
     elements.connectBtn.addEventListener("click", async () => {
@@ -590,18 +653,26 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
             `;
 
-            // Trigger sound in OBS overlay
+            // Trigger sound in OBS overlay / playback for selected channel
             card.querySelector(".trigger-btn").addEventListener("click", async () => {
+                if (!state.selectedChannel && state.channels.length > 0) {
+                    state.selectedChannel = state.channels[0];
+                }
+                if (!state.selectedChannel) {
+                    showToast("Please select a Twitch channel to trigger soundboard audio.", "warning");
+                    return;
+                }
                 try {
                     await apiRequest("/api/soundboard/trigger", {
                         method: "POST",
-                        body: JSON.stringify({ sound: soundName })
+                        body: JSON.stringify({ sound: soundName, channel: state.selectedChannel })
                     });
-                    showToast(`Sound effect '(${soundName})' triggered!`, "success");
+                    showToast(`Sound effect '(${soundName})' sent to #${state.selectedChannel} playback!`, "success");
                 } catch (e) {
                     showToast(`Failed to trigger sound '${soundName}'`, "error");
                 }
             });
+
 
             // Preview local audio
             card.querySelector(".preview-btn").addEventListener("click", () => {
@@ -640,6 +711,13 @@ document.addEventListener("DOMContentLoaded", () => {
             showToast("Please enter text to speak.", "warning");
             return;
         }
+        if (!state.selectedChannel && state.channels.length > 0) {
+            state.selectedChannel = state.channels[0];
+        }
+        if (!state.selectedChannel) {
+            showToast("Please select a Twitch channel to send TTS test messages.", "warning");
+            return;
+        }
 
         if (elements.test8dToggle.checked && !text.toLowerCase().includes("{8d}")) {
             text += " {8d}";
@@ -651,9 +729,9 @@ document.addEventListener("DOMContentLoaded", () => {
             elements.testSpeakBtn.disabled = true;
             await apiRequest("/api/tts/test", {
                 method: "POST",
-                body: JSON.stringify({ text, voice, user: "ControlPortal" })
+                body: JSON.stringify({ text, voice, user: "ControlPortal", channel: state.selectedChannel })
             });
-            showToast("TTS audio test job queued!", "success");
+            showToast(`TTS audio test queued for #${state.selectedChannel} playback!`, "success");
             elements.testTextInput.value = "";
         } catch (e) {
             showToast("Failed to queue TTS test", "error");
@@ -661,6 +739,7 @@ document.addEventListener("DOMContentLoaded", () => {
             elements.testSpeakBtn.disabled = false;
         }
     });
+
 
     // --- Chatter Signature Voices Manager ---
     async function loadUserVoices() {
@@ -816,6 +895,7 @@ document.addEventListener("DOMContentLoaded", () => {
     async function toggleChaosMode(enable) {
         try {
             const body = (enable !== undefined) ? { enabled: enable } : {};
+            if (state.selectedChannel) body.channel = state.selectedChannel;
             const res = await apiRequest("/api/chaos/toggle", {
                 method: "POST",
                 body: JSON.stringify(body)
@@ -830,6 +910,7 @@ document.addEventListener("DOMContentLoaded", () => {
             showToast("Failed to toggle Chaos Mode", "error");
         }
     }
+
 
     if (elements.chaosToggleBtn) {
         elements.chaosToggleBtn.addEventListener("click", () => {
@@ -928,7 +1009,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // --- Preferences Settings Handlers ---
     async function saveControlSettings() {
+        if (!state.selectedChannel && state.channels.length > 0) {
+            state.selectedChannel = state.channels[0];
+        }
+        if (!state.selectedChannel) {
+            showToast("Please select a Twitch channel first.", "warning");
+            return;
+        }
+
         const body = {
+            channel: state.selectedChannel,
             enable_8d_audio: elements.prefEnable8D ? elements.prefEnable8D.checked : true,
             effect_8d_speed: elements.pref8dSpeed ? parseFloat(elements.pref8dSpeed.value) : 0.5,
             enable_chat_responses: elements.prefChatResponses ? elements.prefChatResponses.checked : true,
@@ -942,11 +1032,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 method: "POST",
                 body: JSON.stringify(body)
             });
-            showToast("Preferences updated!", "success");
+            showToast(`Preferences updated for #${state.selectedChannel}!`, "success");
         } catch (e) {
             console.error("Failed to save settings", e);
         }
     }
+
 
     if (elements.prefEnable8D) {
         elements.prefEnable8D.addEventListener("change", () => {

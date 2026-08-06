@@ -142,6 +142,7 @@ class Config:
     effect_8d_speed: float = field(default_factory=lambda: float(os.getenv("EFFECT_8D_SPEED", "0.5")))
     enable_8d_audio: bool = field(default_factory=lambda: os.getenv("ENABLE_8D_AUDIO", "true").lower() in ("true", "1", "yes"))
     enable_chaos_mode: bool = field(default_factory=lambda: os.getenv("ENABLE_CHAOS_MODE", "false").lower() in ("true", "1", "yes"))
+    channel_settings: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     def load(self, filepath: str = CONFIG_FILE):
         """Load configuration from JSON file if present, respecting environment variable overrides."""
@@ -173,7 +174,9 @@ class Config:
                     data = json.load(f)
                 for key, val in data.items():
                     target_key = "shouting_voices" if key in ("shouting_voices", "shoutingvoices") else key
-                    if hasattr(self, target_key):
+                    if key == "channel_settings" and isinstance(val, dict):
+                        self.channel_settings = val
+                    elif hasattr(self, target_key):
                         env_var = ENV_KEYS.get(key)
                         # If environment variable is set in os.environ, preserve environment value
                         if env_var and env_var in os.environ:
@@ -197,6 +200,38 @@ class Config:
                 logger.error(f"Failed to load config from {filepath}: {e}")
         
         self._sync_auth_manager()
+
+    def get_channel_settings(self, channel: Optional[str] = None) -> Dict[str, Any]:
+        """Returns effective settings dictionary for a specific channel (merging per-channel overrides onto global defaults)."""
+        base = {
+            "enable_8d_audio": self.enable_8d_audio,
+            "effect_8d_speed": self.effect_8d_speed,
+            "enable_chat_responses": self.enable_chat_responses,
+            "enable_kill_counter": self.enable_kill_counter,
+            "enable_chaos_mode": self.enable_chaos_mode,
+            "same_user_timeout": self.same_user_timeout,
+        }
+        chan = channel.strip().lstrip("#").lower() if channel else ""
+        if chan and chan in self.channel_settings:
+            base.update(self.channel_settings[chan])
+        return base
+
+    def set_channel_settings(self, channel: Optional[str], settings: Dict[str, Any]):
+        """Sets settings for a specific channel or updates global defaults if channel is missing/empty."""
+        chan = channel.strip().lstrip("#").lower() if channel else ""
+        if not chan:
+            for k, v in settings.items():
+                if hasattr(self, k):
+                    setattr(self, k, v)
+            return
+
+        if chan not in self.channel_settings:
+            self.channel_settings[chan] = {}
+        for k, v in settings.items():
+            self.channel_settings[chan][k] = v
+            # Also sync global fallback if it's the primary channel
+            if self.channels and chan == self.channels[0] and hasattr(self, k):
+                setattr(self, k, v)
 
     def save(self, filepath: str = CONFIG_FILE):
         """Save configuration to JSON file with restrictive permissions (0600)."""
@@ -262,6 +297,8 @@ class Config:
             "obs_server_port": self.public_server_port,
             "twitch_channel": self.twitch_channel,
             "channels": self.channels,
+            "channel_settings": self.channel_settings,
+
             "user_template": self.user_template,
             "voice_presets": self.voice_presets,
             "twitch_bot_username": self.twitch_bot_username,

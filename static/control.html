@@ -85,7 +85,16 @@
             <div class="channels-chips" id="channelsChips">
                 <span class="chip chip-empty">No Twitch channel connected</span>
             </div>
+            <div class="channel-selector-box" style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+                <label for="controlChannelSelect" style="font-size: 13px; font-weight: 700; color: var(--accent-cyan); display: flex; align-items: center; gap: 4px;">
+                    <span class="material-symbols-outlined" style="font-size: 18px;">tune</span> Active Control Channel:
+                </label>
+                <select id="controlChannelSelect" class="form-select-sm" style="font-weight: 700; background: var(--bg-card); color: var(--text-bright); border: 1px solid var(--accent-cyan); padding: 6px 12px; border-radius: 6px; cursor: pointer;">
+                    <option value="">(Select Channel)</option>
+                </select>
+            </div>
         </div>
+
 
         <!-- Main Workspace Grid -->
         <main class="control-grid">

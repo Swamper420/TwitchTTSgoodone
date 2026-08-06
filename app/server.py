@@ -815,6 +815,12 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             self._send_json(200, self._get_status_dict())
             return
 
+        # Route: Control Settings (per-channel)
+        if path == "/api/control/settings":
+            req_chan = query.get("channel", [""])[0] or query.get("ch", [""])[0]
+            self._send_json(200, {"success": True, "channel": req_chan, "config": config.get_channel_settings(req_chan)})
+            return
+
         # Route: User Voices List
         if path == "/api/user_voices":
             self._send_json(200, {"user_voices": user_voice_manager.get_all()})
@@ -1187,38 +1193,46 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
 
         # Route: Save user/control settings
         if path == "/api/control/settings":
+            target_chan = sanitize_string(body.get("channel") or body.get("twitch_channel") or "", max_len=100)
+            settings_to_update = {}
             if "enable_8d_audio" in body:
-                config.enable_8d_audio = sanitize_bool(body["enable_8d_audio"], default=config.enable_8d_audio)
+                settings_to_update["enable_8d_audio"] = sanitize_bool(body["enable_8d_audio"], default=config.enable_8d_audio)
             if "effect_8d_speed" in body:
-                config.effect_8d_speed = sanitize_float(body["effect_8d_speed"], default=config.effect_8d_speed, min_val=0.01, max_val=5.0)
+                settings_to_update["effect_8d_speed"] = sanitize_float(body["effect_8d_speed"], default=config.effect_8d_speed, min_val=0.01, max_val=5.0)
             if "same_user_timeout" in body:
-                config.same_user_timeout = sanitize_float(body["same_user_timeout"], default=config.same_user_timeout, min_val=0.0, max_val=300.0)
+                settings_to_update["same_user_timeout"] = sanitize_float(body["same_user_timeout"], default=config.same_user_timeout, min_val=0.0, max_val=300.0)
             if "enable_chat_responses" in body:
-                config.enable_chat_responses = sanitize_bool(body["enable_chat_responses"], default=config.enable_chat_responses)
+                settings_to_update["enable_chat_responses"] = sanitize_bool(body["enable_chat_responses"], default=config.enable_chat_responses)
             if "enable_kill_counter" in body:
-                config.enable_kill_counter = sanitize_bool(body["enable_kill_counter"], default=config.enable_kill_counter)
+                settings_to_update["enable_kill_counter"] = sanitize_bool(body["enable_kill_counter"], default=config.enable_kill_counter)
             if "enable_chaos_mode" in body or "chaos_mode" in body:
                 raw_chaos = body.get("enable_chaos_mode", body.get("chaos_mode"))
-                config.enable_chaos_mode = sanitize_bool(raw_chaos, default=config.enable_chaos_mode)
+                settings_to_update["enable_chaos_mode"] = sanitize_bool(raw_chaos, default=config.enable_chaos_mode)
 
+            config.set_channel_settings(target_chan, settings_to_update)
             config.save()
             broadcast_event("status", self._get_status_dict())
-            broadcast_event("chaos_mode_update", {"chaos_mode": config.enable_chaos_mode})
-            self._send_json(200, {"success": True, "config": self._get_config_dict()})
+            eff_cfg = config.get_channel_settings(target_chan)
+            broadcast_event("chaos_mode_update", {"chaos_mode": eff_cfg.get("enable_chaos_mode"), "channel": target_chan})
+            self._send_json(200, {"success": True, "channel": target_chan, "config": eff_cfg})
             return
 
         # Route: Toggle Chaos Mode directly
         if path in ("/api/chaos", "/api/chaos/toggle"):
+            target_chan = sanitize_string(body.get("channel") or "", max_len=100)
+            chan_cfg = config.get_channel_settings(target_chan)
+            curr_chaos = chan_cfg.get("enable_chaos_mode", config.enable_chaos_mode)
             if "enabled" in body:
-                config.enable_chaos_mode = sanitize_bool(body["enabled"], default=config.enable_chaos_mode)
+                new_chaos = sanitize_bool(body["enabled"], default=curr_chaos)
             elif "enable_chaos_mode" in body:
-                config.enable_chaos_mode = sanitize_bool(body["enable_chaos_mode"], default=config.enable_chaos_mode)
+                new_chaos = sanitize_bool(body["enable_chaos_mode"], default=curr_chaos)
             else:
-                config.enable_chaos_mode = not config.enable_chaos_mode
+                new_chaos = not curr_chaos
+            config.set_channel_settings(target_chan, {"enable_chaos_mode": new_chaos})
             config.save()
             broadcast_event("status", self._get_status_dict())
-            broadcast_event("chaos_mode_update", {"chaos_mode": config.enable_chaos_mode})
-            self._send_json(200, {"success": True, "chaos_mode": config.enable_chaos_mode})
+            broadcast_event("chaos_mode_update", {"chaos_mode": new_chaos, "channel": target_chan})
+            self._send_json(200, {"success": True, "channel": target_chan, "chaos_mode": new_chaos})
             return
 
         # Route: Connect Twitch Channel
@@ -1258,6 +1272,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             voice = sanitize_identifier(body.get("voice"), max_len=100) if body.get("voice") is not None else None
             model = sanitize_identifier(body.get("model"), max_len=100) if body.get("model") is not None else None
             user = sanitize_string(body.get("user", "TestUser"), max_len=50, default="TestUser")
+            req_chan = sanitize_string(body.get("channel"), max_len=100) if body.get("channel") else ""
             
             if not text:
                 self._send_json(400, {"error": "Text is required"})
@@ -1265,12 +1280,13 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 
             threading.Thread(
                 target=process_incoming_text,
-                kwargs={"user": user, "raw_text": text, "override_voice": voice, "override_model": model},
+                kwargs={"user": user, "raw_text": text, "override_voice": voice, "override_model": model, "channel": req_chan},
                 daemon=True
             ).start()
             
-            self._send_json(200, {"success": True, "message": "Test TTS job queued."})
+            self._send_json(200, {"success": True, "message": "Test TTS job queued.", "channel": req_chan})
             return
+
 
         # Route: User Voices Management
         if path == "/api/user_voices/set":
@@ -1675,6 +1691,12 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             self._send_json(200, self._get_public_status_dict())
             return
 
+        # ── Control Settings (per-channel) ──
+        if path == "/api/control/settings":
+            req_chan = query.get("channel", [""])[0] or query.get("ch", [""])[0]
+            self._send_json(200, {"success": True, "channel": req_chan, "config": config.get_channel_settings(req_chan)})
+            return
+
         # ── User Voices List (public) ──
         if path == "/api/user_voices":
             self._send_json(200, {"user_voices": user_voice_manager.get_all()})
@@ -2016,37 +2038,46 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
 
         # Save user/control settings
         if path == "/api/control/settings":
+            target_chan = sanitize_string(body.get("channel") or body.get("twitch_channel") or "", max_len=100)
+            settings_to_update = {}
             if "enable_8d_audio" in body:
-                config.enable_8d_audio = sanitize_bool(body["enable_8d_audio"], default=config.enable_8d_audio)
+                settings_to_update["enable_8d_audio"] = sanitize_bool(body["enable_8d_audio"], default=config.enable_8d_audio)
             if "effect_8d_speed" in body:
-                config.effect_8d_speed = sanitize_float(body["effect_8d_speed"], default=config.effect_8d_speed, min_val=0.01, max_val=5.0)
+                settings_to_update["effect_8d_speed"] = sanitize_float(body["effect_8d_speed"], default=config.effect_8d_speed, min_val=0.01, max_val=5.0)
             if "same_user_timeout" in body:
-                config.same_user_timeout = sanitize_float(body["same_user_timeout"], default=config.same_user_timeout, min_val=0.0, max_val=300.0)
+                settings_to_update["same_user_timeout"] = sanitize_float(body["same_user_timeout"], default=config.same_user_timeout, min_val=0.0, max_val=300.0)
             if "enable_chat_responses" in body:
-                config.enable_chat_responses = sanitize_bool(body["enable_chat_responses"], default=config.enable_chat_responses)
+                settings_to_update["enable_chat_responses"] = sanitize_bool(body["enable_chat_responses"], default=config.enable_chat_responses)
             if "enable_kill_counter" in body:
-                config.enable_kill_counter = sanitize_bool(body["enable_kill_counter"], default=config.enable_kill_counter)
+                settings_to_update["enable_kill_counter"] = sanitize_bool(body["enable_kill_counter"], default=config.enable_kill_counter)
             if "enable_chaos_mode" in body or "chaos_mode" in body:
                 raw_chaos = body.get("enable_chaos_mode", body.get("chaos_mode"))
-                config.enable_chaos_mode = sanitize_bool(raw_chaos, default=config.enable_chaos_mode)
+                settings_to_update["enable_chaos_mode"] = sanitize_bool(raw_chaos, default=config.enable_chaos_mode)
+
+            config.set_channel_settings(target_chan, settings_to_update)
             config.save()
             broadcast_event("status", self._get_public_status_dict())
-            broadcast_event("chaos_mode_update", {"chaos_mode": config.enable_chaos_mode})
-            self._send_json(200, {"success": True, "config": config.to_masked_dict()})
+            eff_cfg = config.get_channel_settings(target_chan)
+            broadcast_event("chaos_mode_update", {"chaos_mode": eff_cfg.get("enable_chaos_mode"), "channel": target_chan})
+            self._send_json(200, {"success": True, "channel": target_chan, "config": eff_cfg})
             return
 
         # Toggle Chaos Mode directly
         if path in ("/api/chaos", "/api/chaos/toggle"):
+            target_chan = sanitize_string(body.get("channel") or "", max_len=100)
+            chan_cfg = config.get_channel_settings(target_chan)
+            curr_chaos = chan_cfg.get("enable_chaos_mode", config.enable_chaos_mode)
             if "enabled" in body:
-                config.enable_chaos_mode = sanitize_bool(body["enabled"], default=config.enable_chaos_mode)
+                new_chaos = sanitize_bool(body["enabled"], default=curr_chaos)
             elif "enable_chaos_mode" in body:
-                config.enable_chaos_mode = sanitize_bool(body["enable_chaos_mode"], default=config.enable_chaos_mode)
+                new_chaos = sanitize_bool(body["enable_chaos_mode"], default=curr_chaos)
             else:
-                config.enable_chaos_mode = not config.enable_chaos_mode
+                new_chaos = not curr_chaos
+            config.set_channel_settings(target_chan, {"enable_chaos_mode": new_chaos})
             config.save()
             broadcast_event("status", self._get_public_status_dict())
-            broadcast_event("chaos_mode_update", {"chaos_mode": config.enable_chaos_mode})
-            self._send_json(200, {"success": True, "chaos_mode": config.enable_chaos_mode})
+            broadcast_event("chaos_mode_update", {"chaos_mode": new_chaos, "channel": target_chan})
+            self._send_json(200, {"success": True, "channel": target_chan, "chaos_mode": new_chaos})
             return
 
         # Connect Twitch Channel
@@ -2086,16 +2117,18 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             voice = sanitize_identifier(body.get("voice"), max_len=100) if body.get("voice") is not None else None
             model = sanitize_identifier(body.get("model"), max_len=100) if body.get("model") is not None else None
             user = sanitize_string(body.get("user", "TestUser"), max_len=50, default="TestUser")
+            req_chan = sanitize_string(body.get("channel"), max_len=100) if body.get("channel") else ""
             if not text:
                 self._send_json(400, {"error": "Text is required"})
                 return
             threading.Thread(
                 target=process_incoming_text,
-                kwargs={"user": user, "raw_text": text, "override_voice": voice, "override_model": model},
+                kwargs={"user": user, "raw_text": text, "override_voice": voice, "override_model": model, "channel": req_chan},
                 daemon=True
             ).start()
-            self._send_json(200, {"success": True, "message": "Test TTS job queued."})
+            self._send_json(200, {"success": True, "message": "Test TTS job queued.", "channel": req_chan})
             return
+
 
         # User Voices Management
         if path == "/api/user_voices/set":
