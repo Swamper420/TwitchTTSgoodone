@@ -304,7 +304,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (chunkChan !== filterChannel) return;
                 }
 
-                if (item.is_soundboard) {
+                if (item.is_soundboard || item.is_death_counter || item.instant_play) {
                     playInstantSoundboardPlayer(item.url, item);
                     return;
                 }

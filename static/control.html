@@ -181,6 +181,27 @@
                                 </button>
                             </div>
                         </div>
+
+                        <!-- Generated LUA Script Card -->
+                        <div class="generated-url-card lua-generator-card" style="margin-top: 14px;">
+                            <div class="url-header">
+                                <span>OBS DARKCOUNTER LUA SCRIPT GENERATOR</span>
+                                <span class="width-hint">Channel-Isolated Script</span>
+                            </div>
+                            <div class="url-input-group">
+                                <input type="text" id="luaGeneratedUrl" readonly value="http://localhost:5000/darkcounter_obs.lua" />
+                                <a href="/darkcounter_obs.lua" download="darkcounter_obs.lua" id="downloadLuaBtn" class="btn btn-accent" style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+                                    <span class="material-symbols-outlined">download</span> Download .lua
+                                </a>
+                                <button type="button" id="copyLuaUrlBtn" class="btn btn-secondary" title="Copy Lua Script Link">
+                                    <span class="material-symbols-outlined">content_copy</span>
+                                </button>
+                            </div>
+                            <div class="lua-hint-text" style="font-size: 11px; color: var(--text-muted); margin-top: 6px; display: flex; align-items: center; gap: 4px;">
+                                <span class="material-symbols-outlined" style="font-size:14px; color:var(--accent-cyan);">info</span>
+                                <span id="luaChannelHint">Selected channel: <strong>All Channels</strong>. Load into OBS Studio (Tools → Scripts). Deathcounter sounds will play over top of everything else as soon as counter goes up.</span>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Live Stream Visualizer Frame -->

@@ -6,6 +6,7 @@ local obs = obslua
 
 -- Script Settings & State
 local server_url = "http://localhost:5000"
+local channel = ""
 local counter_file = "values/deaths"
 local poll_interval = 1.0
 local api_token = ""
@@ -39,7 +40,12 @@ local function notify_server(count, increment)
     if not server_url or server_url == "" then return end
     
     local endpoint = string.gsub(server_url, "/+$", "") .. "/api/counter"
-    local payload = string.format('{"count": %d, "increment": %d, "trigger_tts": true}', count, increment)
+    local payload
+    if channel and channel ~= "" then
+        payload = string.format('{"count": %d, "increment": %d, "trigger_tts": true, "channel": "%s"}', count, increment, channel)
+    else
+        payload = string.format('{"count": %d, "increment": %d, "trigger_tts": true}', count, increment)
+    end
 
     local is_windows = package.config:sub(1,1) == '\\'
     local cmd
@@ -84,6 +90,7 @@ function script_properties()
     local props = obs.obs_properties_create()
     obs.obs_properties_add_bool(props, "enable_script", "Enable File Watcher")
     obs.obs_properties_add_text(props, "server_url", "TwitchTTS Server URL", obs.OBS_TEXT_DEFAULT)
+    obs.obs_properties_add_text(props, "channel", "Target Channel (Optional)", obs.OBS_TEXT_DEFAULT)
     obs.obs_properties_add_path(props, "counter_file", "Counter File Path (e.g. values/deaths)", obs.OBS_PATH_FILE, "Text Files (*.txt);;All Files (*)", nil)
     obs.obs_properties_add_float(props, "poll_interval", "Poll Interval (Seconds)", 0.2, 10.0, 0.5)
     obs.obs_properties_add_text(props, "api_token", "API Token (Optional)", obs.OBS_TEXT_PASSWORD)
@@ -101,6 +108,7 @@ end
 function script_defaults(settings)
     obs.obs_data_set_default_bool(settings, "enable_script", true)
     obs.obs_data_set_default_string(settings, "server_url", "http://localhost:5000")
+    obs.obs_data_set_default_string(settings, "channel", "")
     obs.obs_data_set_default_string(settings, "counter_file", "values/deaths")
     obs.obs_data_set_default_double(settings, "poll_interval", 1.0)
     obs.obs_data_set_default_string(settings, "api_token", "")
@@ -110,6 +118,7 @@ end
 function script_update(settings)
     enable_script = obs.obs_data_get_bool(settings, "enable_script")
     server_url = obs.obs_data_get_string(settings, "server_url")
+    channel = obs.obs_data_get_string(settings, "channel")
     counter_file = obs.obs_data_get_string(settings, "counter_file")
     poll_interval = obs.obs_data_get_double(settings, "poll_interval")
     api_token = obs.obs_data_get_string(settings, "api_token")

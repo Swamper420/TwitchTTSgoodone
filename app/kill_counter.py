@@ -44,7 +44,7 @@ class KillCounterMonitor:
             self._thread.join(timeout=2.0)
             logger.info("KillCounterMonitor thread stopped.")
 
-    def set_count(self, count: int, trigger_tts: bool = False) -> Dict[str, Any]:
+    def set_count(self, count: int, trigger_tts: bool = False, channel: Optional[str] = None) -> Dict[str, Any]:
         """Manually set or update counter value."""
         with self._lock:
             old_count = self.current_count
@@ -60,7 +60,7 @@ class KillCounterMonitor:
         }
 
         if trigger_tts or delta > 0:
-            verse_data = self.trigger_bible_tts(count=self.current_count)
+            verse_data = self.trigger_bible_tts(count=self.current_count, channel=channel)
             result["tts_triggered"] = True
             result["verse"] = verse_data
         else:
@@ -68,13 +68,13 @@ class KillCounterMonitor:
 
         return result
 
-    def increment(self, amount: int = 1) -> Dict[str, Any]:
+    def increment(self, amount: int = 1, channel: Optional[str] = None) -> Dict[str, Any]:
         """Increment the kill/death count by amount."""
         with self._lock:
             self.current_count += amount
             new_count = self.current_count
 
-        verse_data = self.trigger_bible_tts(count=new_count)
+        verse_data = self.trigger_bible_tts(count=new_count, channel=channel)
         return {
             "success": True,
             "count": new_count,
@@ -83,7 +83,7 @@ class KillCounterMonitor:
             "verse": verse_data
         }
 
-    def trigger_bible_tts(self, count: Optional[int] = None) -> Dict[str, str]:
+    def trigger_bible_tts(self, count: Optional[int] = None, channel: Optional[str] = None) -> Dict[str, str]:
         """
         Fetch a random Bible verse and pass it to TTS playback.
         """
@@ -118,7 +118,9 @@ class KillCounterMonitor:
                     user="Bible",
                     raw_text=formatted,
                     override_voice=voice,
-                    override_model=None
+                    override_model=None,
+                    channel=channel or "",
+                    is_death_counter=True
                 )
             except Exception as e:
                 logger.error(f"Failed to process Bible TTS message: {e}")

@@ -228,7 +228,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ----------------------------------------------------
 
     function enqueueAudioChunk(chunk) {
-        if (chunk && chunk.is_soundboard) {
+        if (chunk && (chunk.is_soundboard || chunk.is_death_counter || chunk.instant_play)) {
             playInstantSoundboardApp(chunk);
             return;
         }

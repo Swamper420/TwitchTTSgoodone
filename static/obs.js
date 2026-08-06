@@ -315,7 +315,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
 
-                if (item.is_soundboard) {
+                if (item.is_soundboard || item.is_death_counter || item.instant_play) {
                     playInstantSoundboard(item.url, item);
                     return;
                 }

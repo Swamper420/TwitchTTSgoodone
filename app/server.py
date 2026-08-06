@@ -377,7 +377,56 @@ def apply_8d_audio_effect(audio_bytes: bytes, audio_format: str = "wav", speed: 
             except Exception:
                 pass
 
-def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str] = None, override_model: Optional[str] = None, channel: str = ""):
+def serve_darkcounter_lua(handler, query: dict):
+    """Serve darkcounter_obs.lua script with dynamic query parameter customization."""
+    lua_path = os.path.join(BASE_DIR, "darkcounter_obs.lua")
+    if not os.path.exists(lua_path):
+        handler.send_error(404, "Script not found")
+        return
+    
+    try:
+        with open(lua_path, "r", encoding="utf-8") as f:
+            lua_content = f.read()
+
+        req_chan = query.get("channel", [""])[0].strip().lstrip('#').lower() if query.get("channel") else ""
+        req_url = query.get("server_url", [""])[0].strip() if query.get("server_url") else ""
+        req_token = query.get("api_token", [""])[0].strip() if query.get("api_token") else ""
+        req_file = query.get("counter_file", [""])[0].strip() if query.get("counter_file") else ""
+
+        if not req_url and handler.headers.get("Host"):
+            req_url = f"http://{handler.headers.get('Host')}"
+
+        if req_chan:
+            lua_content = re.sub(r'local channel = "[^"]*"', f'local channel = "{req_chan}"', lua_content)
+            lua_content = re.sub(r'obs_data_set_default_string\(settings, "channel", "[^"]*"\)', f'obs_data_set_default_string(settings, "channel", "{req_chan}")', lua_content)
+
+        if req_url:
+            lua_content = re.sub(r'local server_url = "[^"]*"', f'local server_url = "{req_url}"', lua_content)
+            lua_content = re.sub(r'obs_data_set_default_string\(settings, "server_url", "[^"]*"\)', f'obs_data_set_default_string(settings, "server_url", "{req_url}")', lua_content)
+
+        if req_token:
+            lua_content = re.sub(r'local api_token = "[^"]*"', f'local api_token = "{req_token}"', lua_content)
+            lua_content = re.sub(r'obs_data_set_default_string\(settings, "api_token", "[^"]*"\)', f'obs_data_set_default_string(settings, "api_token", "{req_token}")', lua_content)
+
+        if req_file:
+            lua_content = re.sub(r'local counter_file = "[^"]*"', f'local counter_file = "{req_file}"', lua_content)
+            lua_content = re.sub(r'obs_data_set_default_string\(settings, "counter_file", "[^"]*"\)', f'obs_data_set_default_string(settings, "counter_file", "{req_file}")', lua_content)
+
+        encoded = lua_content.encode("utf-8")
+        handler.send_response(200)
+        handler.send_header("Content-Type", "text/x-lua; charset=utf-8")
+        handler.send_header("Content-Disposition", 'attachment; filename="darkcounter_obs.lua"')
+        handler.send_header("Content-Length", str(len(encoded)))
+        if hasattr(handler, "_send_cors_headers"):
+            handler._send_cors_headers()
+        handler.end_headers()
+        handler.wfile.write(encoded)
+    except Exception as e:
+        logger.error(f"Error serving darkcounter_obs.lua: {e}")
+        handler.send_error(500, "Internal Server Error")
+
+
+def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str] = None, override_model: Optional[str] = None, channel: str = "", is_death_counter: bool = False):
     """
     Process incoming chat or test message:
     1. Intercept chat commands (!help, !tts, !botinfo, !voices, !myvoice, !skip, !clear).
@@ -649,6 +698,7 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                 "text": chunk.text,
                 "voice": voice_used,
                 "is_soundboard": chunk.is_soundboard,
+                "is_death_counter": is_death_counter,
                 "sound_name": chunk.sound_name,
                 "has_fart_bg": has_fart_bg,
                 "fart_bg_url": "/api/soundboard/fartbackground" if has_fart_bg else None,
@@ -945,13 +995,8 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/darkcounter_obs.lua":
-            lua_path = os.path.join(BASE_DIR, "darkcounter_obs.lua")
-            if os.path.exists(lua_path):
-                self._serve_static_file(lua_path, "text/plain; charset=utf-8")
-                return
-            else:
-                self.send_error(404, "Script not found")
-                return
+            serve_darkcounter_lua(self, query)
+            return
             
         rel_path = path.lstrip('/')
         safe_path = os.path.abspath(os.path.join(STATIC_DIR, rel_path))
@@ -1039,18 +1084,20 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 if not self._check_auth():
                     return
 
+            channel = sanitize_identifier(body.get("channel", ""), max_len=100) if body.get("channel") else ""
+
             if "increment" in body or "delta" in body:
                 amt = sanitize_int(body.get("increment", body.get("delta", 1)), default=1, min_val=-1000, max_val=1000)
-                res = kill_counter_monitor.increment(amt)
+                res = kill_counter_monitor.increment(amt, channel=channel)
                 self._send_json(200, res)
                 return
             if "count" in body or "set" in body:
                 cnt = sanitize_int(body.get("count", body.get("set", 0)), default=0, min_val=0, max_val=1000000)
                 trigger = sanitize_bool(body.get("trigger_tts", False), default=False)
-                res = kill_counter_monitor.set_count(cnt, trigger_tts=trigger)
+                res = kill_counter_monitor.set_count(cnt, trigger_tts=trigger, channel=channel)
                 self._send_json(200, res)
                 return
-            verse = kill_counter_monitor.trigger_bible_tts()
+            verse = kill_counter_monitor.trigger_bible_tts(channel=channel)
             self._send_json(200, {"success": True, "count": kill_counter_monitor.current_count, "verse": verse})
             return
 
@@ -1069,7 +1116,8 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 if not self._check_auth():
                     return
 
-            verse = kill_counter_monitor.trigger_bible_tts()
+            channel = sanitize_identifier(body.get("channel", ""), max_len=100) if body.get("channel") else ""
+            verse = kill_counter_monitor.trigger_bible_tts(channel=channel)
             self._send_json(200, {"success": True, "count": kill_counter_monitor.current_count, "verse": verse})
             return
 
@@ -1916,18 +1964,19 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             elif dashboard_auth_manager.is_auth_required():
                 if not self._check_auth():
                     return
+            channel = sanitize_identifier(body.get("channel", ""), max_len=100) if body.get("channel") else ""
             if "increment" in body or "delta" in body:
                 amt = sanitize_int(body.get("increment", body.get("delta", 1)), default=1, min_val=-1000, max_val=1000)
-                res = kill_counter_monitor.increment(amt)
+                res = kill_counter_monitor.increment(amt, channel=channel)
                 self._send_json(200, res)
                 return
             if "count" in body or "set" in body:
                 cnt = sanitize_int(body.get("count", body.get("set", 0)), default=0, min_val=0, max_val=1000000)
                 trigger = sanitize_bool(body.get("trigger_tts", False), default=False)
-                res = kill_counter_monitor.set_count(cnt, trigger_tts=trigger)
+                res = kill_counter_monitor.set_count(cnt, trigger_tts=trigger, channel=channel)
                 self._send_json(200, res)
                 return
-            verse = kill_counter_monitor.trigger_bible_tts()
+            verse = kill_counter_monitor.trigger_bible_tts(channel=channel)
             self._send_json(200, {"success": True, "count": kill_counter_monitor.current_count, "verse": verse})
             return
 
@@ -1944,7 +1993,8 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             elif dashboard_auth_manager.is_auth_required():
                 if not self._check_auth():
                     return
-            verse = kill_counter_monitor.trigger_bible_tts()
+            channel = sanitize_identifier(body.get("channel", ""), max_len=100) if body.get("channel") else ""
+            verse = kill_counter_monitor.trigger_bible_tts(channel=channel)
             self._send_json(200, {"success": True, "count": kill_counter_monitor.current_count, "verse": verse})
             return
 
@@ -2272,13 +2322,10 @@ class OBSRequestHandler(BaseHTTPRequestHandler):
             self._serve_file(safe_path, "application/javascript")
             return
         if path == "/darkcounter_obs.lua":
-            lua_path = os.path.join(BASE_DIR, "darkcounter_obs.lua")
-            if os.path.exists(lua_path):
-                self._serve_file(lua_path, "text/plain; charset=utf-8")
-                return
-            else:
-                self.send_error(404, "Script not found")
-                return
+            parsed_obs = urllib.parse.urlparse(self.path)
+            query_obs = urllib.parse.parse_qs(parsed_obs.query)
+            serve_darkcounter_lua(self, query_obs)
+            return
 
         if path.startswith("/api/audio/"):
             chunk_id = path[len("/api/audio/"):]

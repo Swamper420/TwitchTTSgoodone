@@ -63,6 +63,12 @@ document.addEventListener("DOMContentLoaded", () => {
         launchObsBtn: document.getElementById("launchObsBtn"),
         simulatedOverlay: document.getElementById("simulatedOverlay"),
         simCardText: document.getElementById("simCardText"),
+
+        // LUA Generator
+        luaGeneratedUrl: document.getElementById("luaGeneratedUrl"),
+        downloadLuaBtn: document.getElementById("downloadLuaBtn"),
+        copyLuaUrlBtn: document.getElementById("copyLuaUrlBtn"),
+        luaChannelHint: document.getElementById("luaChannelHint"),
         
         // Soundboard
         soundboardMasterToggle: document.getElementById("soundboardMasterToggle"),
@@ -578,6 +584,48 @@ document.addEventListener("DOMContentLoaded", () => {
         const fullUrl = `${baseUrl}?${params.toString()}`;
         elements.obsGeneratedUrl.value = fullUrl;
 
+        // Update LUA script download URL & hint
+        let luaBaseUrl;
+        const mainPort = state.serverPort || 5000;
+        if (domain) {
+            let cleanDomain = domain.replace(/\/+$/, '');
+            if (cleanDomain.startsWith('http://') || cleanDomain.startsWith('https://')) {
+                luaBaseUrl = `${cleanDomain}/darkcounter_obs.lua`;
+            } else {
+                luaBaseUrl = `https://${cleanDomain}/darkcounter_obs.lua`;
+            }
+        } else {
+            const host = state.serverHost || window.location.hostname || "localhost";
+            const protocol = window.location.protocol || "http:";
+            if (window.location.port) {
+                luaBaseUrl = `${protocol}//${window.location.host}/darkcounter_obs.lua`;
+            } else {
+                luaBaseUrl = `${protocol}//${host}:${mainPort}/darkcounter_obs.lua`;
+            }
+        }
+
+        const luaParams = new URLSearchParams();
+        const selChan = elements.obsChannelSelect.value;
+        if (selChan) {
+            luaParams.set("channel", selChan);
+        }
+
+        const fullLuaUrl = luaParams.toString() ? `${luaBaseUrl}?${luaParams.toString()}` : luaBaseUrl;
+
+        if (elements.luaGeneratedUrl) {
+            elements.luaGeneratedUrl.value = fullLuaUrl;
+        }
+        if (elements.downloadLuaBtn) {
+            elements.downloadLuaBtn.href = fullLuaUrl;
+        }
+        if (elements.luaChannelHint) {
+            if (selChan) {
+                elements.luaChannelHint.innerHTML = `Selected target channel: <strong style="color:var(--accent-cyan);">${escapeHtml(selChan)}</strong>. Load script into OBS Studio (Tools → Scripts). Deathcounter sounds will only play for channel <strong>${escapeHtml(selChan)}</strong> over everything else.`;
+            } else {
+                elements.luaChannelHint.innerHTML = `Selected channel: <strong>All Channels</strong>. Load script into OBS Studio (Tools → Scripts). Deathcounter sounds will play over top of everything else as soon as counter goes up.`;
+            }
+        }
+
         // Live preview simulation frame update
         elements.simulatedOverlay.className = `simulated-overlay-card pos-${selectedPosition}`;
         elements.simulatedOverlay.style.fontSize = `${elements.obsFontSize.value}px`;
@@ -592,6 +640,20 @@ document.addEventListener("DOMContentLoaded", () => {
             showToast("OBS Browser Source URL copied!", "success");
         });
     });
+
+    if (elements.copyLuaUrlBtn) {
+        elements.copyLuaUrlBtn.addEventListener("click", () => {
+            if (elements.luaGeneratedUrl) {
+                navigator.clipboard.writeText(elements.luaGeneratedUrl.value).then(() => {
+                    showToast("OBS Lua Script Download URL copied to clipboard!", "success");
+                }).catch(() => {
+                    elements.luaGeneratedUrl.select();
+                    document.execCommand("copy");
+                    showToast("OBS Lua Script URL copied!", "success");
+                });
+            }
+        });
+    }
 
     elements.launchObsBtn.addEventListener("click", () => {
         window.open(elements.obsGeneratedUrl.value, "_blank");
@@ -833,9 +895,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     elements.countIncBtn.addEventListener("click", async () => {
         try {
+            const chan = (elements.obsChannelSelect && elements.obsChannelSelect.value) || state.selectedChannel || "";
             const res = await apiRequest("/api/counter", {
                 method: "POST",
-                body: JSON.stringify({ increment: 1 })
+                body: JSON.stringify({ increment: 1, channel: chan })
             });
             state.counter = res.count;
             elements.counterNumber.textContent = state.counter;
@@ -845,9 +908,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     elements.countDecBtn.addEventListener("click", async () => {
         try {
+            const chan = (elements.obsChannelSelect && elements.obsChannelSelect.value) || state.selectedChannel || "";
             const res = await apiRequest("/api/counter", {
                 method: "POST",
-                body: JSON.stringify({ increment: -1 })
+                body: JSON.stringify({ increment: -1, channel: chan })
             });
             state.counter = res.count;
             elements.counterNumber.textContent = state.counter;
@@ -870,7 +934,11 @@ document.addEventListener("DOMContentLoaded", () => {
     elements.testBibleVerseBtn.addEventListener("click", async () => {
         try {
             showToast("Fetching Bible verse TTS...", "info");
-            const res = await apiRequest("/api/counter/test", { method: "POST" });
+            const chan = (elements.obsChannelSelect && elements.obsChannelSelect.value) || state.selectedChannel || "";
+            const res = await apiRequest("/api/counter/test", {
+                method: "POST",
+                body: JSON.stringify({ channel: chan })
+            });
             showToast("Bible verse TTS triggered!", "success");
         } catch (e) {}
     });
