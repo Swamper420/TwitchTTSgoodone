@@ -276,22 +276,32 @@ document.addEventListener('DOMContentLoaded', () => {
             if (audioPlayer && audioPlayer.volume !== undefined) {
                 sbAudio.volume = audioPlayer.volume;
             }
-            sbAudio.play().catch((err) => console.warn('OBS instant soundboard play note:', err));
 
             if (obsSpeaker && obsText && overlayCard) {
                 obsSpeaker.textContent = `🔊 ${item.user || item.speaker || 'Soundboard'}`;
                 obsText.textContent = item.text || `(${item.sound_name || 'Sound'})`;
                 overlayCard.classList.remove('idle');
                 overlayCard.classList.add('speaking');
-
-                setTimeout(() => {
-                    if (!isPlaying) {
-                        overlayCard.classList.remove('speaking');
-                        if (obsAutohide) overlayCard.classList.add('idle');
-                    }
-                }, 3000);
             }
+
+            function onSoundboardEnd() {
+                if (!isPlaying && !isPreviewMode) {
+                    if (overlayCard) {
+                        overlayCard.classList.remove('speaking');
+                        overlayCard.classList.add('idle');
+                    }
+                }
+            }
+
+            sbAudio.addEventListener('ended', onSoundboardEnd);
+            sbAudio.addEventListener('error', onSoundboardEnd);
+
+            sbAudio.play().catch((err) => {
+                console.warn('OBS instant soundboard play note:', err);
+                onSoundboardEnd();
+            });
         }
+
 
         evtSource.addEventListener('audio_chunk', (e) => {
             try {
