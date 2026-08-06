@@ -454,6 +454,35 @@
                         <span id="lastBibleVerseText" style="font-style: italic; margin-left: 0.4rem;">None yet</span>
                     </div>
 
+                    <!-- DarkCounter OBS Script Generator & Download Banner -->
+                    <div class="obs-links-card" style="margin-top: 1.2rem; background: var(--bg-card-secondary, #1a1e26); padding: 14px; border-radius: 8px; border: 1px solid var(--border-color, #2d3748);">
+                        <div style="font-weight: 700; font-size: 0.95rem; color: var(--accent-cyan, #00f2fe); margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                            <span>🎮 OBS Studio Script Integration (Remote Gaming PC)</span>
+                            <a href="/darkcounter_obs.lua" download="darkcounter_obs.lua" class="btn btn-small btn-accent" style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+                                <span>📥 Download darkcounter_obs.lua</span>
+                            </a>
+                        </div>
+                        <p style="color: var(--text-muted, #a0aec0); font-size: 0.85rem; margin-bottom: 12px; line-height: 1.4;">
+                            Load this script into <strong>OBS Studio → Tools → Scripts</strong> on your streamer/gaming PC to automatically poll your local counter file (e.g. <code>values/deaths</code>) without running terminal commands!
+                        </p>
+                        <div class="obs-links-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px;">
+                            <div class="obs-link-box" style="background: var(--bg-input, #0d1117); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #2d3748);">
+                                <div style="font-size: 11px; color: var(--text-muted, #a0aec0); font-weight: 600; margin-bottom: 4px;">OBS SCRIPT SERVER URL</div>
+                                <div style="display: flex; gap: 6px;">
+                                    <input type="text" id="obsScriptServerUrl" readonly value="http://localhost:5000" style="flex: 1; background: #000; border: 1px solid var(--border-color, #2d3748); color: var(--accent-cyan, #00f2fe); padding: 5px 8px; border-radius: 4px; font-family: monospace; font-size: 12px;" />
+                                    <button type="button" class="btn btn-small btn-secondary copy-link-btn" data-target="obsScriptServerUrl">📋 Copy</button>
+                                </div>
+                            </div>
+                            <div class="obs-link-box" style="background: var(--bg-input, #0d1117); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color, #2d3748);">
+                                <div style="font-size: 11px; color: var(--text-muted, #a0aec0); font-weight: 600; margin-bottom: 4px;">COUNTER API TOKEN (IF AUTH ENABLED)</div>
+                                <div style="display: flex; gap: 6px;">
+                                    <input type="text" id="obsScriptApiToken" readonly value="" placeholder="No Token Set" style="flex: 1; background: #000; border: 1px solid var(--border-color, #2d3748); color: var(--accent-cyan, #00f2fe); padding: 5px 8px; border-radius: 4px; font-family: monospace; font-size: 12px;" />
+                                    <button type="button" class="btn btn-small btn-secondary copy-link-btn" data-target="obsScriptApiToken">📋 Copy</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="settings-actions">
                         <button id="saveSettingsBtn" class="btn btn-secondary">Save Settings</button>
                         <button id="sendHelpfulInfoBtn" class="btn btn-primary" title="Post helpful TTS info tip directly to Twitch chat now">📢 Send Helpful Info to Chat Now</button>

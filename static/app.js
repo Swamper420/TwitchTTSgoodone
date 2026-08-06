@@ -797,6 +797,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const obsLinkAll = document.getElementById('obsLinkAll');
         if (obsLinkAll) obsLinkAll.value = obsBaseUrl;
 
+        const obsScriptServerUrl = document.getElementById('obsScriptServerUrl');
+        if (obsScriptServerUrl) {
+            obsScriptServerUrl.value = window.location.origin;
+        }
+
+        const obsScriptApiToken = document.getElementById('obsScriptApiToken');
+        if (obsScriptApiToken && data.config) {
+            if (data.config.kill_counter_api_token) {
+                obsScriptApiToken.value = data.config.kill_counter_api_token;
+            } else {
+                obsScriptApiToken.value = '';
+                obsScriptApiToken.placeholder = 'No Token Set (Auth Disabled)';
+            }
+        }
+
         const chan1Label = document.getElementById('chan1Label');
         const chan2Label = document.getElementById('chan2Label');
         const obsLinkChan1 = document.getElementById('obsLinkChan1');

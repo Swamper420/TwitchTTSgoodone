@@ -943,6 +943,15 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             file_path = os.path.join(STATIC_DIR, "obs.html")
             self._serve_static_file(file_path, "text/html; charset=utf-8")
             return
+
+        if path == "/darkcounter_obs.lua":
+            lua_path = os.path.join(BASE_DIR, "darkcounter_obs.lua")
+            if os.path.exists(lua_path):
+                self._serve_static_file(lua_path, "text/plain; charset=utf-8")
+                return
+            else:
+                self.send_error(404, "Script not found")
+                return
             
         rel_path = path.lstrip('/')
         safe_path = os.path.abspath(os.path.join(STATIC_DIR, rel_path))
@@ -1534,6 +1543,7 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
         "control.html", "control.css", "control.js",
         "player.html", "player.css", "player.js",
         "obs.html", "obs.css", "obs.js",
+        "darkcounter_obs.lua",
     }
 
     def log_message(self, format, *args):
@@ -2261,6 +2271,14 @@ class OBSRequestHandler(BaseHTTPRequestHandler):
             safe_path = os.path.join(STATIC_DIR, "obs.js")
             self._serve_file(safe_path, "application/javascript")
             return
+        if path == "/darkcounter_obs.lua":
+            lua_path = os.path.join(BASE_DIR, "darkcounter_obs.lua")
+            if os.path.exists(lua_path):
+                self._serve_file(lua_path, "text/plain; charset=utf-8")
+                return
+            else:
+                self.send_error(404, "Script not found")
+                return
 
         if path.startswith("/api/audio/"):
             chunk_id = path[len("/api/audio/"):]
