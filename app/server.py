@@ -1848,6 +1848,11 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             self._serve_static_file(file_path, "text/html; charset=utf-8", allow_framing=True)
             return
 
+        # DarkCounter LUA Script Download
+        if path == "/darkcounter_obs.lua":
+            serve_darkcounter_lua(self, query)
+            return
+
         # Serve whitelisted static assets (CSS, JS) for public pages only
         rel_path = path.lstrip('/')
         if rel_path in self._ALLOWED_STATIC_FILES:
