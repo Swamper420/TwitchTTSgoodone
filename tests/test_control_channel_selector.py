@@ -5,6 +5,7 @@ import threading
 import time
 import urllib.request
 import urllib.parse
+import urllib.error
 import unittest
 from http.server import HTTPServer
 from unittest.mock import patch
@@ -135,6 +136,25 @@ class TestControlChannelSelector(unittest.TestCase):
             data = json.loads(resp.read().decode("utf-8"))
             self.assertTrue(data["success"])
             self.assertEqual(data["channel"], "channel1")
+
+    def test_soundboard_trigger_requires_auth_when_protected(self):
+        """Verify that /api/soundboard/trigger returns 401 when password protection is active."""
+        from app.auth import hash_password
+        pwd = hash_password("ProtectedSecret123")
+        dashboard_auth_manager.update_passwords(user_password=pwd)
+
+        try:
+            url_sb = f"{self.base_url}/api/soundboard/trigger"
+            req_unauth = urllib.request.Request(
+                url_sb,
+                data=json.dumps({"sound": "bruh"}).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                urllib.request.urlopen(req_unauth)
+            self.assertEqual(cm.exception.code, 401)
+        finally:
+            dashboard_auth_manager.update_passwords("", "")
 
 
 if __name__ == "__main__":

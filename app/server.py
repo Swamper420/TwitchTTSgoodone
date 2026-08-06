@@ -1000,53 +1000,6 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             self._send_json(200, res)
             return
 
-        # Route: Trigger Soundboard Effect (Public/End-user)
-        if path in ("/api/soundboard/trigger", "/api/soundboard/play"):
-            if not soundboard_limiter.check_and_record(self._get_client_ip()):
-                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
-                return
-            if not config.enable_soundboard:
-                self._send_json(400, {"error": "Soundboard is currently disabled"})
-                return
-            raw_sound = body.get("sound") or body.get("sound_name") or body.get("name") or ""
-            clean_sound = sanitize_identifier(raw_sound, max_len=100)
-            if not clean_sound:
-                self._send_json(400, {"error": "Missing or invalid 'sound' parameter"})
-                return
-            sound_match = soundboard_manager.find_sound(clean_sound)
-            if not sound_match:
-                self._send_json(404, {"error": f"Soundboard effect '{clean_sound}' not found"})
-                return
-            matched_name, file_path = sound_match
-            req_chan = sanitize_string(body.get("channel") or config.twitch_channel, max_len=100)
-            user = sanitize_string(body.get("user", "Control Portal"), max_len=50, default="Control Portal")
-            
-            # Broadcast soundboard play event via SSE
-            sb_chunk = {
-                "id": f"sb_{int(time.time()*1000)}",
-                "url": f"/api/soundboard/{matched_name}",
-                "speaker": user,
-                "text": f"({matched_name})",
-                "voice": "Soundboard",
-                "channel": req_chan,
-                "timestamp": time.time(),
-                "is_soundboard": True
-            }
-            broadcast_event("audio_chunk", sb_chunk)
-            broadcast_event("soundboard_trigger", {
-                "sound_name": matched_name,
-                "file_path": f"/api/soundboard/{matched_name}",
-                "user": user,
-                "channel": req_chan,
-                "timestamp": time.time()
-            })
-            self._send_json(200, {
-                "success": True,
-                "sound_name": matched_name,
-                "audio_url": f"/api/soundboard/{matched_name}",
-                "channel": req_chan
-            })
-            return
 
         # Route: Set Pieruta Target
         if path == "/api/pieruta":
@@ -1179,6 +1132,55 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         # Check user/streamer authentication for control portal routes
         if not self._check_auth(required_role="user"):
             return
+
+        # Route: Trigger Soundboard Effect (User role required when auth enabled)
+        if path in ("/api/soundboard/trigger", "/api/soundboard/play"):
+            if not soundboard_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
+            if not config.enable_soundboard:
+                self._send_json(400, {"error": "Soundboard is currently disabled"})
+                return
+            raw_sound = body.get("sound") or body.get("sound_name") or body.get("name") or ""
+            clean_sound = sanitize_identifier(raw_sound, max_len=100)
+            if not clean_sound:
+                self._send_json(400, {"error": "Missing or invalid 'sound' parameter"})
+                return
+            sound_match = soundboard_manager.find_sound(clean_sound)
+            if not sound_match:
+                self._send_json(404, {"error": f"Soundboard effect '{clean_sound}' not found"})
+                return
+            matched_name, file_path = sound_match
+            req_chan = sanitize_string(body.get("channel") or config.twitch_channel, max_len=100)
+            user = sanitize_string(body.get("user", "Control Portal"), max_len=50, default="Control Portal")
+            
+            # Broadcast soundboard play event via SSE
+            sb_chunk = {
+                "id": f"sb_{int(time.time()*1000)}",
+                "url": f"/api/soundboard/{matched_name}",
+                "speaker": user,
+                "text": f"({matched_name})",
+                "voice": "Soundboard",
+                "channel": req_chan,
+                "timestamp": time.time(),
+                "is_soundboard": True
+            }
+            broadcast_event("audio_chunk", sb_chunk)
+            broadcast_event("soundboard_trigger", {
+                "sound_name": matched_name,
+                "file_path": f"/api/soundboard/{matched_name}",
+                "user": user,
+                "channel": req_chan,
+                "timestamp": time.time()
+            })
+            self._send_json(200, {
+                "success": True,
+                "sound_name": matched_name,
+                "audio_url": f"/api/soundboard/{matched_name}",
+                "channel": req_chan
+            })
+            return
+
 
         # Route: Toggle Soundboard
         if path == "/api/soundboard/toggle":
@@ -1876,51 +1878,6 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"success": True}, cookies=[cookie_str])
             return
 
-        # Soundboard Trigger (public)
-        if path in ("/api/soundboard/trigger", "/api/soundboard/play"):
-            if not soundboard_limiter.check_and_record(self._get_client_ip()):
-                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
-                return
-            if not config.enable_soundboard:
-                self._send_json(400, {"error": "Soundboard is currently disabled"})
-                return
-            raw_sound = body.get("sound") or body.get("sound_name") or body.get("name") or ""
-            clean_sound = sanitize_identifier(raw_sound, max_len=100)
-            if not clean_sound:
-                self._send_json(400, {"error": "Missing or invalid 'sound' parameter"})
-                return
-            sound_match = soundboard_manager.find_sound(clean_sound)
-            if not sound_match:
-                self._send_json(404, {"error": f"Soundboard effect '{clean_sound}' not found"})
-                return
-            matched_name, file_path = sound_match
-            req_chan = sanitize_string(body.get("channel") or config.twitch_channel, max_len=100)
-            user = sanitize_string(body.get("user", "Control Portal"), max_len=50, default="Control Portal")
-            sb_chunk = {
-                "id": f"sb_{int(time.time()*1000)}",
-                "url": f"/api/soundboard/{matched_name}",
-                "speaker": user,
-                "text": f"({matched_name})",
-                "voice": "Soundboard",
-                "channel": req_chan,
-                "timestamp": time.time(),
-                "is_soundboard": True
-            }
-            broadcast_event("audio_chunk", sb_chunk)
-            broadcast_event("soundboard_trigger", {
-                "sound_name": matched_name,
-                "file_path": f"/api/soundboard/{matched_name}",
-                "user": user,
-                "channel": req_chan,
-                "timestamp": time.time()
-            })
-            self._send_json(200, {
-                "success": True,
-                "sound_name": matched_name,
-                "audio_url": f"/api/soundboard/{matched_name}",
-                "channel": req_chan
-            })
-            return
 
         # Set Pieruta Target
         if path == "/api/pieruta":
@@ -2024,6 +1981,53 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
         # ── Authenticated POST routes (user role required) ──
         if not self._check_auth(required_role="user"):
             return
+
+        # Soundboard Trigger (user role required when auth enabled)
+        if path in ("/api/soundboard/trigger", "/api/soundboard/play"):
+            if not soundboard_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
+            if not config.enable_soundboard:
+                self._send_json(400, {"error": "Soundboard is currently disabled"})
+                return
+            raw_sound = body.get("sound") or body.get("sound_name") or body.get("name") or ""
+            clean_sound = sanitize_identifier(raw_sound, max_len=100)
+            if not clean_sound:
+                self._send_json(400, {"error": "Missing or invalid 'sound' parameter"})
+                return
+            sound_match = soundboard_manager.find_sound(clean_sound)
+            if not sound_match:
+                self._send_json(404, {"error": f"Soundboard effect '{clean_sound}' not found"})
+                return
+            matched_name, file_path = sound_match
+            req_chan = sanitize_string(body.get("channel") or config.twitch_channel, max_len=100)
+            user = sanitize_string(body.get("user", "Control Portal"), max_len=50, default="Control Portal")
+            sb_chunk = {
+                "id": f"sb_{int(time.time()*1000)}",
+                "url": f"/api/soundboard/{matched_name}",
+                "speaker": user,
+                "text": f"({matched_name})",
+                "voice": "Soundboard",
+                "channel": req_chan,
+                "timestamp": time.time(),
+                "is_soundboard": True
+            }
+            broadcast_event("audio_chunk", sb_chunk)
+            broadcast_event("soundboard_trigger", {
+                "sound_name": matched_name,
+                "file_path": f"/api/soundboard/{matched_name}",
+                "user": user,
+                "channel": req_chan,
+                "timestamp": time.time()
+            })
+            self._send_json(200, {
+                "success": True,
+                "sound_name": matched_name,
+                "audio_url": f"/api/soundboard/{matched_name}",
+                "channel": req_chan
+            })
+            return
+
 
         # Soundboard Toggle (authenticated)
         if path == "/api/soundboard/toggle":
