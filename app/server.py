@@ -394,7 +394,10 @@ def serve_darkcounter_lua(handler, query: dict):
         req_file = query.get("counter_file", [""])[0].strip() if query.get("counter_file") else ""
 
         if not req_url and handler.headers.get("Host"):
-            req_url = f"http://{handler.headers.get('Host')}"
+            proto = handler.headers.get("X-Forwarded-Proto", "http").lower()
+            if hasattr(handler, "is_https") and handler.is_https:
+                proto = "https"
+            req_url = f"{proto}://{handler.headers.get('Host')}"
 
         if req_chan:
             lua_content = re.sub(r'local channel = "[^"]*"', f'local channel = "{req_chan}"', lua_content)

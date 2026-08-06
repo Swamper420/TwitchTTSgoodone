@@ -604,7 +604,24 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
 
+        let targetServerUrl;
+        if (domain) {
+            let cleanDomain = domain.replace(/\/+$/, '');
+            targetServerUrl = (cleanDomain.startsWith('http://') || cleanDomain.startsWith('https://')) ? cleanDomain : `https://${cleanDomain}`;
+        } else {
+            const host = state.serverHost || window.location.hostname || "localhost";
+            const protocol = window.location.protocol || "http:";
+            if (window.location.port) {
+                targetServerUrl = `${protocol}//${window.location.host}`;
+            } else {
+                targetServerUrl = `${protocol}//${host}:${mainPort}`;
+            }
+        }
+
         const luaParams = new URLSearchParams();
+        if (targetServerUrl) {
+            luaParams.set("server_url", targetServerUrl);
+        }
         const selChan = elements.obsChannelSelect.value;
         if (selChan) {
             luaParams.set("channel", selChan);
