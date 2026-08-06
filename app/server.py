@@ -530,9 +530,17 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                 })
                 return
 
+    message_chunks = process_message_to_chunks(raw_text) if raw_text else []
+
+    # If the message contains ONLY soundboard triggers, do not speak the chatter's name prefix with TTS.
+    is_soundboard_only = bool(message_chunks) and all(c.is_soundboard for c in message_chunks)
+
     now = time.time()
     skip_user_prefix = False
-    if user and last_speaker:
+    if is_soundboard_only:
+        skip_user_prefix = True
+
+    if user and last_speaker and not is_soundboard_only:
         if user.strip().lower() == last_speaker.strip().lower():
             if config.same_user_timeout > 0 and (now - last_speaker_time) <= config.same_user_timeout:
                 skip_user_prefix = True
@@ -549,15 +557,14 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
         else:
             prefix_text = f"{tts_user} {config.user_template}".strip()
 
-    if user:
+    if user and not is_soundboard_only:
         last_speaker = user
         last_speaker_time = now
-    else:
+    elif not user:
         last_speaker = None
         last_speaker_time = 0.0
 
     prefix_chunks = process_message_to_chunks(prefix_text) if prefix_text else []
-    message_chunks = process_message_to_chunks(raw_text) if raw_text else []
     chunks = prefix_chunks + message_chunks
 
     if not chunks:

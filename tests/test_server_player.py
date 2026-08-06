@@ -138,12 +138,18 @@ class TestPlayerServerRoutes(unittest.TestCase):
     @patch("app.server.tts_client.synthesize")
     def test_soundboard_only_message_no_tts_api_call(self, mock_synthesize, mock_mime, mock_parse_sb):
         import app.server as server_module
-        mock_parse_sb.return_value = [{
-            "type": "soundboard",
-            "raw_trigger": "(pieru)",
-            "sound_name": "pieru",
-            "file_path": __file__ # existent file path
-        }]
+
+        def side_effect(text, **kwargs):
+            if "(pieru)" in text:
+                return [{
+                    "type": "soundboard",
+                    "raw_trigger": "(pieru)",
+                    "sound_name": "pieru",
+                    "file_path": __file__ # existent file path
+                }]
+            return [{"type": "text", "content": text}]
+
+        mock_parse_sb.side_effect = side_effect
         mock_mime.return_value = "audio/mpeg"
 
         server_module.last_speaker = None
@@ -153,7 +159,33 @@ class TestPlayerServerRoutes(unittest.TestCase):
         # 0 calls to tts_client.synthesize when message contains only soundboard triggers
         mock_synthesize.assert_not_called()
 
+    @patch("app.server.soundboard_manager.parse_soundboard_text")
+    @patch("app.server.soundboard_manager.get_mime_type")
+    @patch("app.server.tts_client.synthesize")
+    def test_soundboard_and_text_message_speaks_name(self, mock_synthesize, mock_mime, mock_parse_sb):
+        import app.server as server_module
+
+        def side_effect(text, **kwargs):
+            if "(pieru)" in text:
+                return [
+                    {"type": "soundboard", "raw_trigger": "(pieru)", "sound_name": "pieru", "file_path": __file__},
+                    {"type": "text", "content": " hello"}
+                ]
+            return [{"type": "text", "content": text}]
+
+        mock_parse_sb.side_effect = side_effect
+        mock_mime.return_value = "audio/mpeg"
+        mock_synthesize.return_value = (b"audio", "audio/wav")
+
+        server_module.last_speaker = None
+        server_module.last_speaker_time = 0.0
+
+        server_module.process_incoming_text("UserY", "(pieru) hello")
+        # tts_client.synthesize should be called for user name prefix and text chunk
+        self.assertTrue(mock_synthesize.called)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
