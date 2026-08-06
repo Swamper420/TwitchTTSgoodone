@@ -261,11 +261,54 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (err) {}
         });
 
+        const recentSoundboardPlaysPlayer = new Map();
+
+        function playInstantSoundboardPlayer(url, item) {
+            if (!url) return;
+            const key = item.id || (url + "_" + Math.floor((item.timestamp || Date.now()) / 1000));
+            const now = Date.now();
+            if (recentSoundboardPlaysPlayer.has(key) && (now - recentSoundboardPlaysPlayer.get(key)) < 2000) {
+                return;
+            }
+            recentSoundboardPlaysPlayer.set(key, now);
+
+            playNotificationChime();
+            const sbAudio = new Audio(url);
+            if (audioPlayer && audioPlayer.volume !== undefined) {
+                sbAudio.volume = audioPlayer.volume;
+            }
+            sbAudio.play().catch((err) => console.log('Instant soundboard play note:', err));
+
+            if (currentSpeaker) currentSpeaker.textContent = `🔊 ${item.user || item.speaker || 'Soundboard'}`;
+            if (currentText) currentText.textContent = item.text || `(${item.sound_name || 'Soundboard'})`;
+            if (speakerAvatar) speakerAvatar.classList.add('active');
+            if (equalizerVisualizer) equalizerVisualizer.classList.add('playing');
+
+            addHistoryItem(item);
+
+            setTimeout(() => {
+                if (!isPlaying) {
+                    if (speakerAvatar) speakerAvatar.classList.remove('active');
+                    if (equalizerVisualizer) equalizerVisualizer.classList.remove('playing');
+                }
+            }, 3000);
+        }
+
         evtSource.addEventListener('audio_chunk', (e) => {
             try {
                 const item = JSON.parse(e.data);
                 if (!item || !item.url) return;
                 
+                if (filterChannel) {
+                    const chunkChan = item.channel ? String(item.channel).toLowerCase().replace(/^#/, '').trim() : '';
+                    if (chunkChan !== filterChannel) return;
+                }
+
+                if (item.is_soundboard) {
+                    playInstantSoundboardPlayer(item.url, item);
+                    return;
+                }
+
                 if (chaosMode) {
                     playChaosAudio(item);
                 } else {
@@ -275,6 +318,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } catch (err) {
                 console.error('Failed to process incoming audio chunk:', err);
+            }
+        });
+
+        evtSource.addEventListener('soundboard_trigger', (e) => {
+            try {
+                const data = JSON.parse(e.data);
+                if (!data || (!data.sound_name && !data.file_path && !data.url)) return;
+                if (filterChannel) {
+                    const cmdChan = data.channel ? String(data.channel).toLowerCase().replace(/^#/, '').trim() : '';
+                    if (cmdChan && cmdChan !== filterChannel) return;
+                }
+                const sbUrl = data.file_path || data.url || `/api/soundboard/${data.sound_name}`;
+                playInstantSoundboardPlayer(sbUrl, data);
+            } catch (err) {
+                console.error('Player soundboard trigger error:', err);
             }
         });
 
@@ -288,6 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
             updateQueueDisplay();
         });
     }
+
 
     // Update Queue Counter Display
     function updateQueueDisplay() {

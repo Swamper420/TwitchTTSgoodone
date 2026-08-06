@@ -228,6 +228,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // ----------------------------------------------------
 
     function enqueueAudioChunk(chunk) {
+        if (chunk && chunk.is_soundboard) {
+            playInstantSoundboardApp(chunk);
+            return;
+        }
         if (chaosMode) {
             playChaosAudioApp(chunk);
         } else {
@@ -235,6 +239,24 @@ document.addEventListener('DOMContentLoaded', () => {
             updateQueueUI();
             checkAndPlayNext();
         }
+    }
+
+    const recentSoundboardPlaysApp = new Map();
+    function playInstantSoundboardApp(chunk) {
+        if (!chunk || !chunk.url) return;
+        const key = chunk.id || (chunk.url + "_" + Math.floor((chunk.timestamp || Date.now()) / 1000));
+        const now = Date.now();
+        if (recentSoundboardPlaysApp.has(key) && (now - recentSoundboardPlaysApp.get(key)) < 2000) {
+            return;
+        }
+        recentSoundboardPlaysApp.set(key, now);
+
+        const sbAudio = new Audio(chunk.url);
+        if (audioPlayer && audioPlayer.volume !== undefined) {
+            sbAudio.volume = audioPlayer.volume;
+        }
+        sbAudio.play().catch(err => console.log('App soundboard audio error:', err));
+        updateNowPlayingUI(chunk);
     }
 
     function playChaosAudioApp(chunk) {
@@ -245,6 +267,7 @@ document.addEventListener('DOMContentLoaded', () => {
         chaosAudio.play().catch(err => console.log('App chaos audio error:', err));
         updateNowPlayingUI(chunk);
     }
+
 
     function flushChaosQueueApp() {
         while (audioQueue.length > 0) {
@@ -590,6 +613,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const chunk = JSON.parse(e.data);
             enqueueAudioChunk(chunk);
         });
+
+        evtSource.addEventListener('soundboard_trigger', (e) => {
+            try {
+                const data = JSON.parse(e.data);
+                if (!data) return;
+                const sbUrl = data.file_path || data.url || `/api/soundboard/${data.sound_name}`;
+                playInstantSoundboardApp({ ...data, url: sbUrl, is_soundboard: true });
+            } catch (err) {}
+        });
+
 
         evtSource.addEventListener('chat_message', (e) => {
             const data = JSON.parse(e.data);

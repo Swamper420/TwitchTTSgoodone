@@ -257,6 +257,42 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (err) {}
         });
 
+        const recentSoundboardPlays = new Map();
+
+        function playInstantSoundboard(url, item) {
+            if (!url) return;
+            const key = item.id || (url + "_" + Math.floor((item.timestamp || Date.now()) / 1000));
+            const now = Date.now();
+            if (recentSoundboardPlays.has(key) && (now - recentSoundboardPlays.get(key)) < 2000) {
+                return;
+            }
+            recentSoundboardPlays.set(key, now);
+
+            silentUnlock();
+            playChimeSound();
+            renderSpectrum();
+
+            const sbAudio = new Audio(url);
+            if (audioPlayer && audioPlayer.volume !== undefined) {
+                sbAudio.volume = audioPlayer.volume;
+            }
+            sbAudio.play().catch((err) => console.warn('OBS instant soundboard play note:', err));
+
+            if (obsSpeaker && obsText && overlayCard) {
+                obsSpeaker.textContent = `🔊 ${item.user || item.speaker || 'Soundboard'}`;
+                obsText.textContent = item.text || `(${item.sound_name || 'Sound'})`;
+                overlayCard.classList.remove('idle');
+                overlayCard.classList.add('speaking');
+
+                setTimeout(() => {
+                    if (!isPlaying) {
+                        overlayCard.classList.remove('speaking');
+                        if (obsAutohide) overlayCard.classList.add('idle');
+                    }
+                }, 3000);
+            }
+        }
+
         evtSource.addEventListener('audio_chunk', (e) => {
             try {
                 const item = JSON.parse(e.data);
@@ -267,6 +303,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (chunkChan !== filterChannel) {
                         return; // Strict frontend channel isolation guard
                     }
+                }
+
+                if (item.is_soundboard) {
+                    playInstantSoundboard(item.url, item);
+                    return;
                 }
 
                 if (chaosMode) {
@@ -311,28 +352,18 @@ document.addEventListener('DOMContentLoaded', () => {
         evtSource.addEventListener('soundboard_trigger', (e) => {
             try {
                 const data = JSON.parse(e.data);
-                if (!data || !data.sound_name) return;
+                if (!data || (!data.sound_name && !data.file_path && !data.url)) return;
                 if (filterChannel) {
                     const cmdChan = data.channel ? String(data.channel).toLowerCase().replace(/^#/, '').trim() : '';
                     if (cmdChan && cmdChan !== filterChannel) return;
                 }
-                const sbUrl = data.file_path || `/api/soundboard/${data.sound_name}`;
-                const isDuplicate = audioQueue.some(q => q.url === sbUrl) || (currentItem && currentItem.url === sbUrl && isPlaying);
-                if (!isDuplicate) {
-                    audioQueue.push({
-                        id: `sb_${data.timestamp || Date.now()}`,
-                        url: sbUrl,
-                        speaker: data.user || 'Soundboard',
-                        text: `(${data.sound_name})`,
-                        voice: 'Soundboard',
-                        is_soundboard: true
-                    });
-                    checkAndPlayNext();
-                }
+                const sbUrl = data.file_path || data.url || `/api/soundboard/${data.sound_name}`;
+                playInstantSoundboard(sbUrl, data);
             } catch (err) {
                 console.error('OBS Overlay soundboard trigger error:', err);
             }
         });
+
     }
 
     let currentFartBgAudio = null;
