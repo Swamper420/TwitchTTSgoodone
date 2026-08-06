@@ -193,5 +193,25 @@ class SoundboardManager:
         ext = os.path.splitext(file_path)[1].lower()
         return MIME_TYPES.get(ext, "audio/mpeg")
 
+    def save_uploaded_sound(self, clean_sound_name: str, clean_filename: str, file_bytes: bytes) -> Tuple[str, str]:
+        """
+        Saves sanitized uploaded sound file to the primary accessible soundboard directory.
+        Returns tuple of (clean_sound_name, file_path).
+        """
+        target_dir = self.ensure_directory()
+        target_path = os.path.join(target_dir, clean_filename)
+
+        with open(target_path, "wb") as f:
+            f.write(file_bytes)
+
+        try:
+            os.chmod(target_path, 0o644)
+        except OSError:
+            pass
+
+        logger.info(f"Successfully saved uploaded soundboard file: '{clean_sound_name}' -> {target_path}")
+        return clean_sound_name, target_path
+
 
 soundboard_manager = SoundboardManager()
+

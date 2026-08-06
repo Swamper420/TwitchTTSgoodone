@@ -1,9 +1,11 @@
 import ipaddress
+import os
 import re
 import urllib.parse
-from typing import Any, Optional, Set
+from typing import Any, Optional, Set, Tuple, List
 
 ALLOWED_AUDIO_FORMATS: Set[str] = {"wav", "mp3", "ogg", "flac", "json"}
+
 
 
 def escape_html(val: Any) -> str:
@@ -163,3 +165,113 @@ def sanitize_tts_url(val: Any, default: str = "http://localhost:8880") -> str:
             return s.rstrip('/')
 
     return default
+
+
+ALLOWED_UPLOAD_EXTENSIONS: Set[str] = {".mp3", ".wav", ".ogg", ".flac", ".m4a"}
+MAX_AUDIO_UPLOAD_SIZE: int = 5 * 1024 * 1024  # 5 MB limit
+
+
+def verify_streamer_password(password_input: Any, active_channels: Optional[List[str]] = None) -> bool:
+    """
+    Verify if provided password matches any currently active Twitch channel/streamer name (case-insensitive).
+    """
+    if not password_input:
+        return False
+    clean_input = sanitize_username(password_input)
+    if not clean_input:
+        return False
+
+    valid_channels = set()
+    if active_channels:
+        for ch in active_channels:
+            c = sanitize_username(ch)
+            if c:
+                valid_channels.add(c)
+
+    # Also check config channel settings if active_channels list was empty
+    if not valid_channels:
+        from app.config import config
+        if getattr(config, "twitch_channel", ""):
+            valid_channels.add(sanitize_username(config.twitch_channel))
+        if getattr(config, "channels", None):
+            for ch in config.channels:
+                c = sanitize_username(ch)
+                if c:
+                    valid_channels.add(c)
+
+    return clean_input in valid_channels
+
+
+def validate_and_sanitize_audio_upload(
+    file_bytes: bytes,
+    filename: str,
+    custom_sound_name: Optional[str] = None
+) -> Tuple[str, str]:
+    """
+    Strictly sanitize and validate uploaded sound files.
+    Enforces file size limit, extension whitelist, sound name sanitization,
+    and binary magic header inspection to reject malicious or disguised files.
+    Returns (clean_sound_name, clean_filename) on success, or raises ValueError.
+    """
+    if not file_bytes:
+        raise ValueError("Uploaded file is empty.")
+
+    if len(file_bytes) > MAX_AUDIO_UPLOAD_SIZE:
+        raise ValueError(f"File size ({len(file_bytes) / 1048576:.1f} MB) exceeds maximum allowed size of 5 MB.")
+
+    # Determine extension from filename
+    raw_name = sanitize_string(filename, max_len=255)
+    if not raw_name:
+        raise ValueError("Invalid filename.")
+
+    ext = os.path.splitext(raw_name)[1].lower()
+    if ext not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise ValueError(f"Unsupported file extension '{ext}'. Allowed formats: {', '.join(sorted(ALLOWED_UPLOAD_EXTENSIONS))}")
+
+    # Determine base sound identifier name
+    base_candidate = custom_sound_name if custom_sound_name else os.path.splitext(raw_name)[0]
+    clean_sound_name = sanitize_string(base_candidate, max_len=50).lower()
+    clean_sound_name = re.sub(r'[^a-z0-9_\-]', '', clean_sound_name).strip('_-')
+
+    if not clean_sound_name or len(clean_sound_name) < 2:
+        raise ValueError("Sound name must be at least 2 characters (alphanumeric, hyphens, underscores).")
+
+    clean_filename = f"{clean_sound_name}{ext}"
+
+    # Strict Binary Magic Header Verification
+    header = file_bytes[:16]
+
+    if ext == ".mp3":
+        # MP3 headers: ID3 tag or frame sync word (0xFF 0xFB/F3/F2/E3)
+        has_id3 = file_bytes.startswith(b"ID3")
+        has_sync = False
+        if not has_id3:
+            for i in range(min(len(file_bytes) - 1, 1024)):
+                if file_bytes[i] == 0xFF and (file_bytes[i+1] & 0xE0) == 0xE0:
+                    has_sync = True
+                    break
+        if not (has_id3 or has_sync):
+            raise ValueError("File content does not match a valid MP3 audio header.")
+
+    elif ext == ".wav":
+        # WAV header: RIFF at offset 0, WAVE at offset 8
+        if not (file_bytes.startswith(b"RIFF") and len(file_bytes) >= 12 and file_bytes[8:12] == b"WAVE"):
+            raise ValueError("File content does not match a valid WAV audio header.")
+
+    elif ext == ".ogg":
+        # OGG header: OggS at offset 0
+        if not file_bytes.startswith(b"OggS"):
+            raise ValueError("File content does not match a valid OGG audio header.")
+
+    elif ext == ".flac":
+        # FLAC header: fLaC at offset 0
+        if not file_bytes.startswith(b"fLaC"):
+            raise ValueError("File content does not match a valid FLAC audio header.")
+
+    elif ext == ".m4a":
+        # M4A header: ftyp at offset 4
+        if len(file_bytes) < 8 or file_bytes[4:8] != b"ftyp":
+            raise ValueError("File content does not match a valid M4A container header.")
+
+    return clean_sound_name, clean_filename
+

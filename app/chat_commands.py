@@ -161,3 +161,74 @@ def match_voice_action(raw_arg: str, score_cutoff: float = 75.0) -> Optional[Tup
             return ("reset", float(score_reset))
 
     return None
+
+
+def get_commands_catalog() -> List[Dict[str, Any]]:
+    """Return catalog of available chat commands with category, syntax, aliases, description, and examples."""
+    return [
+        {
+            "name": "help",
+            "category": "General",
+            "syntax": "!help",
+            "aliases": COMMAND_ALIASES.get("help", []),
+            "description": "Displays information about available TTS commands and usage guidelines in chat.",
+            "example": "!help",
+        },
+        {
+            "name": "myvoice",
+            "category": "Voice Controls",
+            "syntax": "!myvoice <voice_name | random | reset>",
+            "aliases": COMMAND_ALIASES.get("myvoice", []),
+            "description": "Sets or clears your custom TTS voice preset. Use 'random' for a random voice or 'reset' to revert to default.",
+            "example": "!myvoice mieto",
+        },
+        {
+            "name": "voices",
+            "category": "Voice Controls",
+            "syntax": "!voices",
+            "aliases": COMMAND_ALIASES.get("voices", []),
+            "description": "Lists all available voice presets in Twitch chat.",
+            "example": "!voices",
+        },
+        {
+            "name": "sounds",
+            "category": "Soundboard",
+            "syntax": "!sounds",
+            "aliases": COMMAND_ALIASES.get("sounds", []),
+            "description": "Lists all available soundboard sound effects in chat.",
+            "example": "!sounds",
+        },
+        {
+            "name": "sound_trigger",
+            "category": "Soundboard",
+            "syntax": "(soundname)",
+            "aliases": ["(boom)", "(bruh)", "(fart)", "..."],
+            "description": "Play a soundboard effect inline inside any message by placing the sound name in parentheses.",
+            "example": "Hello world (boom) cheers! (bruh)",
+        },
+        {
+            "name": "skip",
+            "category": "Playback Controls",
+            "syntax": "!skip",
+            "aliases": COMMAND_ALIASES.get("skip", []),
+            "description": "Skips the currently playing TTS audio message.",
+            "example": "!skip",
+        },
+        {
+            "name": "clear",
+            "category": "Playback Controls",
+            "syntax": "!clear",
+            "aliases": COMMAND_ALIASES.get("clear", []),
+            "description": "Clears all pending TTS audio messages from the queue.",
+            "example": "!clear",
+        },
+        {
+            "name": "pieruta",
+            "category": "Fun / Effects",
+            "syntax": "!pieruta [@target]",
+            "aliases": COMMAND_ALIASES.get("pieruta", []),
+            "description": "Fart effect command targeting yourself or another chat member.",
+            "example": "!pieruta @user",
+        },
+    ]
+

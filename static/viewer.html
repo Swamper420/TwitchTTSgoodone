@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twitch TTS Viewer Hub - Commands, Sounds & Message Generator</title>
+    <meta name="description" content="Public viewer portal for Twitch TTS: browse chat commands, audition voice presets, trigger and upload soundboard effects with strict file sanitization, and build complex TTS messages.">
+    <!-- Google Fonts & Material Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
+    <link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+    <!-- Toast Notifications -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <div class="app-container">
+        <!-- Navigation Header -->
+        <header class="navbar">
+            <div class="navbar-brand">
+                <div class="brand-logo">
+                    <span class="material-symbols-outlined logo-icon">graphic_eq</span>
+                </div>
+                <div class="brand-title">
+                    <h1>Twitch TTS <span>Viewer Hub</span></h1>
+                    <span class="version-tag">PUBLIC COMMUNITY PORTAL</span>
+                </div>
+            </div>
+
+            <!-- Active Channel Status Pill -->
+            <div class="channel-status-box">
+                <div class="status-pill" id="statusPill">
+                    <span class="status-dot"></span>
+                    <span id="statusText">Connecting...</span>
+                </div>
+                <div class="active-channel-chip" id="channelChipTitle">
+                    <span class="material-symbols-outlined" style="font-size: 16px; color: var(--accent-purple);">live_tv</span>
+                    <span id="activeChannelDisplay">Channel Offline</span>
+                </div>
+            </div>
+
+            <div class="navbar-links">
+                <a href="/viewer" class="nav-link active">
+                    <span class="material-symbols-outlined">explore</span> Viewer Hub
+                </a>
+                <a href="/control" class="nav-link">
+                    <span class="material-symbols-outlined">tune</span> Control Portal
+                </a>
+                <a href="/player" class="nav-link" target="_blank">
+                    <span class="material-symbols-outlined">volume_up</span> Voice Player
+                </a>
+                <a href="/obs" class="nav-link" target="_blank">
+                    <span class="material-symbols-outlined">desktop_windows</span> OBS Overlay
+                </a>
+            </div>
+        </header>
+
+        <!-- Page Sub-Header / Hero -->
+        <section class="hero-banner">
+            <div class="hero-text">
+                <h2>Interactive <span>Community Sandbox</span></h2>
+                <p>Craft multi-voice TTS messages, trigger inline sound effects, audition custom voice presets, and upload new soundboard clips.</p>
+            </div>
+        </section>
+
+        <!-- Main Tab Controls -->
+        <nav class="tabs-nav">
+            <button class="tab-btn active" data-tab="tab-generator">
+                <span class="material-symbols-outlined">auto_fix_high</span> Message Generator
+            </button>
+            <button class="tab-btn" data-tab="tab-commands">
+                <span class="material-symbols-outlined">terminal</span> Chat Commands
+            </button>
+            <button class="tab-btn" data-tab="tab-voices">
+                <span class="material-symbols-outlined">record_voice_over</span> Voices & Presets
+            </button>
+            <button class="tab-btn" data-tab="tab-sounds">
+                <span class="material-symbols-outlined">volume_up</span> Soundboard & Uploader
+            </button>
+        </nav>
+
+        <!-- TAB 1: Message Generator -->
+        <section id="tab-generator" class="tab-content active">
+            <div class="generator-grid">
+                <!-- Left: Composer Form -->
+                <div class="panel card-panel">
+                    <div class="panel-header">
+                        <div class="panel-title">
+                            <span class="material-symbols-outlined text-gradient">edit_note</span>
+                            <h3>Complex TTS Message Builder</h3>
+                        </div>
+                        <span class="badge badge-purple">Interactive</span>
+                    </div>
+
+                    <div class="builder-controls">
+                        <!-- Fast Insert Helpers -->
+                        <div class="helper-group">
+                            <label class="input-label">Quick Add Voice Changer Tag:</label>
+                            <div class="chips-row" id="voiceTagChips">
+                                <!-- Populated dynamically -->
+                                <button type="button" class="chip-btn" data-insert="!myvoice mieto ">!myvoice mieto</button>
+                                <button type="button" class="chip-btn" data-insert="!myvoice random ">!myvoice random</button>
+                                <button type="button" class="chip-btn" data-insert="!myvoice reset ">!myvoice reset</button>
+                            </div>
+                        </div>
+
+                        <div class="helper-group">
+                            <label class="input-label">Quick Insert Soundboard Trigger:</label>
+                            <div class="chips-row sound-chips-row" id="soundTagChips">
+                                <span class="placeholder-text">Loading sound triggers...</span>
+                            </div>
+                        </div>
+
+                        <div class="helper-group">
+                            <label class="input-label">Special Commands:</label>
+                            <div class="chips-row">
+                                <button type="button" class="chip-btn chip-btn-pieru" id="addPierutaBtn">
+                                    <span class="material-symbols-outlined" style="font-size: 16px;">air</span> Add !pieruta command
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Main Text Area -->
+                        <div class="form-group">
+                            <label for="messageInput" class="input-label">Message Content:</label>
+                            <textarea id="messageInput" class="form-textarea" rows="5" placeholder="Type your TTS message here... e.g. Hello chat (boom) !myvoice mieto how are you? (bruh)"></textarea>
+                        </div>
+
+                        <div class="generator-actions">
+                            <button type="button" id="copyMessageBtn" class="btn btn-primary btn-lg">
+                                <span class="material-symbols-outlined">content_copy</span> Copy for Twitch Chat
+                            </button>
+                            <button type="button" id="previewTTSBtn" class="btn btn-secondary btn-lg">
+                                <span class="material-symbols-outlined">play_circle</span> Audition TTS Audio
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right: Live Parse Breakdown & Preview -->
+                <div class="panel card-panel">
+                    <div class="panel-header">
+                        <div class="panel-title">
+                            <span class="material-symbols-outlined text-gradient">analytics</span>
+                            <h3>Live Parse Breakdown</h3>
+                        </div>
+                        <span class="badge badge-cyan">Realtime</span>
+                    </div>
+
+                    <div class="preview-breakdown-box">
+                        <label class="input-label">Twitch TTS Sequence Chunks:</label>
+                        <div id="parseChunksContainer" class="chunks-container">
+                            <div class="empty-parse-state">
+                                <span class="material-symbols-outlined">find_in_page</span>
+                                <p>Start typing above to see how Twitch TTS splits text into voice segments and sound triggers.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Audio Player Box -->
+                    <div class="audio-audition-card" id="auditionCard">
+                        <div class="audition-header">
+                            <span class="material-symbols-outlined text-gradient">graphic_eq</span>
+                            <span id="auditionStatus">Audition Player Ready</span>
+                        </div>
+                        <audio id="auditionAudioPlayer" controls class="custom-audio-player"></audio>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 2: Chat Commands -->
+        <section id="tab-commands" class="tab-content">
+            <div class="panel card-panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <span class="material-symbols-outlined text-gradient">terminal</span>
+                        <h3>Twitch Chat Commands Directory</h3>
+                    </div>
+                    <div class="search-box">
+                        <span class="material-symbols-outlined search-icon">search</span>
+                        <input type="text" id="commandSearch" placeholder="Search commands, aliases..." />
+                    </div>
+                </div>
+
+                <div class="commands-grid" id="commandsGrid">
+                    <div class="loading-spinner">Loading commands directory...</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 3: Voices & Presets -->
+        <section id="tab-voices" class="tab-content">
+            <div class="panel card-panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <span class="material-symbols-outlined text-gradient">record_voice_over</span>
+                        <h3>Available Voice Presets & Custom Voices</h3>
+                    </div>
+                    <div class="search-box">
+                        <span class="material-symbols-outlined search-icon">search</span>
+                        <input type="text" id="voiceSearch" placeholder="Search voice presets..." />
+                    </div>
+                </div>
+
+                <div class="voices-grid" id="voicesGrid">
+                    <div class="loading-spinner">Loading available voices...</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 4: Soundboard & Uploader -->
+        <section id="tab-sounds" class="tab-content">
+            <div class="soundboard-hub-grid">
+                <!-- Soundboard Upload Card -->
+                <div class="panel card-panel upload-panel">
+                    <div class="panel-header">
+                        <div class="panel-title">
+                            <span class="material-symbols-outlined text-gradient">cloud_upload</span>
+                            <h3>Upload New Soundboard Effect</h3>
+                        </div>
+                        <span class="badge badge-warning">Strict Sanitization</span>
+                    </div>
+
+                    <form id="uploadSoundForm" class="upload-form">
+                        <div class="form-group">
+                            <label for="streamerPasswordInput" class="input-label">
+                                <span class="material-symbols-outlined" style="font-size: 16px; color: var(--accent-purple);">lock</span>
+                                Streamer Password (Active Channel Name):
+                            </label>
+                            <input type="password" id="streamerPasswordInput" class="form-input" placeholder="e.g. shroud" required />
+                            <small class="form-help">Enter any currently active connected Twitch streamer name as password.</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="soundNameInput" class="input-label">Sound Name (Trigger):</label>
+                            <input type="text" id="soundNameInput" class="form-input" placeholder="e.g. boom, bruh, cheer" max-len="50" required />
+                            <small class="form-help">Will be triggered in chat as <code>(soundname)</code>. Alphanumeric, hyphens, underscores only.</small>
+                        </div>
+
+                        <div class="drag-upload-zone" id="dragDropZone">
+                            <span class="material-symbols-outlined upload-icon">audio_file</span>
+                            <h4>Drag & Drop Audio File</h4>
+                            <p>or <label for="audioFileInput" class="file-browse-link">browse from computer</label></p>
+                            <span class="file-specs-tag">Allowed: .mp3, .wav, .ogg, .flac, .m4a (Max 5MB)</span>
+                            <input type="file" id="audioFileInput" accept=".mp3,.wav,.ogg,.flac,.m4a" class="hidden-file-input" />
+                        </div>
+
+                        <div id="selectedFileInfo" class="selected-file-info hidden">
+                            <span class="material-symbols-outlined">description</span>
+                            <span id="fileNameDisplay">file.mp3</span>
+                            <span id="fileSizeDisplay" class="file-size-badge">1.2 MB</span>
+                        </div>
+
+                        <button type="submit" id="uploadSubmitBtn" class="btn btn-primary btn-lg btn-block" disabled>
+                            <span class="material-symbols-outlined">upload</span> Upload & Register Sound
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Available Sounds Grid -->
+                <div class="panel card-panel sounds-panel">
+                    <div class="panel-header">
+                        <div class="panel-title">
+                            <span class="material-symbols-outlined text-gradient">graphic_eq</span>
+                            <h3>Registered Soundboard Catalog</h3>
+                        </div>
+                        <div class="search-box">
+                            <span class="material-symbols-outlined search-icon">search</span>
+                            <input type="text" id="soundSearch" placeholder="Search sound triggers..." />
+                        </div>
+                    </div>
+
+                    <div class="sounds-grid" id="soundsCatalogGrid">
+                        <div class="loading-spinner">Loading soundboard effects...</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script src="viewer.js"></script>
+</body>
+</html>

@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 import os
@@ -34,8 +35,11 @@ from app.sanitizer import (
     sanitize_tts_url,
     sanitize_float,
     sanitize_speaker_name_for_tts,
+    validate_and_sanitize_audio_upload,
+    verify_streamer_password,
 )
-from app.chat_commands import parse_chat_command, match_voice_preset, match_voice_action
+from app.chat_commands import parse_chat_command, match_voice_preset, match_voice_action, get_commands_catalog
+
 
 logger = logging.getLogger("Server")
 
@@ -72,6 +76,59 @@ def get_public_status_dict() -> dict:
             "count": kill_counter_monitor.current_count,
         }
     }
+
+
+def extract_upload_payload(headers: dict, post_data: bytes, body: dict) -> Tuple[bytes, str, Optional[str], str]:
+    """
+    Extract file_bytes, filename, custom_sound_name, and streamer password from JSON base64 or multipart form payload.
+    """
+    filename = ""
+    custom_sound_name = None
+    password = ""
+    file_bytes = b""
+
+    # 1. Base64 JSON payload
+    if body and ("file_b64" in body or "file_base64" in body or "data" in body):
+        raw_b64 = body.get("file_b64") or body.get("file_base64") or body.get("data") or ""
+        if "," in raw_b64:
+            raw_b64 = raw_b64.split(",", 1)[-1]
+        try:
+            file_bytes = base64.b64decode(raw_b64.strip())
+        except Exception:
+            file_bytes = b""
+        filename = sanitize_string(body.get("filename") or body.get("name") or "sound.mp3")
+        custom_sound_name = body.get("sound_name") or body.get("title")
+        password = body.get("password") or body.get("streamer_password") or body.get("code") or ""
+        return file_bytes, filename, custom_sound_name, str(password)
+
+    # 2. Multipart form data
+    content_type = headers.get("Content-Type", "")
+    if "multipart/form-data" in content_type:
+        boundary_match = re.search(r'boundary=([^;]+)', content_type, re.IGNORECASE)
+        if boundary_match:
+            boundary = boundary_match.group(1).strip('"').encode('utf-8')
+            parts = post_data.split(b'--' + boundary)
+            for part in parts:
+                if not part or part.startswith(b'--'):
+                    continue
+                header_data, _, part_body = part.partition(b'\r\n\r\n')
+                part_body = part_body.rstrip(b'\r\n')
+                header_text = header_data.decode('utf-8', errors='ignore')
+
+                disp_match = re.search(r'Content-Disposition:\s*form-data;\s*name="([^"]+)"(?:;\s*filename="([^"]+)")?', header_text, re.IGNORECASE)
+                if disp_match:
+                    field_name = disp_match.group(1)
+                    fname = disp_match.group(2)
+                    if field_name == "file" and fname:
+                        file_bytes = part_body
+                        filename = fname
+                    elif field_name in ("password", "streamer_password", "code"):
+                        password = part_body.decode('utf-8', errors='ignore').strip()
+                    elif field_name == "sound_name":
+                        custom_sound_name = part_body.decode('utf-8', errors='ignore').strip()
+
+    return file_bytes, filename, custom_sound_name, str(password)
+
 
 
 def broadcast_event(event_type: str, payload: dict, admin_only: bool = False):
@@ -879,6 +936,11 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"user_voices": user_voice_manager.get_all()})
             return
 
+        # Route: Commands Catalog List
+        if path == "/api/commands":
+            self._send_json(200, {"commands": get_commands_catalog()})
+            return
+
         # Route: TTS API Voices List Proxy
         if path in ("/api/voices", "/api/v1/voices"):
             try:
@@ -887,6 +949,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"error": f"Failed to fetch voices from TTS API: {str(e)}"})
             return
+
 
         # Route: Soundboard List
         if path == "/api/soundboard":
@@ -996,6 +1059,12 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             file_path = os.path.join(STATIC_DIR, "obs.html")
             self._serve_static_file(file_path, "text/html; charset=utf-8")
             return
+
+        if path in ("/viewer", "/viewer.html", "/commands", "/commands.html"):
+            file_path = os.path.join(STATIC_DIR, "viewer.html")
+            self._serve_static_file(file_path, "text/html; charset=utf-8")
+            return
+
 
         if path == "/darkcounter_obs.lua":
             serve_darkcounter_lua(self, query)
@@ -1188,6 +1257,55 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 logger.error(f"POST /api/tts error: {e}")
                 self._send_json(500, {"error": "TTS synthesis failed"})
             return
+
+        # Route: Upload New Soundboard Effect (Strict sanitization + Streamer name password check)
+        if path == "/api/soundboard/upload":
+            if not soundboard_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Upload rate limit exceeded. Please wait a minute before uploading another sound."})
+                return
+            if not config.enable_soundboard:
+                self._send_json(400, {"error": "Soundboard is currently disabled."})
+                return
+
+            file_bytes, filename, custom_sound_name, password = extract_upload_payload(self.headers, post_data, body)
+
+            active_chans = list(twitch_bot.channels) if twitch_bot and twitch_bot.channels else ([config.twitch_channel] if config.twitch_channel else [])
+            if not verify_streamer_password(password, active_chans):
+                self._send_json(401, {
+                    "error": "Unauthorized: Streamer Password must match an active connected Twitch channel name (e.g. shroud)."
+                })
+                return
+
+            try:
+                clean_sound_name, clean_filename = validate_and_sanitize_audio_upload(
+                    file_bytes=file_bytes,
+                    filename=filename,
+                    custom_sound_name=custom_sound_name
+                )
+            except ValueError as ve:
+                self._send_json(400, {"error": str(ve)})
+                return
+
+            saved_name, file_path = soundboard_manager.save_uploaded_sound(
+                clean_sound_name=clean_sound_name,
+                clean_filename=clean_filename,
+                file_bytes=file_bytes
+            )
+
+            broadcast_event("soundboard_updated", {
+                "action": "upload",
+                "sound_name": saved_name,
+                "sounds": list(soundboard_manager.get_available_sounds().keys())
+            })
+
+            self._send_json(200, {
+                "success": True,
+                "message": f"Soundboard effect '({saved_name})' uploaded successfully!",
+                "sound_name": saved_name,
+                "audio_url": f"/api/soundboard/{saved_name}"
+            })
+            return
+
 
         # Check user/streamer authentication for control portal routes
         if not self._check_auth(required_role="user"):
@@ -1594,8 +1712,10 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
         "control.html", "control.css", "control.js",
         "player.html", "player.css", "player.js",
         "obs.html", "obs.css", "obs.js",
+        "viewer.html", "viewer.css", "viewer.js",
         "darkcounter_obs.lua",
     }
+
 
     def log_message(self, format, *args):
         pass
@@ -1765,6 +1885,11 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"user_voices": user_voice_manager.get_all()})
             return
 
+        # ── Commands Catalog (public) ──
+        if path == "/api/commands":
+            self._send_json(200, {"commands": get_commands_catalog()})
+            return
+
         # ── TTS Voices List Proxy (public) ──
         if path in ("/api/voices", "/api/v1/voices"):
             try:
@@ -1773,6 +1898,7 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"error": f"Failed to fetch voices from TTS API: {str(e)}"})
             return
+
 
         # ── Soundboard List (public — no filesystem paths) ──
         if path == "/api/soundboard":
@@ -1850,6 +1976,13 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             file_path = os.path.join(STATIC_DIR, "obs.html")
             self._serve_static_file(file_path, "text/html; charset=utf-8", allow_framing=True)
             return
+
+        # Viewer Page
+        if path in ("/viewer", "/viewer.html", "/commands", "/commands.html"):
+            file_path = os.path.join(STATIC_DIR, "viewer.html")
+            self._serve_static_file(file_path, "text/html; charset=utf-8")
+            return
+
 
         # DarkCounter LUA Script Download
         if path == "/darkcounter_obs.lua":
@@ -2045,6 +2178,55 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
                 logger.error(f"POST /api/tts error on public server: {e}")
                 self._send_json(500, {"error": "TTS synthesis failed"})
             return
+
+        # Upload New Soundboard Effect (Strict sanitization + Streamer name password check)
+        if path == "/api/soundboard/upload":
+            if not soundboard_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Upload rate limit exceeded. Please wait a minute before uploading another sound."})
+                return
+            if not config.enable_soundboard:
+                self._send_json(400, {"error": "Soundboard is currently disabled."})
+                return
+
+            file_bytes, filename, custom_sound_name, password = extract_upload_payload(self.headers, post_data, body)
+
+            active_chans = list(twitch_bot.channels) if twitch_bot and twitch_bot.channels else ([config.twitch_channel] if config.twitch_channel else [])
+            if not verify_streamer_password(password, active_chans):
+                self._send_json(401, {
+                    "error": "Unauthorized: Streamer Password must match an active connected Twitch channel name (e.g. shroud)."
+                })
+                return
+
+            try:
+                clean_sound_name, clean_filename = validate_and_sanitize_audio_upload(
+                    file_bytes=file_bytes,
+                    filename=filename,
+                    custom_sound_name=custom_sound_name
+                )
+            except ValueError as ve:
+                self._send_json(400, {"error": str(ve)})
+                return
+
+            saved_name, file_path = soundboard_manager.save_uploaded_sound(
+                clean_sound_name=clean_sound_name,
+                clean_filename=clean_filename,
+                file_bytes=file_bytes
+            )
+
+            broadcast_event("soundboard_updated", {
+                "action": "upload",
+                "sound_name": saved_name,
+                "sounds": list(soundboard_manager.get_available_sounds().keys())
+            })
+
+            self._send_json(200, {
+                "success": True,
+                "message": f"Soundboard effect '({saved_name})' uploaded successfully!",
+                "sound_name": saved_name,
+                "audio_url": f"/api/soundboard/{saved_name}"
+            })
+            return
+
 
         # ── Authenticated POST routes (user role required) ──
         if not self._check_auth(required_role="user"):
