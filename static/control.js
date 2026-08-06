@@ -258,9 +258,23 @@ document.addEventListener("DOMContentLoaded", () => {
             showLoginError(e.message || "Invalid Streamer Password");
         } finally {
             elements.controlLoginBtn.disabled = false;
-            elements.controlLoginBtn.innerHTML = "<span class=\"material-symbols-outlined\">lock_open</span> Unlock Portal";
+            elements.controlLoginBtn.innerHTML = "🔓 Unlock";
         }
     }
+
+    // Win95 Tab Strip Handler
+    const tabBtns = document.querySelectorAll(".win95-tab");
+    const tabContents = document.querySelectorAll(".tab-content");
+    tabBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+            const targetTab = btn.getAttribute("data-tab");
+            tabBtns.forEach(b => b.classList.remove("active"));
+            tabContents.forEach(c => c.classList.remove("active"));
+            btn.classList.add("active");
+            const targetElement = document.getElementById(targetTab);
+            if (targetElement) targetElement.classList.add("active");
+        });
+    });
 
     function showLoginError(msg) {
         if (elements.controlLoginError) {
@@ -499,7 +513,7 @@ document.addEventListener("DOMContentLoaded", () => {
             showToast("Failed to connect Twitch channels", "error");
         } finally {
             elements.connectBtn.disabled = false;
-            elements.connectBtn.innerHTML = "<span class=\"material-symbols-outlined\">sensors</span> Connect Chat";
+            elements.connectBtn.innerHTML = "⚡ Connect Chat";
         }
     });
 
