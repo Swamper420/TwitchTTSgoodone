@@ -1,10 +1,8 @@
-// Twitch TTS Viewer Hub - Windows 95 Retro Edition Logic
+// Twitch TTS Viewer Hub - Windows 95 Soundboard Main Edition Logic
 
 document.addEventListener('DOMContentLoaded', () => {
     // State Stores
     let commandsData = [];
-    let voicesData = [];
-    let userVoicesData = {};
     let soundboardList = [];
     let activeChannel = '';
     let selectedFileBytes = null;
@@ -20,22 +18,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const tabBtns = document.querySelectorAll('.win95-tab');
     const tabContents = document.querySelectorAll('.tab-content');
 
-    // Generator DOM
-    const messageInput = document.getElementById('messageInput');
-    const parseChunksContainer = document.getElementById('parseChunksContainer');
-    const voiceTagChips = document.getElementById('voiceTagChips');
-    const soundTagChips = document.getElementById('soundTagChips');
-    const addPierutaBtn = document.getElementById('addPierutaBtn');
-    const copyMessageBtn = document.getElementById('copyMessageBtn');
-    const previewTTSBtn = document.getElementById('previewTTSBtn');
+    // Player DOM
     const auditionAudioPlayer = document.getElementById('auditionAudioPlayer');
     const auditionStatus = document.getElementById('auditionStatus');
 
     // Search DOMs
     const commandSearch = document.getElementById('commandSearch');
     const commandsTableBody = document.getElementById('commandsTableBody');
-    const voiceSearch = document.getElementById('voiceSearch');
-    const voicesGrid = document.getElementById('voicesGrid');
     const soundSearch = document.getElementById('soundSearch');
     const soundsCatalogGrid = document.getElementById('soundsCatalogGrid');
 
@@ -67,13 +56,11 @@ document.addEventListener('DOMContentLoaded', () => {
         setupPasswordModal();
         setupTabs();
         setupDragAndDrop();
-        setupGeneratorEvents();
         setupSearchFilters();
 
         await fetchStatus();
-        await fetchCommands();
-        await fetchVoices();
         await fetchSoundboard();
+        await fetchCommands();
         connectSSE();
     }
 
@@ -246,126 +233,6 @@ document.addEventListener('DOMContentLoaded', () => {
         `).join('');
     }
 
-    // Fetch Voices List
-    async function fetchVoices() {
-        const DEFAULT_FALLBACK_PRESETS = ['mieto', 'terapisti', 'terry', 'tuomo4', 'niilo'];
-        try {
-            const [vRes, uvRes] = await Promise.all([
-                fetch('/api/voices').catch(() => null),
-                fetch('/api/user_voices').catch(() => null)
-            ]);
-
-            if (vRes && vRes.ok) {
-                const data = await vRes.json();
-                let rawList = [];
-                if (Array.isArray(data)) {
-                    rawList = data;
-                } else if (data.voices) {
-                    rawList = Array.isArray(data.voices) ? data.voices : String(data.voices).split(',');
-                } else if (data.presets) {
-                    rawList = Array.isArray(data.presets) ? data.presets : String(data.presets).split(',');
-                }
-
-                voicesData = rawList.map(v => {
-                    if (typeof v === 'string') return { name: v.trim() };
-                    if (v && typeof v === 'object') return { name: v.name || v.id || v.voice || 'Voice' };
-                    return { name: String(v) };
-                }).filter(v => v.name);
-            }
-
-            if (!voicesData || voicesData.length === 0) {
-                voicesData = DEFAULT_FALLBACK_PRESETS.map(v => ({ name: v }));
-            }
-
-            if (uvRes && uvRes.ok) {
-                const data = await uvRes.json();
-                userVoicesData = data.user_voices || {};
-            }
-
-            renderVoices();
-            populateVoiceChips();
-        } catch (e) {
-            console.warn('Failed to load voice presets:', e);
-            voicesData = DEFAULT_FALLBACK_PRESETS.map(v => ({ name: v }));
-            renderVoices();
-            populateVoiceChips();
-        }
-    }
-
-    function renderVoices() {
-        let combined = Array.isArray(voicesData) ? [...voicesData] : [];
-
-        // Also incorporate any custom user signature voices if loaded
-        if (userVoicesData && typeof userVoicesData === 'object') {
-            Object.entries(userVoicesData).forEach(([uName, vName]) => {
-                if (vName && !combined.some(v => v.name.toLowerCase() === String(vName).toLowerCase())) {
-                    combined.push({ name: String(vName), owner: uName });
-                }
-            });
-        }
-
-        const filterText = (voiceSearch.value || '').toLowerCase().trim();
-        const filtered = combined.filter(v => (v.name || '').toLowerCase().includes(filterText) || (v.owner || '').toLowerCase().includes(filterText));
-
-        if (filtered.length === 0) {
-            voicesGrid.innerHTML = '<div style="color: #666; text-align: center; grid-column: 1/-1;">No voice presets match query.</div>';
-            return;
-        }
-
-        voicesGrid.innerHTML = filtered.map(v => {
-            const name = v.name || 'Voice';
-            const ownerBadge = v.owner ? ` <span class="win95-chip">@${escapeHtml(v.owner)}</span>` : '';
-            return `
-                <div class="win95-card">
-                    <div>
-                        <div class="win95-card-title">🗣️ ${escapeHtml(name)}${ownerBadge}</div>
-                        <div class="win95-card-desc">Preset TTS voice. Command: <code>!myvoice ${escapeHtml(name)}</code></div>
-                    </div>
-                    <div class="win95-card-actions">
-                        <button type="button" class="win95-btn audition-voice-btn" data-voice="${escapeHtml(name)}">▶️ Sample</button>
-                        <button type="button" class="win95-btn insert-voice-btn" data-voice="${escapeHtml(name)}">➕ Use Voice</button>
-                    </div>
-                </div>
-            `;
-        }).join('');
-
-        // Attach event listeners
-        document.querySelectorAll('.audition-voice-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const vName = btn.getAttribute('data-voice');
-                auditionVoiceSample(vName);
-            });
-        });
-
-        document.querySelectorAll('.insert-voice-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const vName = btn.getAttribute('data-voice');
-                insertIntoMessage(`!myvoice ${vName} `);
-                showToast(`Added !myvoice ${vName} tag to builder`);
-            });
-        });
-    }
-
-    function populateVoiceChips() {
-        let chipsHtml = `
-            <button type="button" class="win95-chip" data-insert="!myvoice mieto ">!myvoice mieto</button>
-            <button type="button" class="win95-chip" data-insert="!myvoice random ">!myvoice random</button>
-            <button type="button" class="win95-chip" data-insert="!myvoice reset ">!myvoice reset</button>
-        `;
-
-        if (Array.isArray(voicesData)) {
-            const presets = voicesData.slice(0, 6);
-            presets.forEach(p => {
-                const pname = typeof p === 'string' ? p : p.name;
-                if (pname && pname !== 'mieto') {
-                    chipsHtml += `<button type="button" class="win95-chip" data-insert="!myvoice ${escapeHtml(pname)} ">!myvoice ${escapeHtml(pname)}</button>`;
-                }
-            });
-        }
-        voiceTagChips.innerHTML = chipsHtml;
-        bindChipInsertButtons();
-    }
-
     // Fetch Soundboard Catalog
     async function fetchSoundboard() {
         try {
@@ -374,15 +241,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 const data = await res.json();
                 soundboardList = data.sounds || [];
                 renderSoundboard();
-                populateSoundChips();
             }
         } catch (e) {
-            soundsCatalogGrid.innerHTML = '<div style="color: #666; text-align: center; grid-column: 1/-1;">Failed to load soundboard list.</div>';
+            if (soundsCatalogGrid) {
+                soundsCatalogGrid.innerHTML = '<div style="color: #666; text-align: center; grid-column: 1/-1;">Failed to load soundboard list.</div>';
+            }
         }
     }
 
     function renderSoundboard() {
-        const filterText = (soundSearch.value || '').toLowerCase().trim();
+        if (!soundsCatalogGrid) return;
+        const filterText = (soundSearch && soundSearch.value || '').toLowerCase().trim();
         const filtered = soundboardList.filter(s => s.toLowerCase().includes(filterText));
 
         if (filtered.length === 0) {
@@ -394,11 +263,11 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="win95-card">
                 <div>
                     <div class="win95-card-title">🔊 (${escapeHtml(sound)})</div>
-                    <div class="win95-card-desc">Sound effect trigger tag</div>
+                    <div class="win95-card-desc">Type <code>(${escapeHtml(sound)})</code> in Twitch Chat</div>
                 </div>
                 <div class="win95-card-actions">
                     <button type="button" class="win95-btn play-sound-btn" data-sound="${escapeHtml(sound)}">▶️ Play</button>
-                    <button type="button" class="win95-btn insert-sound-btn" data-sound="${escapeHtml(sound)}">➕ Insert</button>
+                    <button type="button" class="win95-btn copy-sound-btn" data-sound="${escapeHtml(sound)}">📋 Copy Tag</button>
                 </div>
             </div>
         `).join('');
@@ -407,154 +276,33 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.play-sound-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const sound = btn.getAttribute('data-sound');
-                playAudioPreview(`/api/soundboard/${encodeURIComponent(sound)}`, `Sound: (${sound})`);
+                playAudioPreview(`/api/soundboard/${encodeURIComponent(sound)}`, `Playing: (${sound})`);
             });
         });
 
-        document.querySelectorAll('.insert-sound-btn').forEach(btn => {
+        document.querySelectorAll('.copy-sound-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const sound = btn.getAttribute('data-sound');
-                insertIntoMessage(`(${sound}) `);
-                showToast(`Inserted (${sound}) trigger`);
+                const tag = `(${sound})`;
+                navigator.clipboard.writeText(tag).then(() => {
+                    showToast(`Copied ${tag} tag to clipboard!`);
+                }).catch(() => {
+                    showToast(`Copied ${tag}`);
+                });
             });
         });
-    }
-
-    function populateSoundChips() {
-        if (!soundboardList || soundboardList.length === 0) {
-            soundTagChips.innerHTML = '<span style="font-size: 10px; color: #666;">No sound effects uploaded yet.</span>';
-            return;
-        }
-        soundTagChips.innerHTML = soundboardList.slice(0, 12).map(s => `
-            <button type="button" class="win95-chip win95-chip-sound" data-insert="(${escapeHtml(s)}) ">(${escapeHtml(s)})</button>
-        `).join('');
-        bindChipInsertButtons();
-    }
-
-    function bindChipInsertButtons() {
-        document.querySelectorAll('.win95-chip[data-insert]').forEach(btn => {
-            btn.replaceWith(btn.cloneNode(true));
-        });
-        document.querySelectorAll('.win95-chip[data-insert]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const textToInsert = btn.getAttribute('data-insert');
-                insertIntoMessage(textToInsert);
-            });
-        });
-    }
-
-    function insertIntoMessage(text) {
-        const start = messageInput.selectionStart || messageInput.value.length;
-        const end = messageInput.selectionEnd || messageInput.value.length;
-        const val = messageInput.value;
-        messageInput.value = val.substring(0, start) + text + val.substring(end);
-        messageInput.focus();
-        messageInput.setSelectionRange(start + text.length, start + text.length);
-        updateLiveParseBreakdown();
-    }
-
-    // Message Generator Logic & Real-time Chunks
-    function setupGeneratorEvents() {
-        messageInput.addEventListener('input', updateLiveParseBreakdown);
-
-        addPierutaBtn.addEventListener('click', () => {
-            insertIntoMessage('!pieruta ');
-        });
-
-        copyMessageBtn.addEventListener('click', () => {
-            const val = messageInput.value.trim();
-            if (!val) {
-                showToast('Please type a message first', 'error');
-                return;
-            }
-            navigator.clipboard.writeText(val).then(() => {
-                showToast('Copied message for Twitch Chat!');
-            }).catch(() => {
-                showToast('Failed to copy text', 'error');
-            });
-        });
-
-        previewTTSBtn.addEventListener('click', async () => {
-            const val = messageInput.value.trim();
-            if (!val) {
-                showToast('Please enter a message to audition', 'error');
-                return;
-            }
-
-            auditionStatus.textContent = 'SYNTHESIZING TTS AUDIO...';
-            previewTTSBtn.disabled = true;
-
-            try {
-                const ttsUrl = `/api/tts?text=${encodeURIComponent(val)}`;
-                playAudioPreview(ttsUrl, `PLAYING: "${val.slice(0, 25)}..."`);
-            } catch (err) {
-                showToast('TTS Audition failed', 'error');
-            } finally {
-                previewTTSBtn.disabled = false;
-            }
-        });
-    }
-
-    function updateLiveParseBreakdown() {
-        const text = messageInput.value;
-        if (!text.trim()) {
-            parseChunksContainer.innerHTML = `
-                <div style="color: #666; text-align: center; padding: 20px;">
-                    Start typing above to see how Twitch TTS splits text into voice segments and sound triggers.
-                </div>
-            `;
-            return;
-        }
-
-        const pattern = /\(([^()\n]+)\)/g;
-        let segments = [];
-        let lastIdx = 0;
-        let match;
-
-        while ((match = pattern.exec(text)) !== null) {
-            if (match.index > lastIdx) {
-                segments.push({ type: 'text', content: text.substring(lastIdx, match.index) });
-            }
-            segments.push({ type: 'sound', content: match[1], raw: match[0] });
-            lastIdx = pattern.lastIndex;
-        }
-        if (lastIdx < text.length) {
-            segments.push({ type: 'text', content: text.substring(lastIdx) });
-        }
-
-        parseChunksContainer.innerHTML = segments.map((seg) => {
-            if (seg.type === 'sound') {
-                return `
-                    <div class="chunk-item chunk-item-sound">
-                        <span>🔊 Sound Effect: <strong>(${escapeHtml(seg.content)})</strong></span>
-                        <span class="win95-chip win95-chip-sound">TRIGGER</span>
-                    </div>
-                `;
-            } else {
-                return `
-                    <div class="chunk-item chunk-item-text">
-                        <span>💬 TTS Segment: "${escapeHtml(seg.content)}"</span>
-                        <span class="win95-chip">VOICE</span>
-                    </div>
-                `;
-            }
-        }).join('');
     }
 
     // Audio Playback Helper
     function playAudioPreview(url, title) {
-        auditionStatus.textContent = title.toUpperCase() || 'PLAYING AUDIO...';
-        auditionAudioPlayer.src = url;
-        auditionAudioPlayer.play().catch(e => {
-            console.warn('Audio playback error:', e);
-            showToast('Click play on media player below to listen.', 'error');
-        });
-    }
-
-    function auditionVoiceSample(vName) {
-        const sampleText = `Hello! This is a voice sample for ${vName}.`;
-        const url = `/api/tts?text=${encodeURIComponent(sampleText)}&voice=${encodeURIComponent(vName)}`;
-        playAudioPreview(url, `VOICE SAMPLE: ${vName}`);
+        if (auditionStatus) auditionStatus.textContent = title.toUpperCase() || 'PLAYING AUDIO...';
+        if (auditionAudioPlayer) {
+            auditionAudioPlayer.src = url;
+            auditionAudioPlayer.play().catch(e => {
+                console.warn('Audio playback error:', e);
+                showToast('Click play on media player below to listen.', 'error');
+            });
+        }
     }
 
     // Search Filters
@@ -571,12 +319,13 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        if (voiceSearch) voiceSearch.addEventListener('input', renderVoices);
         if (soundSearch) soundSearch.addEventListener('input', renderSoundboard);
     }
 
     // File Upload & Local Audio Pre-playback
     function setupDragAndDrop() {
+        if (!dragDropZone) return;
+
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             dragDropZone.addEventListener(eventName, preventDefaults, false);
         });
@@ -602,13 +351,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        audioFileInput.addEventListener('change', () => {
-            if (audioFileInput.files && audioFileInput.files.length > 0) {
-                handleSelectedFile(audioFileInput.files[0]);
-            }
-        });
+        if (audioFileInput) {
+            audioFileInput.addEventListener('change', () => {
+                if (audioFileInput.files && audioFileInput.files.length > 0) {
+                    handleSelectedFile(audioFileInput.files[0]);
+                }
+            });
+        }
 
-        uploadSoundForm.addEventListener('submit', handleFormSubmit);
+        if (uploadSoundForm) uploadSoundForm.addEventListener('submit', handleFormSubmit);
     }
 
     function handleSelectedFile(file) {
@@ -635,17 +386,17 @@ document.addEventListener('DOMContentLoaded', () => {
         fileNameDisplay.textContent = file.name;
         fileSizeDisplay.textContent = `${(file.size / 1048576).toFixed(2)} MB`;
         
-        // Setup local audio preview
+        // Setup local audio preview player
         const objectUrl = URL.createObjectURL(file);
-        localFilePreviewPlayer.src = objectUrl;
+        if (localFilePreviewPlayer) localFilePreviewPlayer.src = objectUrl;
 
-        selectedFileInfo.classList.remove('hidden');
+        if (selectedFileInfo) selectedFileInfo.classList.remove('hidden');
 
         // Read bytes as Base64 for submission
         const reader = new FileReader();
         reader.onload = function(e) {
             selectedFileBytes = e.target.result;
-            uploadSubmitBtn.disabled = false;
+            if (uploadSubmitBtn) uploadSubmitBtn.disabled = false;
         };
         reader.readAsDataURL(file);
     }
@@ -671,8 +422,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        uploadSubmitBtn.disabled = true;
-        uploadSubmitBtn.textContent = '⏳ VALIDATING & UPLOADING...';
+        if (uploadSubmitBtn) {
+            uploadSubmitBtn.disabled = true;
+            uploadSubmitBtn.textContent = '⏳ VALIDATING & UPLOADING...';
+        }
 
         try {
             const payload = {
@@ -694,7 +447,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 showToast(data.message || `Sound (${data.sound_name}) uploaded successfully!`);
                 uploadSoundForm.reset();
                 selectedFileBytes = null;
-                selectedFileInfo.classList.add('hidden');
+                if (selectedFileInfo) selectedFileInfo.classList.add('hidden');
                 await fetchSoundboard();
             } else {
                 showToast(data.error || 'Upload failed validation.', 'error');
@@ -702,8 +455,10 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             showToast('Network error during upload request.', 'error');
         } finally {
-            uploadSubmitBtn.disabled = false;
-            uploadSubmitBtn.textContent = '💾 Upload & Register Sound';
+            if (uploadSubmitBtn) {
+                uploadSubmitBtn.disabled = false;
+                uploadSubmitBtn.textContent = '💾 Upload & Register Sound';
+            }
         }
     }
 });

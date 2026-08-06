@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Twitch TTS Viewer Hub v1.0 (Windows 95 Edition)</title>
-    <meta name="description" content="Public viewer portal for Twitch TTS: browse chat commands, audition voice presets, trigger and upload soundboard effects with strict file sanitization, and build complex TTS messages.">
+    <title>Twitch Soundboard Hub v1.0 (Windows 95 Edition)</title>
+    <meta name="description" content="Public Soundboard Portal for Twitch TTS: audition sound effects, upload custom soundboard clips with strict file sanitization, and browse chat commands.">
     <!-- Retro Fonts & Icons -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -28,8 +28,8 @@
                 <div style="display: flex; gap: 12px; align-items: flex-start; margin-bottom: 12px;">
                     <div style="font-size: 32px;">🔑</div>
                     <div>
-                        <p style="font-weight: bold; margin-bottom: 4px;">Twitch TTS Portal Authentication</p>
-                        <p style="color: #444; margin-bottom: 10px;">Type a streamer password (active channel name) to access C:\TWITCH_TTS\VIEWER_HUB_V1.EXE:</p>
+                        <p style="font-weight: bold; margin-bottom: 4px;">Twitch Soundboard Authentication</p>
+                        <p style="color: #444; margin-bottom: 10px;">Type a streamer password (active channel name) to access C:\TWITCH_TTS\SOUNDBOARD.EXE:</p>
                         
                         <div style="margin-bottom: 10px;">
                             <label for="modalPasswordInput" class="win95-label">Password / Active Channel:</label>
@@ -61,8 +61,8 @@
             <!-- Window Title Bar -->
             <div class="win95-titlebar">
                 <div class="win95-titlebar-text">
-                    <span class="win95-icon">📟</span>
-                    <span>C:\TWITCH_TTS\VIEWER_HUB_V1.EXE</span>
+                    <span class="win95-icon">🔊</span>
+                    <span>C:\TWITCH_TTS\SOUNDBOARD_HUB_V1.EXE</span>
                 </div>
                 <div class="win95-titlebar-controls">
                     <button class="win95-title-btn" title="Help">?</button>
@@ -86,8 +86,8 @@
                 <!-- Top Hero / Banner -->
                 <div class="win95-hero">
                     <div class="win95-hero-text">
-                        <h1>Twitch TTS Community Portal (Win95 Retro Edition)</h1>
-                        <p>Compose multi-voice TTS messages, trigger inline sound effects, audition voice presets, and upload new soundboard clips.</p>
+                        <h1>Twitch Soundboard Hub (Win95 Retro Edition)</h1>
+                        <p>Audition soundboard triggers live in chat, test audio clips locally, and upload new sound effects directly to the stream.</p>
                     </div>
                     <div class="win95-badges">
                         <span class="retro-badge retro-badge-netscape">NETSCAPE 3.0 READY</span>
@@ -98,128 +98,17 @@
 
                 <!-- Win95 Tab Strip -->
                 <div class="win95-tabs">
-                    <button class="win95-tab active" data-tab="tab-generator">⚡ Message Builder.exe</button>
+                    <button class="win95-tab active" data-tab="tab-sounds">🔊 Soundboard & Uploader.dll</button>
                     <button class="win95-tab" data-tab="tab-commands">💻 Chat Commands.txt</button>
-                    <button class="win95-tab" data-tab="tab-voices">🗣️ Voices.wav</button>
-                    <button class="win95-tab" data-tab="tab-sounds">🔊 Soundboard.dll</button>
                 </div>
 
                 <!-- Tab Panel Container -->
                 <div class="win95-tab-panel">
                     
-                    <!-- TAB 1: Message Builder -->
-                    <section id="tab-generator" class="tab-content active">
-                        <div class="generator-grid">
-                            <!-- Left: Form Composer -->
-                            <div>
-                                <fieldset class="win95-fieldset">
-                                    <legend class="win95-legend">Quick Voice Changer Tags</legend>
-                                    <div class="win95-chips" id="voiceTagChips">
-                                        <button type="button" class="win95-chip" data-insert="!myvoice mieto ">!myvoice mieto</button>
-                                        <button type="button" class="win95-chip" data-insert="!myvoice random ">!myvoice random</button>
-                                        <button type="button" class="win95-chip" data-insert="!myvoice reset ">!myvoice reset</button>
-                                    </div>
-                                </fieldset>
-
-                                <fieldset class="win95-fieldset">
-                                    <legend class="win95-legend">Quick Soundboard Triggers</legend>
-                                    <div class="win95-chips" id="soundTagChips">
-                                        <span style="font-size: 10px; color: #666;">Loading sound triggers...</span>
-                                    </div>
-                                </fieldset>
-
-                                <fieldset class="win95-fieldset">
-                                    <legend class="win95-legend">Special Commands</legend>
-                                    <div class="win95-chips">
-                                        <button type="button" class="win95-chip" id="addPierutaBtn">💨 Add !pieruta command</button>
-                                    </div>
-                                </fieldset>
-
-                                <div style="margin-bottom: 10px;">
-                                    <label for="messageInput" class="win95-label">Twitch Message Content:</label>
-                                    <textarea id="messageInput" class="win95-textarea" rows="5" placeholder="Type your TTS message here... e.g. Hello chat (boom) !myvoice mieto how are you? (bruh)"></textarea>
-                                </div>
-
-                                <div style="display: flex; gap: 8px;">
-                                    <button type="button" id="copyMessageBtn" class="win95-btn win95-btn-primary">
-                                        📋 Copy for Twitch Chat
-                                    </button>
-                                    <button type="button" id="previewTTSBtn" class="win95-btn">
-                                        ▶️ Audition TTS Audio
-                                    </button>
-                                </div>
-                            </div>
-
-                            <!-- Right: Live Parser & Player -->
-                            <div>
-                                <fieldset class="win95-fieldset">
-                                    <legend class="win95-legend">Live Chunk Breakdown</legend>
-                                    <div id="parseChunksContainer" class="win95-inset-box">
-                                        <div style="color: #666; text-align: center; padding: 20px;">
-                                            Start typing above to see how Twitch TTS splits text into voice segments and sound triggers.
-                                        </div>
-                                    </div>
-                                </fieldset>
-
-                                <!-- Media Player Card -->
-                                <div class="win95-player-card">
-                                    <div class="win95-lcd">
-                                        <span id="auditionStatus">MEDIA PLAYER: READY</span>
-                                        <span>44.1kHz / 16-bit</span>
-                                    </div>
-                                    <audio id="auditionAudioPlayer" controls class="win95-audio-element"></audio>
-                                </div>
-                            </div>
-                        </div>
-                    </section>
-
-                    <!-- TAB 2: Chat Commands -->
-                    <section id="tab-commands" class="tab-content">
-                        <fieldset class="win95-fieldset">
-                            <legend class="win95-legend">Twitch Chat Commands Directory</legend>
-                            <div class="search-bar-row">
-                                <label for="commandSearch" class="win95-label">Search:</label>
-                                <input type="text" id="commandSearch" class="win95-input" placeholder="Type command name, alias..." />
-                            </div>
-
-                            <div style="overflow-x: auto; max-height: 420px;">
-                                <table class="win95-table" id="commandsTable">
-                                    <thead>
-                                        <tr>
-                                            <th>Command</th>
-                                            <th>Category</th>
-                                            <th>Syntax</th>
-                                            <th>Description</th>
-                                            <th>Aliases</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="commandsTableBody">
-                                        <tr><td colspan="5" style="text-align: center; color: #666;">Loading commands directory...</td></tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </fieldset>
-                    </section>
-
-                    <!-- TAB 3: Voices & Presets -->
-                    <section id="tab-voices" class="tab-content">
-                        <fieldset class="win95-fieldset">
-                            <legend class="win95-legend">Voice Presets Directory</legend>
-                            <div class="search-bar-row">
-                                <label for="voiceSearch" class="win95-label">Search Voices:</label>
-                                <input type="text" id="voiceSearch" class="win95-input" placeholder="Type voice preset name..." />
-                            </div>
-
-                            <div class="win95-grid-cards" id="voicesGrid">
-                                <div style="color: #666; text-align: center; grid-column: 1/-1;">Loading available voices...</div>
-                            </div>
-                        </fieldset>
-                    </section>
-
-                    <!-- TAB 4: Soundboard & Uploader -->
-                    <section id="tab-sounds" class="tab-content">
+                    <!-- TAB 1: Soundboard & Uploader (MAIN PAGE) -->
+                    <section id="tab-sounds" class="tab-content active">
                         <div class="soundboard-grid">
-                            <!-- Upload Panel -->
+                            <!-- Left: Upload Panel -->
                             <div>
                                 <fieldset class="win95-fieldset">
                                     <legend class="win95-legend">Soundboard Uploader.exe</legend>
@@ -236,7 +125,7 @@
                                         </div>
 
                                         <div class="win95-dropzone" id="dragDropZone">
-                                            <div style="font-size: 20px;">📁</div>
+                                            <div style="font-size: 24px;">📁</div>
                                             <strong>Drag & Drop Audio File</strong>
                                             <p>or <label for="audioFileInput" style="color: var(--win-blue); text-decoration: underline; cursor: pointer;">Browse Computer</label></p>
                                             <small style="font-size: 9px; color: #666;">Allowed: .mp3, .wav, .ogg, .flac, .m4a (Max 5MB)</small>
@@ -254,15 +143,24 @@
                                         </button>
                                     </form>
                                 </fieldset>
+
+                                <!-- Media Player Card -->
+                                <div class="win95-player-card">
+                                    <div class="win95-lcd">
+                                        <span id="auditionStatus">SOUNDBOARD PLAYER: READY</span>
+                                        <span>44.1kHz / 16-bit</span>
+                                    </div>
+                                    <audio id="auditionAudioPlayer" controls class="win95-audio-element"></audio>
+                                </div>
                             </div>
 
-                            <!-- Registered Catalog -->
+                            <!-- Right: Registered Soundboard Catalog -->
                             <div>
                                 <fieldset class="win95-fieldset">
-                                    <legend class="win95-legend">Soundboard Catalog</legend>
+                                    <legend class="win95-legend">Registered Soundboard Catalog</legend>
                                     <div class="search-bar-row">
                                         <label for="soundSearch" class="win95-label">Filter Sounds:</label>
-                                        <input type="text" id="soundSearch" class="win95-input" placeholder="Filter triggers..." />
+                                        <input type="text" id="soundSearch" class="win95-input" placeholder="Filter trigger names..." />
                                     </div>
 
                                     <div class="win95-grid-cards" id="soundsCatalogGrid">
@@ -271,6 +169,34 @@
                                 </fieldset>
                             </div>
                         </div>
+                    </section>
+
+                    <!-- TAB 2: Chat Commands -->
+                    <section id="tab-commands" class="tab-content">
+                        <fieldset class="win95-fieldset">
+                            <legend class="win95-legend">Twitch Chat Commands Directory</legend>
+                            <div class="search-bar-row">
+                                <label for="commandSearch" class="win95-label">Search:</label>
+                                <input type="text" id="commandSearch" class="win95-input" placeholder="Type command name, alias..." />
+                            </div>
+
+                            <div style="overflow-x: auto; max-height: 440px;">
+                                <table class="win95-table" id="commandsTable">
+                                    <thead>
+                                        <tr>
+                                            <th>Command</th>
+                                            <th>Category</th>
+                                            <th>Syntax</th>
+                                            <th>Description</th>
+                                            <th>Aliases</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="commandsTableBody">
+                                        <tr><td colspan="5" style="text-align: center; color: #666;">Loading commands directory...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </fieldset>
                     </section>
                 </div>
 
