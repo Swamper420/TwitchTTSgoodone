@@ -618,3 +618,24 @@ body {
 .search-bar-row input {
     flex: 1;
 }
+
+/* Win95 Modal Overlay & Dialog */
+.win95-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 999999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.win95-dialog {
+    width: 420px;
+    max-width: 95vw;
+    box-shadow: 4px 4px 10px rgba(0, 0, 0, 0.6);
+}
+

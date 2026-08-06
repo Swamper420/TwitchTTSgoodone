@@ -51,10 +51,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const localFilePreviewPlayer = document.getElementById('localFilePreviewPlayer');
     const uploadSubmitBtn = document.getElementById('uploadSubmitBtn');
 
+    // Password Modal DOMs
+    const passwordModal = document.getElementById('passwordModal');
+    const modalPasswordInput = document.getElementById('modalPasswordInput');
+    const rememberPasswordCheck = document.getElementById('rememberPasswordCheck');
+    const modalOkBtn = document.getElementById('modalOkBtn');
+    const modalCancelBtn = document.getElementById('modalCancelBtn');
+    const modalCloseBtn = document.getElementById('modalCloseBtn');
+    const menuLogonBtn = document.getElementById('menuLogonBtn');
+
     // Initialize Application
     initApp();
 
     async function initApp() {
+        setupPasswordModal();
         setupTabs();
         setupDragAndDrop();
         setupGeneratorEvents();
@@ -65,6 +75,60 @@ document.addEventListener('DOMContentLoaded', () => {
         await fetchVoices();
         await fetchSoundboard();
         connectSSE();
+    }
+
+    // Password Logon Modal Handler
+    function setupPasswordModal() {
+        const savedPass = localStorage.getItem('twitch_tts_streamer_password') || sessionStorage.getItem('twitch_tts_streamer_password');
+        
+        if (savedPass) {
+            if (streamerPasswordInput) streamerPasswordInput.value = savedPass;
+            if (passwordModal) passwordModal.classList.add('hidden');
+        } else {
+            if (passwordModal) {
+                passwordModal.classList.remove('hidden');
+                setTimeout(() => modalPasswordInput && modalPasswordInput.focus(), 100);
+            }
+        }
+
+        function submitPassword() {
+            const pass = modalPasswordInput ? modalPasswordInput.value.trim() : '';
+            if (!pass) {
+                showToast('Please enter a password', 'error');
+                return;
+            }
+            if (rememberPasswordCheck && rememberPasswordCheck.checked) {
+                localStorage.setItem('twitch_tts_streamer_password', pass);
+            } else {
+                sessionStorage.setItem('twitch_tts_streamer_password', pass);
+            }
+            if (streamerPasswordInput) streamerPasswordInput.value = pass;
+            if (passwordModal) passwordModal.classList.add('hidden');
+            showToast(`Password set: @${pass}`);
+        }
+
+        if (modalOkBtn) modalOkBtn.addEventListener('click', submitPassword);
+        if (modalPasswordInput) {
+            modalPasswordInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') submitPassword();
+            });
+        }
+
+        if (modalCancelBtn) modalCancelBtn.addEventListener('click', () => {
+            if (passwordModal) passwordModal.classList.add('hidden');
+        });
+
+        if (modalCloseBtn) modalCloseBtn.addEventListener('click', () => {
+            if (passwordModal) passwordModal.classList.add('hidden');
+        });
+
+        if (menuLogonBtn) menuLogonBtn.addEventListener('click', () => {
+            if (modalPasswordInput) modalPasswordInput.value = streamerPasswordInput.value || '';
+            if (passwordModal) {
+                passwordModal.classList.remove('hidden');
+                setTimeout(() => modalPasswordInput && modalPasswordInput.focus(), 100);
+            }
+        });
     }
 
     // Win95 Toast Notification System

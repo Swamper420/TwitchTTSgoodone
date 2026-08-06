@@ -12,6 +12,46 @@
     <link rel="stylesheet" href="viewer.css">
 </head>
 <body>
+    <!-- Windows 95 Password Logon Dialog Modal -->
+    <div id="passwordModal" class="win95-modal-overlay">
+        <div class="win95-window win95-dialog">
+            <div class="win95-titlebar">
+                <div class="win95-titlebar-text">
+                    <span class="win95-icon">🔑</span>
+                    <span>Enter Network Password</span>
+                </div>
+                <div class="win95-titlebar-controls">
+                    <button class="win95-title-btn" id="modalCloseBtn" title="Close">X</button>
+                </div>
+            </div>
+            <div class="win95-body">
+                <div style="display: flex; gap: 12px; align-items: flex-start; margin-bottom: 12px;">
+                    <div style="font-size: 32px;">🔑</div>
+                    <div>
+                        <p style="font-weight: bold; margin-bottom: 4px;">Twitch TTS Portal Authentication</p>
+                        <p style="color: #444; margin-bottom: 10px;">Type a streamer password (active channel name) to access C:\TWITCH_TTS\VIEWER_HUB_V1.EXE:</p>
+                        
+                        <div style="margin-bottom: 10px;">
+                            <label for="modalPasswordInput" class="win95-label">Password / Active Channel:</label>
+                            <input type="password" id="modalPasswordInput" class="win95-input" placeholder="e.g. streamer name" autofocus required />
+                        </div>
+
+                        <div style="margin-bottom: 10px;">
+                            <label style="font-size: 11px; cursor: pointer;">
+                                <input type="checkbox" id="rememberPasswordCheck" checked /> Remember password for future sessions
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                    <button type="button" id="modalOkBtn" class="win95-btn win95-btn-primary" style="min-width: 70px;">OK</button>
+                    <button type="button" id="modalCancelBtn" class="win95-btn" style="min-width: 70px;">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notifications (Win95 Dialog Style) -->
     <div id="toastContainer" class="toast-container"></div>
 
@@ -34,6 +74,7 @@
             <!-- Win95 Menu Bar -->
             <div class="win95-menubar">
                 <a href="/viewer" class="win95-menu-item active"><u>F</u>ile</a>
+                <span class="win95-menu-item" id="menuLogonBtn">🔑 <u>L</u>ogon</span>
                 <a href="/control" class="win95-menu-item"><u>C</u>ontrol Portal</a>
                 <a href="/player" class="win95-menu-item" target="_blank"><u>V</u>oice Player</a>
                 <a href="/obs" class="win95-menu-item" target="_blank"><u>O</u>BS Overlay</a>
