@@ -248,6 +248,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Fetch Voices List
     async function fetchVoices() {
+        const DEFAULT_FALLBACK_PRESETS = ['mieto', 'terapisti', 'terry', 'tuomo4', 'niilo'];
         try {
             const [vRes, uvRes] = await Promise.all([
                 fetch('/api/voices').catch(() => null),
@@ -256,8 +257,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (vRes && vRes.ok) {
                 const data = await vRes.json();
-                voicesData = data.voices || data.presets || [];
+                let rawList = [];
+                if (Array.isArray(data)) {
+                    rawList = data;
+                } else if (data.voices) {
+                    rawList = Array.isArray(data.voices) ? data.voices : String(data.voices).split(',');
+                } else if (data.presets) {
+                    rawList = Array.isArray(data.presets) ? data.presets : String(data.presets).split(',');
+                }
+
+                voicesData = rawList.map(v => {
+                    if (typeof v === 'string') return { name: v.trim() };
+                    if (v && typeof v === 'object') return { name: v.name || v.id || v.voice || 'Voice' };
+                    return { name: String(v) };
+                }).filter(v => v.name);
             }
+
+            if (!voicesData || voicesData.length === 0) {
+                voicesData = DEFAULT_FALLBACK_PRESETS.map(v => ({ name: v }));
+            }
+
             if (uvRes && uvRes.ok) {
                 const data = await uvRes.json();
                 userVoicesData = data.user_voices || {};
@@ -266,18 +285,27 @@ document.addEventListener('DOMContentLoaded', () => {
             renderVoices();
             populateVoiceChips();
         } catch (e) {
-            voicesGrid.innerHTML = '<div style="color: #666; text-align: center; grid-column: 1/-1;">Failed to load voice presets.</div>';
+            console.warn('Failed to load voice presets:', e);
+            voicesData = DEFAULT_FALLBACK_PRESETS.map(v => ({ name: v }));
+            renderVoices();
+            populateVoiceChips();
         }
     }
 
     function renderVoices() {
-        let combined = [];
-        if (Array.isArray(voicesData)) {
-            combined = voicesData.map(v => typeof v === 'string' ? { name: v } : v);
+        let combined = Array.isArray(voicesData) ? [...voicesData] : [];
+
+        // Also incorporate any custom user signature voices if loaded
+        if (userVoicesData && typeof userVoicesData === 'object') {
+            Object.entries(userVoicesData).forEach(([uName, vName]) => {
+                if (vName && !combined.some(v => v.name.toLowerCase() === String(vName).toLowerCase())) {
+                    combined.push({ name: String(vName), owner: uName });
+                }
+            });
         }
 
         const filterText = (voiceSearch.value || '').toLowerCase().trim();
-        const filtered = combined.filter(v => (v.name || '').toLowerCase().includes(filterText));
+        const filtered = combined.filter(v => (v.name || '').toLowerCase().includes(filterText) || (v.owner || '').toLowerCase().includes(filterText));
 
         if (filtered.length === 0) {
             voicesGrid.innerHTML = '<div style="color: #666; text-align: center; grid-column: 1/-1;">No voice presets match query.</div>';
@@ -286,10 +314,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         voicesGrid.innerHTML = filtered.map(v => {
             const name = v.name || 'Voice';
+            const ownerBadge = v.owner ? ` <span class="win95-chip">@${escapeHtml(v.owner)}</span>` : '';
             return `
                 <div class="win95-card">
                     <div>
-                        <div class="win95-card-title">🗣️ ${escapeHtml(name)}</div>
+                        <div class="win95-card-title">🗣️ ${escapeHtml(name)}${ownerBadge}</div>
                         <div class="win95-card-desc">Preset TTS voice. Command: <code>!myvoice ${escapeHtml(name)}</code></div>
                     </div>
                     <div class="win95-card-actions">

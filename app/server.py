@@ -947,7 +947,8 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 voices_data = tts_client.get_voices()
                 self._send_json(200, voices_data)
             except Exception as e:
-                self._send_json(500, {"error": f"Failed to fetch voices from TTS API: {str(e)}"})
+                presets = [p.strip() for p in (getattr(config, "voice_presets", "") or "mieto, terapisti, terry, tuomo4, niilo").split(",") if p.strip()]
+                self._send_json(200, {"voices": presets, "fallback": True})
             return
 
 
@@ -1896,7 +1897,8 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
                 voices_data = tts_client.get_voices()
                 self._send_json(200, voices_data)
             except Exception as e:
-                self._send_json(500, {"error": f"Failed to fetch voices from TTS API: {str(e)}"})
+                presets = [p.strip() for p in (getattr(config, "voice_presets", "") or "mieto, terapisti, terry, tuomo4, niilo").split(",") if p.strip()]
+                self._send_json(200, {"voices": presets, "fallback": True})
             return
 
 
