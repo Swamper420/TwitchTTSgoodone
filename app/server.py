@@ -497,6 +497,10 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
     """
     global last_command_broadcast_time, last_speaker, last_speaker_time
 
+    if user and config.is_user_ignored(user):
+        logger.info(f"Ignoring text processing for ignored user '{user}'.")
+        return
+
     clean_chan = channel.strip().lstrip('#').lower() if channel else (config.channels[0] if config.channels else "")
 
     has_8d = False
@@ -782,6 +786,9 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
 
 def on_twitch_message(user: str, message: str, channel: str = ""):
     """Callback triggered by Twitch IRC listener."""
+    if config.is_user_ignored(user):
+        logger.info(f"Ignoring Twitch message from ignored user '{user}'.")
+        return
     clean_chan = channel.strip().lstrip('#').lower() if channel else (config.channels[0] if config.channels else "")
     broadcast_event("chat_message", {"user": user, "message": message, "channel": clean_chan, "timestamp": time.time()})
     process_incoming_text(user=user, raw_text=message, channel=clean_chan)
@@ -934,6 +941,11 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         # Route: User Voices List
         if path == "/api/user_voices":
             self._send_json(200, {"user_voices": user_voice_manager.get_all()})
+            return
+
+        # Route: Ignored Users List
+        if path in ("/api/ignored_users", "/api/ignored-users"):
+            self._send_json(200, {"ignored_users": config.get_ignored_users()})
             return
 
         # Route: Commands Catalog List
@@ -1498,6 +1510,39 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"success": True, "user_voices": {}})
             return
 
+        # Route: Ignored Users Management
+        if path in ("/api/ignored_users/add", "/api/ignored-users/add"):
+            username = sanitize_username(body.get("user") or body.get("username"))
+            if not username:
+                raw_user = body.get("user") or body.get("username") or ""
+                username = raw_user.strip().lstrip('@').lower()
+            if not username:
+                self._send_json(400, {"error": "Valid 'user' or 'username' parameter is required"})
+                return
+            config.add_ignored_user(username)
+            broadcast_event("status", self._get_status_dict())
+            self._send_json(200, {"success": True, "user": username, "ignored_users": config.get_ignored_users()})
+            return
+
+        if path in ("/api/ignored_users/delete", "/api/ignored_users/remove", "/api/ignored-users/delete", "/api/ignored-users/remove"):
+            username = sanitize_username(body.get("user") or body.get("username"))
+            if not username:
+                raw_user = body.get("user") or body.get("username") or ""
+                username = raw_user.strip().lstrip('@').lower()
+            if not username:
+                self._send_json(400, {"error": "Valid 'user' or 'username' parameter is required"})
+                return
+            config.remove_ignored_user(username)
+            broadcast_event("status", self._get_status_dict())
+            self._send_json(200, {"success": True, "ignored_users": config.get_ignored_users()})
+            return
+
+        if path in ("/api/ignored_users/clear", "/api/ignored-users/clear"):
+            config.clear_ignored_users()
+            broadcast_event("status", self._get_status_dict())
+            self._send_json(200, {"success": True, "ignored_users": []})
+            return
+
         # Protected administrative routes below (requires admin role)
         if not self._check_auth(required_role="admin"):
             return
@@ -1644,6 +1689,38 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"success": True, "user_voices": {}})
             return
 
+        if path in ("/api/ignored_users/add", "/api/ignored-users/add"):
+            username = sanitize_username(body.get("user") or body.get("username"))
+            if not username:
+                raw_user = body.get("user") or body.get("username") or ""
+                username = raw_user.strip().lstrip('@').lower()
+            if not username:
+                self._send_json(400, {"error": "Valid 'user' or 'username' parameter is required"})
+                return
+            config.add_ignored_user(username)
+            broadcast_event("status", self._get_status_dict())
+            self._send_json(200, {"success": True, "user": username, "ignored_users": config.get_ignored_users()})
+            return
+
+        if path in ("/api/ignored_users/delete", "/api/ignored_users/remove", "/api/ignored-users/delete", "/api/ignored-users/remove"):
+            username = sanitize_username(body.get("user") or body.get("username"))
+            if not username:
+                raw_user = body.get("user") or body.get("username") or ""
+                username = raw_user.strip().lstrip('@').lower()
+            if not username:
+                self._send_json(400, {"error": "Valid 'user' or 'username' parameter is required"})
+                return
+            config.remove_ignored_user(username)
+            broadcast_event("status", self._get_status_dict())
+            self._send_json(200, {"success": True, "ignored_users": config.get_ignored_users()})
+            return
+
+        if path in ("/api/ignored_users/clear", "/api/ignored-users/clear"):
+            config.clear_ignored_users()
+            broadcast_event("status", self._get_status_dict())
+            self._send_json(200, {"success": True, "ignored_users": []})
+            return
+
         self.send_error(404, "Not Found")
 
     def _get_status_dict(self) -> dict:
@@ -1655,6 +1732,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             "authenticated": bool(twitch_bot and twitch_bot.is_authenticated),
             "config": self._get_config_dict(),
             "user_voices": user_voice_manager.get_all(),
+            "ignored_users": config.get_ignored_users(),
             "auth_required": dashboard_auth_manager.is_auth_required(),
             "twitch_auth": twitch_bot.get_auth_info() if twitch_bot else {},
             "bot_status": twitch_bot.get_status() if twitch_bot else {},

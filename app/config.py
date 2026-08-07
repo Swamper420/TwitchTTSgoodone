@@ -53,6 +53,7 @@ ENV_KEYS = {
     "enable_8d_audio": "ENABLE_8D_AUDIO",
     "enable_chaos_mode": "ENABLE_CHAOS_MODE",
     "chaos_mode": "ENABLE_CHAOS_MODE",
+    "ignored_users": "IGNORED_USERS",
 }
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -142,6 +143,7 @@ class Config:
     effect_8d_speed: float = field(default_factory=lambda: float(os.getenv("EFFECT_8D_SPEED", "0.5")))
     enable_8d_audio: bool = field(default_factory=lambda: os.getenv("ENABLE_8D_AUDIO", "true").lower() in ("true", "1", "yes"))
     enable_chaos_mode: bool = field(default_factory=lambda: os.getenv("ENABLE_CHAOS_MODE", "false").lower() in ("true", "1", "yes"))
+    ignored_users: List[str] = field(default_factory=list)
     channel_settings: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     def load(self, filepath: str = CONFIG_FILE):
@@ -176,6 +178,11 @@ class Config:
                     target_key = "shouting_voices" if key in ("shouting_voices", "shoutingvoices") else key
                     if key == "channel_settings" and isinstance(val, dict):
                         self.channel_settings = val
+                    elif target_key == "ignored_users":
+                        if isinstance(val, list):
+                            self.ignored_users = [str(u).strip().lstrip('@').lower() for u in val if str(u).strip()]
+                        elif isinstance(val, str):
+                            self.ignored_users = [u.strip().lstrip('@').lower() for u in val.replace(";", ",").split(",") if u.strip()]
                     elif hasattr(self, target_key):
                         env_var = ENV_KEYS.get(key)
                         # If environment variable is set in os.environ, preserve environment value
@@ -275,6 +282,51 @@ class Config:
                 unique_channels.append(ch)
         return unique_channels[:2]
 
+    def is_user_ignored(self, username: Optional[str]) -> bool:
+        """Returns True if username (case-insensitive) is in the ignored users list."""
+        if not username:
+            return False
+        clean = username.strip().lstrip('@').lower()
+        if not clean:
+            return False
+        return clean in [u.strip().lstrip('@').lower() for u in self.ignored_users if u]
+
+    def add_ignored_user(self, username: str) -> bool:
+        """Adds a username to the ignored list (case-insensitive) and saves config. Returns True if added."""
+        if not username:
+            return False
+        clean = username.strip().lstrip('@').lower()
+        if not clean:
+            return False
+        current_lower = [u.strip().lstrip('@').lower() for u in self.ignored_users if u]
+        if clean not in current_lower:
+            self.ignored_users.append(clean)
+            self.save()
+            return True
+        return False
+
+    def remove_ignored_user(self, username: str) -> bool:
+        """Removes a username from the ignored list (case-insensitive) and saves config. Returns True if removed."""
+        if not username:
+            return False
+        clean = username.strip().lstrip('@').lower()
+        current_lower = [u.strip().lstrip('@').lower() for u in self.ignored_users if u]
+        if clean in current_lower:
+            self.ignored_users = [u for u in self.ignored_users if u.strip().lstrip('@').lower() != clean]
+            self.save()
+            return True
+        return False
+
+    def clear_ignored_users(self):
+        """Clears all ignored users and saves config."""
+        self.ignored_users = []
+        self.save()
+
+    def get_ignored_users(self) -> List[str]:
+        """Returns sorted list of unique ignored usernames."""
+        unique = list(dict.fromkeys([u.strip().lstrip('@').lower() for u in self.ignored_users if u and u.strip()]))
+        return sorted(unique)
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "tts_api_url": self.tts_api_url,
@@ -323,6 +375,7 @@ class Config:
             "kill_counter_voice": self.kill_counter_voice,
             "kill_counter_template": self.kill_counter_template,
             "bible_api_url": self.bible_api_url,
+            "ignored_users": self.get_ignored_users(),
         }
 
     def to_public_dict(self) -> Dict[str, Any]:
@@ -349,6 +402,7 @@ class Config:
             "site_domain": self.site_domain,
             "public_domain": self.site_domain,
             "domain": self.site_domain,
+            "ignored_users": self.get_ignored_users(),
         }
 
     def get_public_base_url(self) -> str:

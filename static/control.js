@@ -14,6 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
         sounds: [],
         voices: [],
         userVoices: {},
+        ignoredUsers: [],
         counter: 0,
         audioQueue: [],
         isPlayingAudio: false,
@@ -100,6 +101,12 @@ document.addEventListener("DOMContentLoaded", () => {
         chatterLockVal: document.getElementById("chatterLockVal"),
         addVoiceBtn: document.getElementById("addVoiceBtn"),
         userVoicesTableBody: document.getElementById("userVoicesTableBody"),
+        
+        // Ignored Users
+        ignoredUserVal: document.getElementById("ignoredUserVal"),
+        addIgnoredUserBtn: document.getElementById("addIgnoredUserBtn"),
+        clearIgnoredUsersBtn: document.getElementById("clearIgnoredUsersBtn"),
+        ignoredUsersTableBody: document.getElementById("ignoredUsersTableBody"),
         
         // Death Counter
         counterNumber: document.getElementById("counterNumber"),
@@ -341,6 +348,12 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         try {
+            loadIgnoredUsers();
+        } catch (e) {
+            console.warn("Could not load ignored users", e);
+        }
+
+        try {
             loadKillCounter();
         } catch (e) {
             console.warn("Could not load counter", e);
@@ -364,6 +377,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 state.chaosMode = !!status.config.enable_chaos_mode;
                 updateChaosUI(state.chaosMode);
             }
+            if (status.config.ignored_users) {
+                state.ignoredUsers = status.config.ignored_users;
+                renderIgnoredUsersTable();
+            }
+        }
+        if (status.ignored_users) {
+            state.ignoredUsers = status.ignored_users;
+            renderIgnoredUsersTable();
         }
 
         // Status pill
@@ -912,6 +933,95 @@ document.addEventListener("DOMContentLoaded", () => {
             });
  
             tbody.appendChild(tr);
+        });
+    }
+
+    // --- Ignored Chatters (Blacklist) Manager ---
+    async function loadIgnoredUsers() {
+        try {
+            const res = await apiRequest("/api/ignored_users");
+            state.ignoredUsers = res.ignored_users || [];
+            renderIgnoredUsersTable();
+        } catch (e) {}
+    }
+
+    function renderIgnoredUsersTable() {
+        if (!elements.ignoredUsersTableBody) return;
+        const tbody = elements.ignoredUsersTableBody;
+        tbody.innerHTML = "";
+
+        const list = state.ignoredUsers || [];
+        if (list.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:12px; color:#666;">No chatters currently ignored.</td></tr>';
+            return;
+        }
+
+        list.forEach(user => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td style="font-weight:700; color:var(--warning-amber, #ffab00);">@${escapeHtml(user)}</td>
+                <td><span style="background:#d9534f; color:#fff; padding:2px 6px; border-radius:3px; font-size:10px; font-weight:bold;">IGNORED</span></td>
+                <td>
+                    <button class="win95-btn win95-btn-small unignore-user-btn" data-user="${escapeHtml(user)}">
+                        ✅ Remove
+                    </button>
+                </td>
+            `;
+
+            tr.querySelector(".unignore-user-btn").addEventListener("click", async () => {
+                try {
+                    const res = await apiRequest("/api/ignored_users/delete", {
+                        method: "POST",
+                        body: JSON.stringify({ user })
+                    });
+                    state.ignoredUsers = res.ignored_users || [];
+                    renderIgnoredUsersTable();
+                    showToast(`Removed @${user} from ignored list`, "info");
+                } catch (e) {
+                    showToast("Failed to remove ignored user", "error");
+                }
+            });
+
+            tbody.appendChild(tr);
+        });
+    }
+
+    if (elements.addIgnoredUserBtn) {
+        elements.addIgnoredUserBtn.addEventListener("click", async () => {
+            const user = elements.ignoredUserVal ? elements.ignoredUserVal.value.trim() : "";
+            if (!user) {
+                showToast("Please specify a Twitch username to ignore.", "warning");
+                return;
+            }
+            try {
+                const res = await apiRequest("/api/ignored_users/add", {
+                    method: "POST",
+                    body: JSON.stringify({ user })
+                });
+                state.ignoredUsers = res.ignored_users || [];
+                if (elements.ignoredUserVal) elements.ignoredUserVal.value = "";
+                renderIgnoredUsersTable();
+                showToast(`Added @${user} to ignored list`, "success");
+            } catch (e) {
+                showToast("Failed to ignore user", "error");
+            }
+        });
+    }
+
+    if (elements.clearIgnoredUsersBtn) {
+        elements.clearIgnoredUsersBtn.addEventListener("click", async () => {
+            if (!confirm("Are you sure you want to clear all ignored users?")) return;
+            try {
+                const res = await apiRequest("/api/ignored_users/clear", {
+                    method: "POST",
+                    body: JSON.stringify({})
+                });
+                state.ignoredUsers = res.ignored_users || [];
+                renderIgnoredUsersTable();
+                showToast("Cleared all ignored users", "info");
+            } catch (e) {
+                showToast("Failed to clear ignored users", "error");
+            }
         });
     }
 

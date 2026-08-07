@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Pixelify+Sans:wght@400;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="viewer.css">
+    <link rel="stylesheet" href="control.css">
 </head>
 <body>
     <!-- Password Lock Screen Overlay (Win95 Dialog Style) -->
@@ -341,6 +341,33 @@
                                         </thead>
                                         <tbody id="userVoicesTableBody">
                                             <tr><td colspan="3" style="text-align: center; color: #666;">No custom voice assignments found.</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </fieldset>
+
+                            <!-- Ignored Chatters (Blacklist) -->
+                            <fieldset class="win95-fieldset" style="grid-column: span 2; margin-top: 12px;">
+                                <legend class="win95-legend">Ignored Chatters (Blacklist)</legend>
+                                <p style="font-size: 10px; color: #444; margin-bottom: 8px;">Messages from ignored chatters will be silently dropped without playing TTS or processing commands.</p>
+                                
+                                <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 8px; flex-wrap: wrap;">
+                                    <input type="text" id="ignoredUserVal" class="win95-input" placeholder="Twitch Username to ignore..." style="flex: 1; min-width: 140px;" />
+                                    <button type="button" id="addIgnoredUserBtn" class="win95-btn win95-btn-danger">🚫 Ignore Chatter</button>
+                                    <button type="button" id="clearIgnoredUsersBtn" class="win95-btn">🧹 Clear All</button>
+                                </div>
+
+                                <div style="overflow-x: auto; max-height: 260px;">
+                                    <table class="win95-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Ignored Chatter</th>
+                                                <th>Status</th>
+                                                <th>Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="ignoredUsersTableBody">
+                                            <tr><td colspan="3" style="text-align: center; color: #666;">No chatters currently ignored.</td></tr>
                                         </tbody>
                                     </table>
                                 </div>
