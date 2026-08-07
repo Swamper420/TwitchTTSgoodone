@@ -58,8 +58,11 @@ ENV_KEYS = {
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+DOTENV_KEYS = set()
+
 def load_dotenv(filepaths=(".env", "example.env"), override=False):
     """Lightweight loader for .env / example.env files into os.environ."""
+    global DOTENV_KEYS
     loaded_any = False
     for relative_or_abs in filepaths:
         candidates = [
@@ -82,8 +85,11 @@ def load_dotenv(filepaths=(".env", "example.env"), override=False):
                                     v = v.split(" #")[0].strip()
 
                                 if k:
-                                    if override or k not in os.environ:
+                                    if k in os.environ and not override:
+                                        DOTENV_KEYS.discard(k)
+                                    else:
                                         os.environ[k] = v
+                                        DOTENV_KEYS.add(k)
                     logger.info(f"Loaded environment variables from {path}")
                     loaded_any = True
                     break
@@ -176,6 +182,10 @@ class Config:
                     data = json.load(f)
                 for key, val in data.items():
                     target_key = "shouting_voices" if key in ("shouting_voices", "shoutingvoices") else key
+                    if key in ("channels", "public_domain", "domain", "obs_server_host", "obs_server_port"):
+                        continue
+                    if isinstance(getattr(type(self), target_key, None), property):
+                        continue
                     if key == "channel_settings" and isinstance(val, dict):
                         self.channel_settings = val
                     elif target_key == "ignored_users":
@@ -185,8 +195,8 @@ class Config:
                             self.ignored_users = [u.strip().lstrip('@').lower() for u in val.replace(";", ",").split(",") if u.strip()]
                     elif hasattr(self, target_key):
                         env_var = ENV_KEYS.get(key)
-                        # If environment variable is set in os.environ, preserve environment value
-                        if env_var and env_var in os.environ:
+                        # Preserve process environment values if set explicitly before load_dotenv
+                        if env_var and env_var in os.environ and env_var not in DOTENV_KEYS:
                             continue
 
                         if val is not None:
@@ -206,6 +216,15 @@ class Config:
             except Exception as e:
                 logger.error(f"Failed to load config from {filepath}: {e}")
         
+        # Sync os.environ and DOTENV_KEYS with active config values
+        for attr, env_var in ENV_KEYS.items():
+            if hasattr(self, attr):
+                val = getattr(self, attr)
+                if val is not None:
+                    str_val = str(val).lower() if isinstance(val, bool) else str(val)
+                    os.environ[env_var] = str_val
+                    DOTENV_KEYS.add(env_var)
+
         self._sync_auth_manager()
 
     def get_channel_settings(self, channel: Optional[str] = None) -> Dict[str, Any]:
@@ -249,8 +268,22 @@ class Config:
             logger.info(f"Saved configuration to {filepath}")
         except Exception as e:
             logger.error(f"Failed to save config to {filepath}: {e}")
+
+        # Keep os.environ and DOTENV_KEYS in sync with saved fields
+        for attr, env_var in ENV_KEYS.items():
+            if hasattr(self, attr):
+                val = getattr(self, attr)
+                if val is not None:
+                    str_val = str(val).lower() if isinstance(val, bool) else str(val)
+                    os.environ[env_var] = str_val
+                    DOTENV_KEYS.add(env_var)
             
-        self._sync_auth_manager()
+    def _sync_auth_manager(self):
+        try:
+            from app.auth import dashboard_auth_manager
+            dashboard_auth_manager.update_passwords(self.admin_password, self.user_password)
+        except Exception:
+            pass
 
     def _sync_auth_manager(self):
         try:
