@@ -44,7 +44,7 @@ class TestControlPageServerRoutes(unittest.TestCase):
                 body = resp.read().decode("utf-8")
                 self.assertIn("Streamer Control Portal", body)
                 self.assertIn("control.js", body)
-                self.assertIn("control.css", body)
+                self.assertIn("viewer.css", body)
                 self.assertIn("authLockModal", body)
 
     def test_control_page_security_headers(self):

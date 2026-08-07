@@ -1788,7 +1788,7 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
 
     # Whitelisted static files that may be served on the public server
     _ALLOWED_STATIC_FILES = {
-        "control.html", "control.css", "control.js",
+        "control.html", "control.js",
         "player.html", "player.css", "player.js",
         "obs.html", "obs.css", "obs.js",
         "viewer.html", "viewer.css", "viewer.js",
