@@ -1964,6 +1964,11 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"user_voices": user_voice_manager.get_all()})
             return
 
+        # ── Ignored Users List (public) ──
+        if path in ("/api/ignored_users", "/api/ignored-users"):
+            self._send_json(200, {"ignored_users": config.get_ignored_users()})
+            return
+
         # ── Commands Catalog (public) ──
         if path == "/api/commands":
             self._send_json(200, {"commands": get_commands_catalog()})
@@ -2491,6 +2496,39 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             user_voice_manager.clear_all()
             broadcast_event("status", self._get_public_status_dict())
             self._send_json(200, {"success": True, "user_voices": {}})
+            return
+
+        # Ignored Users Management
+        if path in ("/api/ignored_users/add", "/api/ignored-users/add"):
+            username = sanitize_username(body.get("user") or body.get("username"))
+            if not username:
+                raw_user = body.get("user") or body.get("username") or ""
+                username = raw_user.strip().lstrip('@').lower()
+            if not username:
+                self._send_json(400, {"error": "Valid 'user' or 'username' parameter is required"})
+                return
+            config.add_ignored_user(username)
+            broadcast_event("status", self._get_public_status_dict())
+            self._send_json(200, {"success": True, "user": username, "ignored_users": config.get_ignored_users()})
+            return
+
+        if path in ("/api/ignored_users/delete", "/api/ignored_users/remove", "/api/ignored-users/delete", "/api/ignored-users/remove"):
+            username = sanitize_username(body.get("user") or body.get("username"))
+            if not username:
+                raw_user = body.get("user") or body.get("username") or ""
+                username = raw_user.strip().lstrip('@').lower()
+            if not username:
+                self._send_json(400, {"error": "Valid 'user' or 'username' parameter is required"})
+                return
+            config.remove_ignored_user(username)
+            broadcast_event("status", self._get_public_status_dict())
+            self._send_json(200, {"success": True, "ignored_users": config.get_ignored_users()})
+            return
+
+        if path in ("/api/ignored_users/clear", "/api/ignored-users/clear"):
+            config.clear_ignored_users()
+            broadcast_event("status", self._get_public_status_dict())
+            self._send_json(200, {"success": True, "ignored_users": []})
             return
 
         self.send_error(404, "Not Found")

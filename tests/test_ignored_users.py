@@ -156,3 +156,46 @@ class TestIgnoredUsersAPIEndpoints(unittest.TestCase):
             data = json.loads(resp.read().decode("utf-8"))
             self.assertTrue(data.get("success"))
             self.assertEqual(data.get("ignored_users"), [])
+
+
+class TestPublicServerIgnoredUsersAPIEndpoints(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from app.server import PublicRequestHandler
+        cls.server = HTTPServer(('127.0.0.1', 0), PublicRequestHandler)
+        cls.port = cls.server.server_port
+        cls.server_thread = threading.Thread(target=cls.server.serve_forever)
+        cls.server_thread.daemon = True
+        cls.server_thread.start()
+        cls.base_url = f"http://127.0.0.1:{cls.port}"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+
+    def setUp(self):
+        config.clear_ignored_users()
+
+    def tearDown(self):
+        config.clear_ignored_users()
+
+    def test_public_get_ignored_users_api(self):
+        config.add_ignored_user("publicspammer")
+        req = urllib.request.Request(f"{self.base_url}/api/ignored_users")
+        with urllib.request.urlopen(req) as resp:
+            self.assertEqual(resp.status, 200)
+            data = json.loads(resp.read().decode("utf-8"))
+            self.assertIn("ignored_users", data)
+            self.assertIn("publicspammer", data["ignored_users"])
+
+    def test_public_add_ignored_user_api(self):
+        body = json.dumps({"user": "publicspammer"}).encode("utf-8")
+        req = urllib.request.Request(f"{self.base_url}/api/ignored_users/add", data=body, headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req) as resp:
+            self.assertEqual(resp.status, 200)
+            data = json.loads(resp.read().decode("utf-8"))
+            self.assertTrue(data.get("success"))
+            self.assertIn("publicspammer", data.get("ignored_users", []))
+            self.assertTrue(config.is_user_ignored("publicspammer"))
+
