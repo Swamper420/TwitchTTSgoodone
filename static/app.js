@@ -67,7 +67,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Constants
     const SILENT_WAV_SRC = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
 
-    // Audio Queue State
+    // Audio Queue State & Dual Channels for Normal Mode (Left = -1.0, Right = +1.0)
+    let channels = [
+        { id: 'left', name: 'Left', pan: -1.0, isPlaying: false, currentItem: null, audio: null, panner: null, source: null },
+        { id: 'right', name: 'Right', pan: 1.0, isPlaying: false, currentItem: null, audio: null, panner: null, source: null }
+    ];
     let audioQueue = [];
     let isPlaying = false;
     let currentItem = null;
@@ -81,7 +85,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Web Audio API State
     let audioCtx = null;
     let analyser = null;
-    let audioSource = null;
     let animFrameId = null;
 
     // Initialize audio player as muted by default on the main page
@@ -102,6 +105,38 @@ document.addEventListener('DOMContentLoaded', () => {
     // Audio Autoplay & Web Audio Visualizer
     // ----------------------------------------------------
 
+    function initChannel(chan, idx) {
+        if (!chan.audio) {
+            if (idx === 0 && audioPlayer) {
+                chan.audio = audioPlayer;
+            } else {
+                chan.audio = new Audio();
+                chan.audio.preload = 'auto';
+            }
+        }
+        if (volumeSlider) {
+            chan.audio.volume = volumeSlider.value / 100;
+        }
+        chan.audio.muted = !!(audioPlayer && audioPlayer.muted);
+
+        if (audioCtx && !chan.source) {
+            try {
+                chan.source = audioCtx.createMediaElementSource(chan.audio);
+                if (audioCtx.createStereoPanner) {
+                    chan.panner = audioCtx.createStereoPanner();
+                    chan.panner.pan.value = chan.pan;
+                    chan.source.connect(chan.panner);
+                    chan.panner.connect(analyser || audioCtx.destination);
+                } else {
+                    chan.source.connect(analyser || audioCtx.destination);
+                }
+            } catch (e) {
+                console.warn('Dashboard Web Audio channel init note:', e);
+            }
+        }
+        return chan;
+    }
+
     function initWebAudioVisualizer() {
         if (audioCtx) {
             if (audioCtx.state === 'suspended') {
@@ -113,8 +148,9 @@ document.addEventListener('DOMContentLoaded', () => {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             analyser = audioCtx.createAnalyser();
             analyser.fftSize = 64;
-            audioSource = audioCtx.createMediaElementSource(audioPlayer);
-            audioSource.connect(analyser);
+
+            channels.forEach((chan, idx) => initChannel(chan, idx));
+
             analyser.connect(audioCtx.destination);
             renderSpectrum();
         } catch (e) {
@@ -138,10 +174,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }).catch(() => {});
         }
 
-        // Trigger queue playback if items arrived before user interaction
-        if (!isPlaying && audioQueue.length > 0) {
-            checkAndPlayNext();
-        }
+        checkAndPlayNext();
     }
 
     if (enableAudioBtn) {
@@ -198,12 +231,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let x = 0;
 
+        const anyPlaying = channels.some(c => c.isPlaying);
+
         for (let i = 0; i < numBars; i++) {
             let sum = 0;
             for (let j = 0; j < step; j++) {
                 sum += dataArray[i * step + j] || 0;
             }
-            const val = isPlaying ? (sum / step) : 0;
+            const val = anyPlaying ? (sum / step) : 0;
             const ratio = val / 255;
             const activeBlocks = Math.round(ratio * maxBlocks);
 
@@ -277,35 +312,88 @@ document.addEventListener('DOMContentLoaded', () => {
         updateQueueUI();
     }
 
+    function syncAppUIState() {
+        const activeChans = channels.filter(c => c.isPlaying && c.currentItem);
+        isPlaying = activeChans.length > 0;
+
+        if (!isPlaying) {
+            currentItem = null;
+            if (visualizer) visualizer.classList.remove('playing');
+            updateNowPlayingUI(null);
+        } else {
+            if (visualizer) visualizer.classList.add('playing');
+            if (activeChans.length === 1) {
+                const item = activeChans[0].currentItem;
+                currentItem = item;
+                updateNowPlayingUI(item);
+            } else {
+                const itemL = channels[0].currentItem;
+                const itemR = channels[1].currentItem;
+                currentItem = itemL;
+                if (speakerName) speakerName.textContent = `L: ${itemL.user || 'Anon'} | R: ${itemR.user || 'Anon'}`;
+                if (spokenText) spokenText.textContent = `[LEFT] ${itemL.user || 'Anon'}: "${itemL.text || ''}"\n[RIGHT] ${itemR.user || 'Anon'}: "${itemR.text || ''}"`;
+                if (voiceTag) voiceTag.textContent = `L: ${itemL.voice || 'def'} | R: ${itemR.voice || 'def'}`;
+                if (chunkTag) chunkTag.textContent = `Dual Playback`;
+            }
+        }
+        updateQueueUI();
+    }
+
     function checkAndPlayNext() {
-        if (!autoPlayToggle.checked || isPlaying || audioQueue.length === 0) {
+        if (!autoPlayToggle.checked || audioQueue.length === 0) {
             return;
         }
 
-        const head = audioQueue[0];
+        channels.forEach((chan, idx) => {
+            if (chan.isPlaying) return;
+            if (audioQueue.length === 0) return;
 
-        // If this is chunk 1 of a multi-chunk message, wait for chunk 2 to be ready before playing chunk 1
-        if (head.total_chunks > 1 && head.chunk_index === 1) {
-            const hasChunk2 = audioQueue.some(item => item.chunk_index === 2 && item.user === head.user);
-            if (!hasChunk2) {
-                if (!bufferTimer) {
-                    bufferTimer = setTimeout(() => {
-                        bufferTimer = null;
-                        if (!isPlaying && audioQueue.length > 0) {
-                            playNextChunk();
+            // Find candidate message in queue from a user not currently playing on another channel
+            let foundIdx = -1;
+            for (let q = 0; q < audioQueue.length; q++) {
+                const candidate = audioQueue[q];
+
+                // If candidate is chunk 1 of multi-chunk message, check buffer
+                if (candidate.total_chunks > 1 && candidate.chunk_index === 1) {
+                    const hasChunk2 = audioQueue.some(item => item.chunk_index === 2 && item.user === candidate.user);
+                    if (!hasChunk2) {
+                        if (!bufferTimer) {
+                            bufferTimer = setTimeout(() => {
+                                bufferTimer = null;
+                                checkAndPlayNext();
+                            }, 12000);
                         }
-                    }, 12000); // Safety fallback timeout if chunk 2 generation fails
+                        continue;
+                    }
                 }
-                return;
+
+                const candUser = (candidate.user || 'Anonymous').toLowerCase().trim();
+                let conflict = false;
+                for (let j = 0; j < channels.length; j++) {
+                    if (j !== idx && channels[j].isPlaying && channels[j].currentItem) {
+                        const otherUser = (channels[j].currentItem.user || 'Anonymous').toLowerCase().trim();
+                        if (candUser === otherUser) {
+                            conflict = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!conflict) {
+                    foundIdx = q;
+                    break;
+                }
             }
-        }
 
-        if (bufferTimer) {
-            clearTimeout(bufferTimer);
-            bufferTimer = null;
-        }
-
-        playNextChunk();
+            if (foundIdx !== -1) {
+                if (bufferTimer) {
+                    clearTimeout(bufferTimer);
+                    bufferTimer = null;
+                }
+                const item = audioQueue.splice(foundIdx, 1)[0];
+                playChunkOnChannel(chan, idx, item);
+            }
+        });
     }
 
     let currentFartBgAudio = null;
@@ -320,78 +408,68 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function playNextChunk() {
-        if (bufferTimer) {
-            clearTimeout(bufferTimer);
-            bufferTimer = null;
-        }
-
-        if (audioQueue.length === 0) {
-            isPlaying = false;
-            currentItem = null;
-            stopFartBgAudio();
-            if (visualizer) visualizer.classList.remove('playing');
-            updateNowPlayingUI(null);
-            updateQueueUI();
-            return;
-        }
-
+    async function playChunkOnChannel(chan, idx, item) {
         initWebAudioVisualizer();
         if (audioCtx && audioCtx.state === 'suspended') {
             audioCtx.resume();
         }
 
-        isPlaying = true;
-        currentItem = audioQueue.shift();
-        if (visualizer) visualizer.classList.add('playing');
-        
-        updateQueueUI();
-        updateNowPlayingUI(currentItem);
+        initChannel(chan, idx);
 
-        if (currentItem.chunk_index === 1 && chimeToggle && chimeToggle.checked) {
+        chan.isPlaying = true;
+        chan.currentItem = item;
+
+        syncAppUIState();
+
+        if (item.chunk_index === 1 && chimeToggle && chimeToggle.checked) {
             await playChimeSound();
         }
 
-        // Parallel Fart Background Audio Playback
-        if (currentItem && currentItem.has_fart_bg) {
+        if (item && item.has_fart_bg) {
             try {
-                stopFartBgAudio();
-                const fartUrl = currentItem.fart_bg_url || '/api/soundboard/fartbackground';
-                currentFartBgAudio = new Audio(fartUrl);
+                const fartUrl = item.fart_bg_url || '/api/soundboard/fartbackground';
+                const fartAudio = new Audio(fartUrl);
                 if (volumeSlider) {
-                    currentFartBgAudio.volume = volumeSlider.value / 100;
+                    fartAudio.volume = volumeSlider.value / 100;
                 }
-                currentFartBgAudio.play().catch((err) => {
-                    console.warn('Dashboard fart background audio playback note:', err);
-                });
-            } catch (err) {
-                console.error('Failed to initialize dashboard fart background audio:', err);
-            }
+                fartAudio.play().catch(() => {});
+            } catch (err) {}
         }
 
-        audioPlayer.src = currentItem.url;
-        audioPlayer.volume = volumeSlider.value / 100;
-        audioPlayer.load();
-        
-        audioPlayer.play().then(() => {
+        chan.audio.src = item.url;
+        if (volumeSlider) {
+            chan.audio.volume = volumeSlider.value / 100;
+        }
+        chan.audio.load();
+
+        const onEnded = () => {
+            chan.isPlaying = false;
+            chan.currentItem = null;
+            syncAppUIState();
+            if (autoPlayToggle.checked && audioQueue.length > 0) {
+                setTimeout(checkAndPlayNext, 150);
+            }
+        };
+
+        chan.audio.onended = onEnded;
+        chan.audio.onerror = (e) => {
+            console.error('App channel playback error:', e);
+            onEnded();
+        };
+
+        chan.audio.play().then(() => {
             if (audioUnlockOverlay) {
                 audioUnlockOverlay.classList.add('hidden');
             }
         }).catch(err => {
             console.error('Audio playback error / Autoplay blocked:', err);
-            if (visualizer) visualizer.classList.remove('playing');
-            stopFartBgAudio();
-            
-            // Re-queue item so it isn't lost if autoplay was blocked
-            if (currentItem) {
-                audioQueue.unshift(currentItem);
+            if (item) {
+                audioQueue.unshift(item);
             }
-            isPlaying = false;
-            currentItem = null;
-            updateNowPlayingUI(null);
-            updateQueueUI();
+            chan.isPlaying = false;
+            chan.currentItem = null;
+            syncAppUIState();
 
-            // Prompt user to activate audio if autoplay was blocked
             if (audioUnlockOverlay) {
                 audioUnlockOverlay.classList.remove('hidden');
             }
@@ -409,15 +487,19 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) {}
 
         stopFartBgAudio();
-        if (isPlaying || currentItem) {
-            audioPlayer.pause();
-            audioPlayer.currentTime = 0;
-            if (visualizer) visualizer.classList.remove('playing');
-            isPlaying = false;
-            currentItem = null;
-            showToast('Skipped current audio', 'success');
-            checkAndPlayNext();
-        }
+        channels.forEach(chan => {
+            if (chan.audio) {
+                try {
+                    chan.audio.pause();
+                    chan.audio.currentTime = 0;
+                } catch (e) {}
+            }
+            chan.isPlaying = false;
+            chan.currentItem = null;
+        });
+        syncAppUIState();
+        showToast('Skipped current audio', 'success');
+        checkAndPlayNext();
     });
 
     // Clear entire queue
@@ -428,13 +510,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         stopFartBgAudio();
         audioQueue = [];
-        audioPlayer.pause();
-        audioPlayer.currentTime = 0;
-        isPlaying = false;
-        currentItem = null;
-        if (visualizer) visualizer.classList.remove('playing');
-        updateNowPlayingUI(null);
-        updateQueueUI();
+        channels.forEach(chan => {
+            if (chan.audio) {
+                try {
+                    chan.audio.pause();
+                    chan.audio.currentTime = 0;
+                } catch (e) {}
+            }
+            chan.isPlaying = false;
+            chan.currentItem = null;
+        });
+        syncAppUIState();
         showToast('Cleared audio queue', 'success');
     });
 
@@ -442,18 +528,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (volumeSlider) {
         volumeSlider.addEventListener('input', () => {
             const val = parseInt(volumeSlider.value, 10);
+            const vol = val / 100;
             if (audioPlayer) {
-                audioPlayer.volume = val / 100;
+                audioPlayer.volume = vol;
             }
+            channels.forEach(chan => {
+                if (chan.audio) chan.audio.volume = vol;
+            });
             if (volumeValue) {
                 volumeValue.textContent = `${val}%`;
             }
             if (val === 0) {
                 if (audioPlayer) audioPlayer.muted = true;
+                channels.forEach(chan => { if (chan.audio) chan.audio.muted = true; });
                 if (muteBtn) muteBtn.textContent = '🔇';
             } else {
-                // If user turns volume up, unmute automatically
                 if (audioPlayer) audioPlayer.muted = false;
+                channels.forEach(chan => { if (chan.audio) chan.audio.muted = false; });
                 if (muteBtn) muteBtn.textContent = '🔊';
             }
         });
@@ -463,6 +554,7 @@ document.addEventListener('DOMContentLoaded', () => {
         muteBtn.addEventListener('click', () => {
             if (!audioPlayer) return;
             audioPlayer.muted = !audioPlayer.muted;
+            channels.forEach(chan => { if (chan.audio) chan.audio.muted = audioPlayer.muted; });
             muteBtn.textContent = audioPlayer.muted ? '🔇' : '🔊';
         });
     }

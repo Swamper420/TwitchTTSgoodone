@@ -32,7 +32,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Constants
     const SILENT_WAV = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
     
-    // Player State
+    // Dual Channel Audio State for Normal Mode (Left = -1.0, Right = +1.0)
+    let channels = [
+        { id: 'left', name: 'Left', pan: -1.0, isPlaying: false, currentItem: null, audio: null, panner: null, source: null },
+        { id: 'right', name: 'Right', pan: 1.0, isPlaying: false, currentItem: null, audio: null, panner: null, source: null }
+    ];
     let audioQueue = [];
     let isPlaying = false;
     let currentItem = null;
@@ -43,7 +47,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Web Audio API State
     let audioCtx = null;
     let analyser = null;
-    let audioSource = null;
     let animFrameId = null;
 
     // URL Query Parameters check (OBS Overlay Mode)
@@ -83,6 +86,39 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/'/g, '&#039;');
     }
 
+    // Initialize Channel Audio Element & Web Audio Panner Nodes
+    function initChannel(chan, idx) {
+        if (!chan.audio) {
+            if (idx === 0 && audioPlayer) {
+                chan.audio = audioPlayer;
+            } else {
+                chan.audio = new Audio();
+                chan.audio.preload = 'auto';
+            }
+        }
+        if (audioPlayer && audioPlayer.volume !== undefined) {
+            chan.audio.volume = audioPlayer.volume;
+        }
+        chan.audio.muted = !!(audioPlayer && audioPlayer.muted);
+
+        if (audioCtx && !chan.source) {
+            try {
+                chan.source = audioCtx.createMediaElementSource(chan.audio);
+                if (audioCtx.createStereoPanner) {
+                    chan.panner = audioCtx.createStereoPanner();
+                    chan.panner.pan.value = chan.pan;
+                    chan.source.connect(chan.panner);
+                    chan.panner.connect(analyser || audioCtx.destination);
+                } else {
+                    chan.source.connect(analyser || audioCtx.destination);
+                }
+            } catch (e) {
+                console.warn('Web Audio channel node init note:', e);
+            }
+        }
+        return chan;
+    }
+
     // Web Audio API Initialization
     function initWebAudio() {
         if (audioCtx) {
@@ -95,8 +131,9 @@ document.addEventListener('DOMContentLoaded', () => {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             analyser = audioCtx.createAnalyser();
             analyser.fftSize = 64;
-            audioSource = audioCtx.createMediaElementSource(audioPlayer);
-            audioSource.connect(analyser);
+
+            channels.forEach((chan, idx) => initChannel(chan, idx));
+
             analyser.connect(audioCtx.destination);
             renderSpectrum();
         } catch (e) {
@@ -125,9 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }).catch(() => {});
         } catch (e) {}
 
-        if (!isPlaying && audioQueue.length > 0) {
-            checkAndPlayNext();
-        }
+        checkAndPlayNext();
     }
 
     if (enableAudioBtn) {
@@ -287,7 +322,8 @@ document.addEventListener('DOMContentLoaded', () => {
             addHistoryItem(item);
 
             setTimeout(() => {
-                if (!isPlaying) {
+                const activeChans = channels.filter(c => c.isPlaying);
+                if (activeChans.length === 0) {
                     if (speakerAvatar) speakerAvatar.classList.remove('active');
                     if (equalizerVisualizer) equalizerVisualizer.classList.remove('playing');
                 }
@@ -347,11 +383,49 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Update UI Labels for Active Dual Channels
+    function updateUIState() {
+        const activeChans = channels.filter(c => c.isPlaying && c.currentItem);
+        isPlaying = activeChans.length > 0;
+
+        if (!isPlaying) {
+            currentItem = null;
+            if (speakerAvatar) speakerAvatar.classList.remove('active');
+            if (equalizerVisualizer) equalizerVisualizer.classList.remove('playing');
+            if (currentSpeaker) currentSpeaker.textContent = 'Idle / Listening';
+            if (currentText) currentText.textContent = 'Waiting for incoming voice messages...';
+            if (chunkTag) chunkTag.textContent = 'Ready';
+            if (voiceTag) voiceTag.textContent = 'Voice: Default';
+        } else {
+            if (speakerAvatar) speakerAvatar.classList.add('active');
+            if (equalizerVisualizer) equalizerVisualizer.classList.add('playing');
+
+            if (activeChans.length === 1) {
+                const item = activeChans[0].currentItem;
+                currentItem = item;
+                if (currentSpeaker) currentSpeaker.textContent = item.user || 'Anonymous';
+                if (currentText) currentText.textContent = item.text || '';
+                if (voiceTag) voiceTag.textContent = `Voice: ${item.voice || 'Default'}${item.has_8d ? ' (8D)' : ''}`;
+                if (chunkTag) chunkTag.textContent = `Chunk ${item.chunk_index || 1}/${item.total_chunks || 1}`;
+            } else {
+                // Both Left and Right channels playing simultaneously
+                const itemL = channels[0].currentItem;
+                const itemR = channels[1].currentItem;
+                currentItem = itemL;
+                if (currentSpeaker) currentSpeaker.textContent = `L: ${itemL.user || 'Anon'} | R: ${itemR.user || 'Anon'}`;
+                if (currentText) currentText.textContent = `[LEFT] ${itemL.user || 'Anon'}: "${itemL.text || ''}"\n[RIGHT] ${itemR.user || 'Anon'}: "${itemR.text || ''}"`;
+                if (voiceTag) voiceTag.textContent = `L: ${itemL.voice || 'def'} | R: ${itemR.voice || 'def'}`;
+                if (chunkTag) chunkTag.textContent = `Dual Playback`;
+            }
+        }
+        updateQueueDisplay();
+    }
 
     // Update Queue Counter Display
     function updateQueueDisplay() {
         if (queueBadge) {
-            const count = audioQueue.length + (isPlaying ? 1 : 0);
+            const activeCount = channels.filter(c => c.isPlaying).length;
+            const count = audioQueue.length + activeCount;
             queueBadge.textContent = `${count} in queue`;
         }
     }
@@ -395,54 +469,90 @@ document.addEventListener('DOMContentLoaded', () => {
         updateQueueDisplay();
     }
 
-    // Sequential Audio Player Logic
+    // Dual-Channel Audio Player Logic for Normal Mode
     function checkAndPlayNext() {
-        if (isPlaying || audioQueue.length === 0) return;
+        if (audioQueue.length === 0) return;
 
-        currentItem = audioQueue.shift();
-        updateQueueDisplay();
+        channels.forEach((chan, idx) => {
+            if (chan.isPlaying) return;
+            if (audioQueue.length === 0) return;
 
-        isPlaying = true;
-        playNotificationChime();
+            // Find candidate message in queue from a user not currently playing on another channel
+            let foundIdx = -1;
+            for (let q = 0; q < audioQueue.length; q++) {
+                const candidate = audioQueue[q];
+                const candUser = (candidate.user || 'Anonymous').toLowerCase().trim();
 
-        // Update UI
-        if (currentSpeaker) currentSpeaker.textContent = currentItem.user || 'Anonymous';
-        if (currentText) currentText.textContent = currentItem.text || '';
-        if (voiceTag) voiceTag.textContent = `Voice: ${currentItem.voice || 'Default'}${currentItem.has_8d ? ' (8D)' : ''}`;
-        if (chunkTag) chunkTag.textContent = `Chunk ${currentItem.chunk_index || 1}/${currentItem.total_chunks || 1}`;
-
-        if (speakerAvatar) speakerAvatar.classList.add('active');
-        if (equalizerVisualizer) equalizerVisualizer.classList.add('playing');
-
-        // Add to voice history log
-        addHistoryItem(currentItem);
-
-        // Parallel Fart Background Audio Playback
-        if (currentItem && currentItem.has_fart_bg) {
-            try {
-                if (currentFartBgAudio) {
-                    currentFartBgAudio.pause();
-                    currentFartBgAudio = null;
+                let conflict = false;
+                for (let j = 0; j < channels.length; j++) {
+                    if (j !== idx && channels[j].isPlaying && channels[j].currentItem) {
+                        const otherUser = (channels[j].currentItem.user || 'Anonymous').toLowerCase().trim();
+                        if (candUser === otherUser) {
+                            conflict = true;
+                            break;
+                        }
+                    }
                 }
-                const fartUrl = currentItem.fart_bg_url || '/api/soundboard/fartbackground';
-                currentFartBgAudio = new Audio(fartUrl);
-                currentFartBgAudio.volume = (audioPlayer && audioPlayer.volume !== undefined) ? audioPlayer.volume : 1.0;
-                currentFartBgAudio.play().catch((err) => {
-                    console.warn('Player page fart background audio playback note:', err);
-                });
-            } catch (err) {
-                console.error('Failed to initialize player page fart background audio:', err);
+                if (!conflict) {
+                    foundIdx = q;
+                    break;
+                }
             }
+
+            if (foundIdx !== -1) {
+                const item = audioQueue.splice(foundIdx, 1)[0];
+                playItemOnChannel(chan, idx, item);
+            }
+        });
+    }
+
+    function playItemOnChannel(chan, idx, item) {
+        initWebAudio();
+        if (audioCtx && audioCtx.state === 'suspended') {
+            audioCtx.resume();
         }
 
-        // Load & Play Audio
-        audioPlayer.src = currentItem.url;
-        audioPlayer.play().catch((err) => {
+        initChannel(chan, idx);
+
+        chan.isPlaying = true;
+        chan.currentItem = item;
+        playNotificationChime();
+
+        updateUIState();
+        addHistoryItem(item);
+
+        if (item && item.has_fart_bg) {
+            try {
+                const fartUrl = item.fart_bg_url || '/api/soundboard/fartbackground';
+                const fartAudio = new Audio(fartUrl);
+                fartAudio.volume = (audioPlayer && audioPlayer.volume !== undefined) ? audioPlayer.volume : 1.0;
+                fartAudio.play().catch(() => {});
+            } catch (err) {}
+        }
+
+        chan.audio.src = item.url;
+
+        const onEnded = () => {
+            chan.isPlaying = false;
+            chan.currentItem = null;
+            updateUIState();
+            if (audioQueue.length > 0) {
+                setTimeout(checkAndPlayNext, 150);
+            }
+        };
+
+        chan.audio.onended = onEnded;
+        chan.audio.onerror = (e) => {
+            console.error('Channel audio playback error:', e);
+            onEnded();
+        };
+
+        chan.audio.play().catch((err) => {
             console.warn('Audio playback error (browser autoplay block?):', err);
             if (!audioUnlocked && audioUnlockOverlay) {
                 audioUnlockOverlay.classList.remove('hidden');
             }
-            onAudioEnded();
+            onEnded();
         });
     }
 
@@ -456,37 +566,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function onAudioEnded() {
-        isPlaying = false;
-        currentItem = null;
+    function skipCurrentAudio() {
+        channels.forEach(chan => {
+            if (chan.audio) {
+                try {
+                    chan.audio.pause();
+                    chan.audio.currentTime = 0;
+                } catch (e) {}
+            }
+            chan.isPlaying = false;
+            chan.currentItem = null;
+        });
         stopFartBgAudio();
-
-        if (speakerAvatar) speakerAvatar.classList.remove('active');
-        if (equalizerVisualizer) equalizerVisualizer.classList.remove('playing');
-
-        updateQueueDisplay();
-
+        updateUIState();
         if (audioQueue.length > 0) {
-            setTimeout(checkAndPlayNext, 200);
-        } else {
-            if (currentSpeaker) currentSpeaker.textContent = 'Idle / Listening';
-            if (currentText) currentText.textContent = 'Waiting for incoming voice messages...';
-            if (chunkTag) chunkTag.textContent = 'Ready';
+            checkAndPlayNext();
         }
     }
-
-    function skipCurrentAudio() {
-        audioPlayer.pause();
-        audioPlayer.currentTime = 0;
-        stopFartBgAudio();
-        onAudioEnded();
-    }
-
-    audioPlayer.addEventListener('ended', onAudioEnded);
-    audioPlayer.addEventListener('error', (e) => {
-        console.error('Audio element playback error:', e);
-        onAudioEnded();
-    });
 
     // Voice History Logger
     function addHistoryItem(item) {
@@ -540,7 +636,11 @@ document.addEventListener('DOMContentLoaded', () => {
         volumeSlider.addEventListener('input', (e) => {
             const val = parseInt(e.target.value, 10);
             volumeValue.textContent = `${val}%`;
-            audioPlayer.volume = val / 100;
+            const vol = val / 100;
+            audioPlayer.volume = vol;
+            channels.forEach(chan => {
+                if (chan.audio) chan.audio.volume = vol;
+            });
             localStorage.setItem('tts_player_volume', val);
         });
     }
@@ -548,6 +648,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (muteBtn) {
         muteBtn.addEventListener('click', () => {
             audioPlayer.muted = !audioPlayer.muted;
+            channels.forEach(chan => {
+                if (chan.audio) chan.audio.muted = audioPlayer.muted;
+            });
             muteBtn.textContent = audioPlayer.muted ? '🔇' : '🔊';
         });
     }

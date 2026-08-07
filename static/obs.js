@@ -48,7 +48,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (obsText) obsText.textContent = 'Twitch TTS Voice Overlay ready.';
     }
 
-    // State
+    // Dual Channel State for Normal Mode (Left = -1.0, Right = +1.0)
+    let channels = [
+        { id: 'left', name: 'Left', pan: -1.0, isPlaying: false, currentItem: null, audio: null, panner: null, source: null },
+        { id: 'right', name: 'Right', pan: 1.0, isPlaying: false, currentItem: null, audio: null, panner: null, source: null }
+    ];
     let audioQueue = [];
     let isPlaying = false;
     let currentItem = null;
@@ -56,7 +60,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let chaosMode = false;
     let audioCtx = null;
     let analyser = null;
-    let audioSource = null;
     let animFrameId = null;
 
     // Safe HTML Escaping (DOM XSS Protection)
@@ -68,6 +71,38 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#039;');
+    }
+
+    // Initialize Channel Audio & Panner Nodes
+    function initChannel(chan, idx) {
+        if (!chan.audio) {
+            if (idx === 0 && audioPlayer) {
+                chan.audio = audioPlayer;
+            } else {
+                chan.audio = new Audio();
+                chan.audio.preload = 'auto';
+            }
+        }
+        if (audioPlayer && audioPlayer.volume !== undefined) {
+            chan.audio.volume = audioPlayer.volume;
+        }
+
+        if (audioCtx && !chan.source) {
+            try {
+                chan.source = audioCtx.createMediaElementSource(chan.audio);
+                if (audioCtx.createStereoPanner) {
+                    chan.panner = audioCtx.createStereoPanner();
+                    chan.panner.pan.value = chan.pan;
+                    chan.source.connect(chan.panner);
+                    chan.panner.connect(analyser || audioCtx.destination);
+                } else {
+                    chan.source.connect(analyser || audioCtx.destination);
+                }
+            } catch (e) {
+                console.warn('OBS Web Audio channel init note:', e);
+            }
+        }
+        return chan;
     }
 
     // Auto-unlock Web Audio API in OBS Browser Source
@@ -82,8 +117,9 @@ document.addEventListener('DOMContentLoaded', () => {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             analyser = audioCtx.createAnalyser();
             analyser.fftSize = 64;
-            audioSource = audioCtx.createMediaElementSource(audioPlayer);
-            audioSource.connect(analyser);
+
+            channels.forEach((chan, idx) => initChannel(chan, idx));
+
             analyser.connect(audioCtx.destination);
             renderSpectrum();
         } catch (e) {
@@ -112,9 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (e) {}
 
-        if (!isPlaying && audioQueue.length > 0) {
-            checkAndPlayNext();
-        }
+        checkAndPlayNext();
     }
 
     function silentUnlock() {
@@ -168,7 +202,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const dataArray = new Uint8Array(bufferLength);
 
         function draw() {
-            if (!isPlaying && audioQueue.length === 0) {
+            const activeChans = channels.filter(c => c.isPlaying);
+            if (activeChans.length === 0 && audioQueue.length === 0) {
                 canvasCtx.clearRect(0, 0, obsCanvas.width, obsCanvas.height);
                 isDrawing = false;
                 animFrameId = null;
@@ -285,7 +320,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             function onSoundboardEnd() {
-                if (!isPlaying && !isPreviewMode) {
+                const activeChans = channels.filter(c => c.isPlaying);
+                if (activeChans.length === 0 && !isPreviewMode) {
                     if (overlayCard) {
                         overlayCard.classList.remove('speaking');
                         overlayCard.classList.add('idle');
@@ -413,66 +449,132 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Sequential Audio Playback
+    // Update Overlay UI for Active Dual Channels
+    function updateOverlayUI() {
+        const activeChans = channels.filter(c => c.isPlaying && c.currentItem);
+        isPlaying = activeChans.length > 0;
+
+        if (!isPlaying) {
+            currentItem = null;
+            if (isPreviewMode) {
+                overlayCard.classList.remove('idle');
+                overlayCard.classList.add('speaking');
+                if (obsSpeaker) obsSpeaker.textContent = 'Preview Mode (Chatter)';
+                if (obsText) obsText.textContent = 'Twitch TTS Voice Overlay ready.';
+            } else {
+                overlayCard.classList.remove('speaking');
+                overlayCard.classList.add('idle');
+                if (obsSpeaker) obsSpeaker.textContent = 'Waiting for TTS...';
+                if (obsText) obsText.textContent = 'Twitch TTS Voice Overlay ready.';
+            }
+        } else {
+            overlayCard.classList.remove('idle');
+            overlayCard.classList.add('speaking');
+
+            if (activeChans.length === 1) {
+                const item = activeChans[0].currentItem;
+                currentItem = item;
+                if (obsSpeaker) obsSpeaker.textContent = item.user || 'Chatter';
+                if (obsText) obsText.textContent = item.text || '';
+            } else {
+                // Both Left & Right channels playing
+                const itemL = channels[0].currentItem;
+                const itemR = channels[1].currentItem;
+                currentItem = itemL;
+                if (obsSpeaker) obsSpeaker.textContent = `L: ${itemL.user || 'Anon'} | R: ${itemR.user || 'Anon'}`;
+                if (obsText) obsText.textContent = `[L] ${itemL.user || 'Anon'}: "${itemL.text || ''}" | [R] ${itemR.user || 'Anon'}: "${itemR.text || ''}"`;
+            }
+        }
+    }
+
+    // Dual-Channel Audio Playback Engine for OBS Overlay
     function checkAndPlayNext() {
-        if (isPlaying || audioQueue.length === 0) return;
+        if (audioQueue.length === 0) return;
 
-        currentItem = audioQueue.shift();
-        isPlaying = true;
+        channels.forEach((chan, idx) => {
+            if (chan.isPlaying) return;
+            if (audioQueue.length === 0) return;
 
+            // Find candidate message in queue from a user not currently playing on another channel
+            let foundIdx = -1;
+            for (let q = 0; q < audioQueue.length; q++) {
+                const candidate = audioQueue[q];
+                const candUser = (candidate.user || 'Anonymous').toLowerCase().trim();
+
+                let conflict = false;
+                for (let j = 0; j < channels.length; j++) {
+                    if (j !== idx && channels[j].isPlaying && channels[j].currentItem) {
+                        const otherUser = (channels[j].currentItem.user || 'Anonymous').toLowerCase().trim();
+                        if (candUser === otherUser) {
+                            conflict = true;
+                            break;
+                        }
+                    }
+                }
+                if (!conflict) {
+                    foundIdx = q;
+                    break;
+                }
+            }
+
+            if (foundIdx !== -1) {
+                const item = audioQueue.splice(foundIdx, 1)[0];
+                playItemOnChannel(chan, idx, item);
+            }
+        });
+    }
+
+    function playItemOnChannel(chan, idx, item) {
         if (audioCtx && audioCtx.state === 'suspended') {
             audioCtx.resume();
         }
+        initChannel(chan, idx);
+
+        chan.isPlaying = true;
+        chan.currentItem = item;
+
         playChimeSound();
         renderSpectrum();
+        updateOverlayUI();
 
-        // Update Overlay UI (Essential Username & Text only)
-        if (obsSpeaker) obsSpeaker.textContent = currentItem.user || 'Chatter';
-        if (obsText) obsText.textContent = currentItem.text || '';
-
-        overlayCard.classList.remove('idle');
-        overlayCard.classList.add('speaking');
-
-        // Parallel Fart Background Audio Playback
-        if (currentItem && currentItem.has_fart_bg) {
+        if (item && item.has_fart_bg) {
             try {
-                if (currentFartBgAudio) {
-                    currentFartBgAudio.pause();
-                    currentFartBgAudio = null;
-                }
-                const fartUrl = currentItem.fart_bg_url || '/api/soundboard/fartbackground';
-                currentFartBgAudio = new Audio(fartUrl);
-                currentFartBgAudio.volume = (audioPlayer && audioPlayer.volume !== undefined) ? audioPlayer.volume : 1.0;
-                currentFartBgAudio.play().catch((err) => {
-                    console.warn('OBS Overlay fart background audio playback note:', err);
-                });
-            } catch (err) {
-                console.error('Failed to initialize OBS fart background audio:', err);
-            }
+                const fartUrl = item.fart_bg_url || '/api/soundboard/fartbackground';
+                const fartAudio = new Audio(fartUrl);
+                fartAudio.volume = (audioPlayer && audioPlayer.volume !== undefined) ? audioPlayer.volume : 1.0;
+                fartAudio.play().catch(() => {});
+            } catch (err) {}
         }
 
-        // Play Main Audio
-        audioPlayer.src = currentItem.url;
-        const playPromise = audioPlayer.play();
+        chan.audio.src = item.url;
+        const playPromise = chan.audio.play();
+
+        const onEnded = () => {
+            chan.isPlaying = false;
+            chan.currentItem = null;
+            updateOverlayUI();
+            if (audioQueue.length > 0) {
+                setTimeout(checkAndPlayNext, 150);
+            }
+        };
+
+        chan.audio.onended = onEnded;
+
         if (playPromise !== undefined) {
             playPromise.then(() => {
                 audioUnlocked = true;
                 if (unlockBanner) unlockBanner.classList.add('hidden');
             }).catch((err) => {
-                console.warn('OBS Overlay playback note:', err);
+                console.warn('OBS Overlay channel playback note:', err);
                 if (err.name === 'NotAllowedError') {
                     audioUnlocked = false;
                     if (unlockBanner) unlockBanner.classList.remove('hidden');
-                    audioQueue.unshift(currentItem);
-                    isPlaying = false;
-                    currentItem = null;
-                    stopFartBgAudio();
-                    if (!isPreviewMode) {
-                        overlayCard.classList.remove('speaking');
-                        overlayCard.classList.add('idle');
-                    }
+                    audioQueue.unshift(item);
+                    chan.isPlaying = false;
+                    chan.currentItem = null;
+                    updateOverlayUI();
                 } else {
-                    onAudioEnded();
+                    onEnded();
                 }
             });
         }
@@ -488,43 +590,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function onAudioEnded() {
-        isPlaying = false;
-        currentItem = null;
-        stopFartBgAudio();
-
-        if (isPreviewMode) {
-            overlayCard.classList.remove('idle');
-            overlayCard.classList.add('speaking');
-            if (obsSpeaker) obsSpeaker.textContent = 'Preview Mode (Chatter)';
-            if (obsText) obsText.textContent = 'Twitch TTS Voice Overlay ready.';
-        } else {
-            overlayCard.classList.remove('speaking');
-            overlayCard.classList.add('idle');
-        }
-
-        if (audioQueue.length > 0) {
-            setTimeout(checkAndPlayNext, 180);
-        } else {
-            if (!isPreviewMode) {
-                if (obsSpeaker) obsSpeaker.textContent = 'Waiting for TTS...';
-                if (obsText) obsText.textContent = 'Twitch TTS Voice Overlay ready.';
-            }
-        }
-    }
-
     function skipCurrentAudio() {
-        audioPlayer.pause();
-        audioPlayer.currentTime = 0;
+        channels.forEach(chan => {
+            if (chan.audio) {
+                try {
+                    chan.audio.pause();
+                    chan.audio.currentTime = 0;
+                } catch (e) {}
+            }
+            chan.isPlaying = false;
+            chan.currentItem = null;
+        });
         stopFartBgAudio();
-        onAudioEnded();
+        updateOverlayUI();
+        if (audioQueue.length > 0) {
+            checkAndPlayNext();
+        }
     }
-
-    audioPlayer.addEventListener('ended', onAudioEnded);
-    audioPlayer.addEventListener('error', (e) => {
-        console.error('OBS Overlay player audio error:', e);
-        onAudioEnded();
-    });
 
     initSSE();
 });
