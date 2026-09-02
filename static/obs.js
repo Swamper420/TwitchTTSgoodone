@@ -48,10 +48,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (obsText) obsText.textContent = 'Twitch TTS Voice Overlay ready.';
     }
 
-    // Dual Channel State for Normal Mode (Left = -1.0, Right = +1.0)
+    // Dual Channel State for Normal Mode (both centered at 0.0)
     let channels = [
-        { id: 'left', name: 'Left', pan: -1.0, isPlaying: false, currentItem: null, audio: null, panner: null, source: null },
-        { id: 'right', name: 'Right', pan: 1.0, isPlaying: false, currentItem: null, audio: null, panner: null, source: null }
+        { id: 'left', name: 'Left', pan: 0.0, isPlaying: false, currentItem: null, audio: null, panner: null, source: null },
+        { id: 'right', name: 'Right', pan: 0.0, isPlaying: false, currentItem: null, audio: null, panner: null, source: null }
     ];
     let audioQueue = [];
     let isPlaying = false;
@@ -524,6 +524,19 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Update stereo panning: center (0.0) for solo, split (-1 / +1) for dual playback
+    function updatePanning() {
+        const activePlaying = channels.filter(c => c.isPlaying);
+        const isDual = activePlaying.length >= 2;
+        const targetPans = isDual ? [-1.0, 1.0] : [0.0, 0.0];
+        channels.forEach((chan, i) => {
+            chan.pan = targetPans[i];
+            if (chan.panner) {
+                chan.panner.pan.value = chan.pan;
+            }
+        });
+    }
+
     function playItemOnChannel(chan, idx, item) {
         if (audioCtx && audioCtx.state === 'suspended') {
             audioCtx.resume();
@@ -532,6 +545,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         chan.isPlaying = true;
         chan.currentItem = item;
+        updatePanning();
 
         playChimeSound();
         renderSpectrum();
@@ -552,6 +566,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const onEnded = () => {
             chan.isPlaying = false;
             chan.currentItem = null;
+            updatePanning();
             updateOverlayUI();
             if (audioQueue.length > 0) {
                 setTimeout(checkAndPlayNext, 150);
@@ -572,6 +587,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     audioQueue.unshift(item);
                     chan.isPlaying = false;
                     chan.currentItem = null;
+                    updatePanning();
                     updateOverlayUI();
                 } else {
                     onEnded();

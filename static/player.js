@@ -32,10 +32,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Constants
     const SILENT_WAV = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
     
-    // Dual Channel Audio State for Normal Mode (Left = -1.0, Right = +1.0)
+    // Dual Channel Audio State for Normal Mode (both centered at 0.0)
     let channels = [
-        { id: 'left', name: 'Left', pan: -1.0, isPlaying: false, currentItem: null, audio: null, panner: null, source: null },
-        { id: 'right', name: 'Right', pan: 1.0, isPlaying: false, currentItem: null, audio: null, panner: null, source: null }
+        { id: 'left', name: 'Left', pan: 0.0, isPlaying: false, currentItem: null, audio: null, panner: null, source: null },
+        { id: 'right', name: 'Right', pan: 0.0, isPlaying: false, currentItem: null, audio: null, panner: null, source: null }
     ];
     let audioQueue = [];
     let isPlaying = false;
@@ -506,6 +506,19 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Update stereo panning: center (0.0) for solo, split (-1 / +1) for dual playback
+    function updatePanning() {
+        const activePlaying = channels.filter(c => c.isPlaying);
+        const isDual = activePlaying.length >= 2;
+        const targetPans = isDual ? [-1.0, 1.0] : [0.0, 0.0];
+        channels.forEach((chan, i) => {
+            chan.pan = targetPans[i];
+            if (chan.panner) {
+                chan.panner.pan.value = chan.pan;
+            }
+        });
+    }
+
     function playItemOnChannel(chan, idx, item) {
         initWebAudio();
         if (audioCtx && audioCtx.state === 'suspended') {
@@ -516,6 +529,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         chan.isPlaying = true;
         chan.currentItem = item;
+        updatePanning();
         playNotificationChime();
 
         updateUIState();
@@ -535,6 +549,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const onEnded = () => {
             chan.isPlaying = false;
             chan.currentItem = null;
+            updatePanning();
             updateUIState();
             if (audioQueue.length > 0) {
                 setTimeout(checkAndPlayNext, 150);
