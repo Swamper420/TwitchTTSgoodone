@@ -962,5 +962,194 @@ body {
     gap: 6px;
 }
 
+/* ── Black Mesa Security Checkpoint (Half-Life 2 minigame gate) ── */
+.hl2-checkpoint {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(180deg, #1a1d21 0%, #101215 100%);
+    border: 2px solid #e8722a;
+    outline: 2px solid #0a0a0a;
+    padding: 10px 12px;
+    margin: 10px 0;
+    color: #e8e4d8;
+    font-family: 'Courier Prime', 'Courier New', monospace;
+    box-shadow: 0 0 12px rgba(232, 114, 42, 0.35), inset 0 0 24px rgba(0, 0, 0, 0.7);
+}
+
+.hl2-checkpoint-legend {
+    background: #e8722a;
+    color: #111;
+    font-weight: bold;
+    font-size: 11px;
+    letter-spacing: 1px;
+    padding: 2px 10px;
+    border: 1px solid #000;
+}
+
+.hl2-scanline {
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        rgba(255, 255, 255, 0.03) 0px,
+        rgba(255, 255, 255, 0.03) 1px,
+        transparent 1px,
+        transparent 3px
+    );
+}
+
+.hl2-status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #000;
+    border: 1px solid #e8722a;
+    padding: 5px 8px;
+    margin-bottom: 8px;
+}
+
+.hl2-light {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    border: 1px solid #000;
+}
+
+.hl2-light-red { background: #ff3b30; box-shadow: 0 0 6px #ff3b30; }
+.hl2-light-amber { background: #ffb340; box-shadow: 0 0 6px #ffb340; animation: hl2blink 1s steps(2) infinite; }
+.hl2-light-green { background: #35e065; box-shadow: 0 0 8px #35e065; }
+
+@keyframes hl2blink { 50% { opacity: 0.35; } }
+
+.hl2-status-text {
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    color: #ffb340;
+}
+
+.hl2-status-text.granted { color: #35e065; }
+
+.hl2-prompt {
+    font-size: 11px;
+    line-height: 1.4;
+    color: #e8e4d8;
+    background: rgba(232, 114, 42, 0.08);
+    border-left: 3px solid #e8722a;
+    padding: 6px 8px;
+    margin-bottom: 8px;
+}
+
+.hl2-game-area {
+    min-height: 40px;
+    margin-bottom: 8px;
+}
+
+.hl2-math-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.hl2-math-q {
+    font-size: 20px;
+    font-weight: bold;
+    color: #ffb340;
+    background: #000;
+    border: 1px solid #e8722a;
+    padding: 6px 12px;
+    letter-spacing: 1px;
+}
+
+.hl2-input {
+    background: #000;
+    border: 2px solid #e8722a;
+    color: #35e065;
+    font-family: 'Courier Prime', monospace;
+    font-size: 16px;
+    font-weight: bold;
+    padding: 5px 8px;
+    width: 110px;
+    outline: none;
+}
+
+.hl2-input:focus { box-shadow: 0 0 8px rgba(232, 114, 42, 0.8); }
+
+.hl2-btn-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+}
+
+.hl2-btn {
+    background: linear-gradient(180deg, #3a3f45, #22262b);
+    border: 2px solid #e8722a;
+    color: #ffb340;
+    font-family: 'Courier Prime', monospace;
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    padding: 6px 12px;
+    cursor: pointer;
+    text-transform: uppercase;
+}
+
+.hl2-btn:hover:not(:disabled) { background: linear-gradient(180deg, #4a5057, #2b3036); color: #fff; }
+.hl2-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.hl2-btn-primary { background: linear-gradient(180deg, #e8722a, #a84e14); color: #111; }
+.hl2-btn-primary:hover:not(:disabled) { background: linear-gradient(180deg, #ff8c3f, #c05e1a); color: #000; }
+
+.hl2-hint { font-size: 10px; color: #9a938a; display: block; line-height: 1.4; }
+
+.hl2-mem-grid, .hl2-sweep-grid {
+    display: grid;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.hl2-mem-grid { grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); }
+.hl2-sweep-grid { grid-template-columns: repeat(3, 1fr); max-width: 300px; }
+
+.hl2-tile {
+    background: #000;
+    border: 2px solid #5a5e63;
+    color: #e8e4d8;
+    padding: 8px 4px;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+}
+
+.hl2-tile .hl2-icon { font-size: 22px; display: block; line-height: 1; }
+.hl2-tile .hl2-cap { font-size: 9px; display: block; margin-top: 3px; letter-spacing: 0.5px; color: #9a938a; }
+
+.hl2-tile:hover { border-color: #e8722a; }
+.hl2-tile.lit { border-color: #ffb340; background: #2a1f08; box-shadow: 0 0 10px rgba(255, 179, 64, 0.7); }
+.hl2-tile.picked { border-color: #35e065; background: #0a2412; box-shadow: 0 0 8px rgba(53, 224, 101, 0.5); }
+.hl2-tile.picked .hl2-cap { color: #35e065; }
+
+.hl2-seq-progress {
+    font-size: 11px;
+    color: #ffb340;
+    margin-top: 6px;
+    min-height: 16px;
+}
+
+.hl2-replay-btn {
+    background: transparent;
+    border: 1px dashed #e8722a;
+    color: #ffb340;
+    font-size: 10px;
+    padding: 3px 8px;
+    cursor: pointer;
+    margin-top: 6px;
+    font-family: inherit;
+}
+.hl2-replay-btn:hover { background: rgba(232, 114, 42, 0.15); }
+
 
 

@@ -7,6 +7,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeChannel = '';
     let selectedFileBytes = null;
     let selectedFileName = '';
+    // Black Mesa security checkpoint state (one pass per file, server-verified)
+    let hl2Challenge = null;
+    let hl2UploadToken = null;
+    let hl2ClearedFileKey = null;
 
     // DOM Elements
     const statusDot = document.getElementById('statusDot');
@@ -40,6 +44,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const localFilePreviewPlayer = document.getElementById('localFilePreviewPlayer');
     const uploadSubmitBtn = document.getElementById('uploadSubmitBtn');
 
+    // Black Mesa Checkpoint DOMs
+    const hl2StatusLight = document.getElementById('hl2StatusLight');
+    const hl2StatusText = document.getElementById('hl2StatusText');
+    const hl2Prompt = document.getElementById('hl2Prompt');
+    const hl2GameArea = document.getElementById('hl2GameArea');
+    const hl2NewChallengeBtn = document.getElementById('hl2NewChallengeBtn');
+    const hl2VerifyBtn = document.getElementById('hl2VerifyBtn');
+
     // Password Modal DOMs
     const passwordModal = document.getElementById('passwordModal');
     const modalPasswordInput = document.getElementById('modalPasswordInput');
@@ -57,6 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setupTabs();
         setupDragAndDrop();
         setupSearchFilters();
+        setupHl2Checkpoint();
 
         await fetchStatus();
         await fetchSoundboard();
@@ -362,6 +375,34 @@ document.addEventListener('DOMContentLoaded', () => {
         if (uploadSoundForm) uploadSoundForm.addEventListener('submit', handleFormSubmit);
     }
 
+    function currentFileKey() {
+        if (!selectedFileName || !selectedFileBytes) return '';
+        return selectedFileName + '::' + String(selectedFileBytes.length) + '::' + String(selectedFileBytes.slice(0, 64));
+    }
+
+    function refreshUploadButton() {
+        if (!uploadSubmitBtn) return;
+        const hasFile = !!selectedFileBytes;
+        const cleared = hl2UploadToken && hl2ClearedFileKey && hl2ClearedFileKey === currentFileKey();
+        if (!hasFile) {
+            uploadSubmitBtn.disabled = true;
+            uploadSubmitBtn.textContent = '💾 Upload & Register Sound';
+        } else if (!cleared) {
+            uploadSubmitBtn.disabled = true;
+            uploadSubmitBtn.textContent = '🔒 Upload Locked — Pass Security Check';
+        } else {
+            uploadSubmitBtn.disabled = false;
+            uploadSubmitBtn.textContent = '💾 Upload & Register Sound';
+        }
+    }
+
+    function resetHl2Clearance(reason) {
+        hl2UploadToken = null;
+        hl2ClearedFileKey = null;
+        refreshUploadButton();
+        if (reason) setHl2Status('lock', reason);
+    }
+
     function handleSelectedFile(file) {
         const allowedExts = ['.mp3', '.wav', '.ogg', '.flac', '.m4a'];
         const ext = '.' + file.name.split('.').pop().toLowerCase();
@@ -385,7 +426,10 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedFileName = file.name;
         fileNameDisplay.textContent = file.name;
         fileSizeDisplay.textContent = `${(file.size / 1048576).toFixed(2)} MB`;
-        
+
+        // A new file always voids prior clearance: one minigame pass == one file.
+        resetHl2Clearance('');
+
         // Setup local audio preview player
         const objectUrl = URL.createObjectURL(file);
         if (localFilePreviewPlayer) localFilePreviewPlayer.src = objectUrl;
@@ -396,7 +440,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const reader = new FileReader();
         reader.onload = function(e) {
             selectedFileBytes = e.target.result;
-            if (uploadSubmitBtn) uploadSubmitBtn.disabled = false;
+            // Selecting a new file invalidates any earlier clearance.
+            hl2UploadToken = null;
+            hl2ClearedFileKey = null;
+            refreshUploadButton();
+            setHl2Status('lock', 'New file detected — pass a fresh security check to unlock upload.');
+            // Convenience: auto-summon a new challenge for the new file.
+            requestHl2Challenge(true);
         };
         reader.readAsDataURL(file);
     }
@@ -422,6 +472,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // Client-side gate (UX only — the server re-verifies the token and
+        // rejects the upload with 403 if it is missing, reused, or expired).
+        if (!hl2UploadToken || hl2ClearedFileKey !== currentFileKey()) {
+            showToast('Complete the Black Mesa security check first — one pass per file.', 'error');
+            requestHl2Challenge(true);
+            return;
+        }
+
         if (uploadSubmitBtn) {
             uploadSubmitBtn.disabled = true;
             uploadSubmitBtn.textContent = '⏳ VALIDATING & UPLOADING...';
@@ -432,7 +490,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 filename: selectedFileName,
                 sound_name: soundName,
                 streamer_password: password,
-                file_b64: selectedFileBytes
+                file_b64: selectedFileBytes,
+                upload_token: hl2UploadToken
             };
 
             const res = await fetch('/api/soundboard/upload', {
@@ -441,24 +500,282 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify(payload)
             });
 
-            const data = await res.json();
+            const data = await res.json().catch(() => ({}));
 
             if (res.ok && data.success) {
                 showToast(data.message || `Sound (${data.sound_name}) uploaded successfully!`);
                 uploadSoundForm.reset();
                 selectedFileBytes = null;
                 if (selectedFileInfo) selectedFileInfo.classList.add('hidden');
+                // Burn client copy too: each file needs a fresh pass.
+                hl2UploadToken = null;
+                hl2ClearedFileKey = null;
+                hl2Challenge = null;
+                if (hl2GameArea) hl2GameArea.innerHTML = '';
+                if (hl2Prompt) hl2Prompt.textContent = 'Clearance spent. Summon a new check for your next file, citizen.';
+                setHl2Status('lock', 'CLEARANCE SPENT — one pass per file. New upload needs a new check.');
+                refreshUploadButton();
                 await fetchSoundboard();
             } else {
-                showToast(data.error || 'Upload failed validation.', 'error');
+                if (res.status === 403 && data.minigame_required) {
+                    showToast(data.error || 'Security check required.', 'error');
+                    resetHl2Clearance('LOCKDOWN: clearance rejected — pass the check again.');
+                    requestHl2Challenge(true);
+                } else {
+                    showToast(data.error || 'Upload failed validation.', 'error');
+                }
             }
         } catch (err) {
             showToast('Network error during upload request.', 'error');
         } finally {
-            if (uploadSubmitBtn) {
-                uploadSubmitBtn.disabled = false;
-                uploadSubmitBtn.textContent = '💾 Upload & Register Sound';
+            refreshUploadButton();
+        }
+    }
+
+    // ── Black Mesa Security Checkpoint (HL2 minigame, server-verified) ──
+    function setHl2Status(mode, text) {
+        if (hl2StatusText) {
+            hl2StatusText.textContent = text;
+            hl2StatusText.classList.toggle('granted', mode === 'granted');
+        }
+        if (hl2StatusLight) {
+            hl2StatusLight.className = 'hl2-light ' + (
+                mode === 'granted' ? 'hl2-light-green' : mode === 'working' ? 'hl2-light-amber' : 'hl2-light-red'
+            );
+        }
+    }
+
+    function symbolMeta(id) {
+        const found = (hl2Challenge && hl2Challenge.payload && hl2Challenge.payload.symbols || [])
+            .find(s => s.id === id);
+        if (found) return found;
+        return { id, icon: '❔', label: id };
+    }
+
+    function setupHl2Checkpoint() {
+        if (hl2NewChallengeBtn) hl2NewChallengeBtn.addEventListener('click', () => requestHl2Challenge(false));
+        if (hl2VerifyBtn) hl2VerifyBtn.addEventListener('click', verifyHl2Solution);
+        refreshUploadButton();
+    }
+
+    async function requestHl2Challenge(silent) {
+        if (!hl2GameArea) return;
+        setHl2Status('working', 'CONTACTING BLACK MESA… summoning randomized challenge.');
+        if (hl2VerifyBtn) hl2VerifyBtn.disabled = true;
+        hl2GameArea.innerHTML = '<p class="hl2-prompt">📡 Uplink… the Administrator is choosing your trial.</p>';
+        try {
+            const res = await fetch('/api/upload-challenge/request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                setHl2Status('lock', 'UPLINK FAILED: ' + (data.error || 'could not summon challenge.'));
+                hl2GameArea.innerHTML = '';
+                return;
             }
+            hl2Challenge = data;
+            // New challenge voids any previous clearance.
+            hl2UploadToken = null;
+            hl2ClearedFileKey = null;
+            refreshUploadButton();
+            renderHl2Challenge();
+        } catch (err) {
+            setHl2Status('lock', 'UPLINK FAILED: network error contacting Black Mesa.');
+            hl2GameArea.innerHTML = '';
+            if (!silent) showToast('Could not reach security checkpoint.', 'error');
+        }
+    }
+
+    function renderHl2Challenge() {
+        if (!hl2Challenge || !hl2GameArea) return;
+        const type = hl2Challenge.challenge_type;
+        if (hl2Prompt) hl2Prompt.textContent = hl2Challenge.prompt || '';
+        setHl2Status('working', `TRIAL ACTIVE: ${hl2Challenge.title || 'PROVE YOURSELF'} — solve it to earn one upload.`);
+        hl2GameArea.innerHTML = '';
+
+        if (type === 'hev_math') {
+            const q = (hl2Challenge.payload && hl2Challenge.payload.question) || '?';
+            const wrap = document.createElement('div');
+            wrap.className = 'hl2-math-row';
+            wrap.innerHTML = `<span class="hl2-math-q">⚡ ${escapeHtml(q)} = ?</span>`;
+            const input = document.createElement('input');
+            input.id = 'hl2MathAnswer';
+            input.className = 'hl2-input';
+            input.setAttribute('inputmode', 'numeric');
+            input.setAttribute('autocomplete', 'off');
+            input.placeholder = '0';
+            input.addEventListener('keydown', (e) => { if (e.key === 'Enter') verifyHl2Solution(); });
+            wrap.appendChild(input);
+            hl2GameArea.appendChild(wrap);
+            if (hl2VerifyBtn) hl2VerifyBtn.disabled = false;
+            setTimeout(() => input.focus(), 50);
+        } else if (type === 'lambda_memory') {
+            const seq = (hl2Challenge.payload && hl2Challenge.payload.sequence) || [];
+            const info = document.createElement('p');
+            info.className = 'hl2-prompt';
+            info.textContent = `Memorize the flashing ${seq.length}-glyph transmission, then click the glyphs in order.`;
+            hl2GameArea.appendChild(info);
+            const grid = document.createElement('div');
+            grid.className = 'hl2-mem-grid';
+            const seen = [...new Set(seq)];
+            seen.forEach(id => {
+                const m = symbolMeta(id);
+                const tile = document.createElement('div');
+                tile.className = 'hl2-tile';
+                tile.dataset.symbol = id;
+                tile.innerHTML = `<span class="hl2-icon">${escapeHtml(m.icon)}</span><span class="hl2-cap">${escapeHtml(m.label)}</span>`;
+                tile.addEventListener('click', () => {
+                    window._hl2MemInput = window._hl2MemInput || [];
+                    window._hl2MemInput.push(id);
+                    tile.classList.add('picked');
+                    updateHl2MemProgress();
+                    setTimeout(() => tile.classList.remove('picked'), 350);
+                    if (window._hl2MemInput.length >= seq.length && hl2VerifyBtn) hl2VerifyBtn.disabled = false;
+                });
+                grid.appendChild(tile);
+            });
+            hl2GameArea.appendChild(grid);
+            const prog = document.createElement('div');
+            prog.id = 'hl2MemProgress';
+            prog.className = 'hl2-seq-progress';
+            hl2GameArea.appendChild(prog);
+            const replay = document.createElement('button');
+            replay.type = 'button';
+            replay.className = 'hl2-replay-btn';
+            replay.textContent = '↻ Replay transmission';
+            replay.addEventListener('click', () => flashHl2Sequence(seq));
+            hl2GameArea.appendChild(replay);
+            window._hl2MemInput = [];
+            updateHl2MemProgress();
+            if (hl2VerifyBtn) hl2VerifyBtn.disabled = true;
+            flashHl2Sequence(seq);
+        } else if (type === 'headcrab_sweep') {
+            const gridData = (hl2Challenge.payload && hl2Challenge.payload.grid) || [];
+            const targetCount = (hl2Challenge.payload && hl2Challenge.payload.target_count) || 0;
+            const grid = document.createElement('div');
+            grid.className = 'hl2-sweep-grid';
+            window._hl2SweepPicked = new Set();
+            gridData.forEach((symId, idx) => {
+                const m = symbolMeta(symId);
+                const tile = document.createElement('div');
+                tile.className = 'hl2-tile';
+                tile.dataset.idx = String(idx);
+                tile.title = `Sector ${idx + 1}`;
+                tile.innerHTML = `<span class="hl2-icon">${escapeHtml(m.icon)}</span><span class="hl2-cap">SEC ${idx + 1}</span>`;
+                tile.addEventListener('click', () => {
+                    const i = Number(tile.dataset.idx);
+                    if (window._hl2SweepPicked.has(i)) {
+                        window._hl2SweepPicked.delete(i);
+                        tile.classList.remove('picked');
+                    } else {
+                        window._hl2SweepPicked.add(i);
+                        tile.classList.add('picked');
+                    }
+                    if (hl2VerifyBtn) hl2VerifyBtn.disabled = window._hl2SweepPicked.size === 0;
+                });
+                grid.appendChild(tile);
+            });
+            hl2GameArea.appendChild(grid);
+            const note = document.createElement('div');
+            note.className = 'hl2-seq-progress';
+            note.textContent = `Tap every matching tile (${targetCount} hostiles). Tiles stay dark — trust your eyes, not the Combine.`;
+            hl2GameArea.appendChild(note);
+            if (hl2VerifyBtn) hl2VerifyBtn.disabled = true;
+        }
+    }
+
+    function getHl2MemInput() { return window._hl2MemInput || []; }
+
+    function updateHl2MemProgress() {
+        const el = document.getElementById('hl2MemProgress');
+        const seq = (hl2Challenge && hl2Challenge.payload && hl2Challenge.payload.sequence) || [];
+        const cur = getHl2MemInput();
+        if (el) el.textContent = cur.length ? `Input ${cur.length}/${seq.length}: ${cur.join(' → ')}` : `Awaiting input (0/${seq.length})…`;
+        const undo = document.getElementById('hl2MemUndo');
+        if (!undo && hl2GameArea) {
+            const b = document.createElement('button');
+            b.type = 'button'; b.id = 'hl2MemUndo'; b.className = 'hl2-replay-btn'; b.textContent = '⌫ Undo last';
+            b.addEventListener('click', () => { (window._hl2MemInput || []).pop(); updateHl2MemProgress(); });
+            hl2GameArea.appendChild(b);
+        }
+    }
+
+    function flashHl2Sequence(seq) {
+        window._hl2MemInput = [];
+        updateHl2MemProgress();
+        if (hl2VerifyBtn) hl2VerifyBtn.disabled = true;
+        const tiles = [...hl2GameArea.querySelectorAll('.hl2-tile')];
+        setHl2Status('working', '📡 TRANSMISSION INCOMING — watch closely…');
+        seq.forEach((id, step) => {
+            setTimeout(() => {
+                const tile = tiles.find(t => t.dataset.symbol === id);
+                if (tile) {
+                    tile.classList.add('lit');
+                    setTimeout(() => tile.classList.remove('lit'), 450);
+                }
+                if (step === seq.length - 1) {
+                    setTimeout(() => setHl2Status('working', 'TRANSMISSION ENDS — repeat the sequence.'), 500);
+                }
+            }, 650 * (step + 1));
+        });
+    }
+
+    // Memory tile clicks push here (delegated via render closure)
+    Object.defineProperty(window, 'hl2MemInput', {
+        get: getHl2MemInput,
+        set: (v) => { window._hl2MemInput = v; }
+    });
+
+    async function verifyHl2Solution() {
+        if (!hl2Challenge) {
+            showToast('Initiate the security check first.', 'error');
+            return;
+        }
+        const type = hl2Challenge.challenge_type;
+        let solution = {};
+        if (type === 'hev_math') {
+            const inp = document.getElementById('hl2MathAnswer');
+            const val = (inp && inp.value || '').trim();
+            if (!val) { showToast('Enter the power value first.', 'error'); return; }
+            solution = { answer: val };
+        } else if (type === 'lambda_memory') {
+            const cur = getHl2MemInput();
+            const need = ((hl2Challenge.payload && hl2Challenge.payload.length) || 0);
+            if (cur.length !== need) { showToast(`Repeat all ${need} glyphs before submitting.`, 'error'); return; }
+            solution = { sequence: cur };
+        } else if (type === 'headcrab_sweep') {
+            const picked = [...(window._hl2SweepPicked || [])];
+            if (!picked.length) { showToast('Select at least one sector.', 'error'); return; }
+            solution = { cells: picked };
+        }
+        if (hl2VerifyBtn) { hl2VerifyBtn.disabled = true; hl2VerifyBtn.textContent = '… VERIFYING …'; }
+        setHl2Status('working', 'VERIFYING WITH OVERWATCH…');
+        try {
+            const res = await fetch('/api/upload-challenge/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ challenge_id: hl2Challenge.challenge_id, solution })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.success && data.upload_token) {
+                hl2UploadToken = data.upload_token;
+                hl2ClearedFileKey = currentFileKey();
+                setHl2Status('granted', '✅ CLEARANCE GRANTED — one file upload authorized. Welcome to Black Mesa.');
+                showToast('Clearance granted — upload unlocked for this file.');
+                refreshUploadButton();
+                if (!selectedFileBytes) showToast('Clearance held — now pick your audio file.', 'error');
+            } else {
+                setHl2Status('lock', '❌ ' + (data.error || 'Wrong solution.'));
+                showToast(data.error || 'Wrong solution.', 'error');
+                if (data.error && /new security check/i.test(data.error)) {
+                    hl2Challenge = null;
+                    if (hl2GameArea) hl2GameArea.innerHTML = '';
+                }
+            }
+        } catch (err) {
+            setHl2Status('lock', 'VERIFY FAILED: network error.');
+            showToast('Network error verifying solution.', 'error');
+        } finally {
+            if (hl2VerifyBtn) { hl2VerifyBtn.disabled = false; hl2VerifyBtn.textContent = '✔ Submit Solution'; }
+            refreshUploadButton();
         }
     }
 });

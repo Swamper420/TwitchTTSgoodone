@@ -40,6 +40,7 @@ from app.sanitizer import (
 )
 from app.chat_commands import parse_chat_command, match_voice_preset, match_voice_action, get_commands_catalog
 from app.audio_norm import normalize_audio_bytes
+from app.upload_challenge import upload_challenge_manager
 
 
 logger = logging.getLogger("Server")
@@ -129,6 +130,57 @@ def extract_upload_payload(headers: dict, post_data: bytes, body: dict) -> Tuple
                         custom_sound_name = part_body.decode('utf-8', errors='ignore').strip()
 
     return file_bytes, filename, custom_sound_name, str(password)
+
+
+def extract_upload_token(headers: dict, post_data: bytes, body: dict) -> str:
+    """Extract the single-use minigame upload token from JSON body, header, or multipart field.
+
+    Client-side UI gating alone is bypassable, so the upload endpoint enforces
+    this token server-side. Returns "" when absent.
+    """
+    if body and isinstance(body, dict):
+        for key in ("upload_token", "challenge_token", "clearance_token", "token"):
+            val = body.get(key)
+            if val and isinstance(val, (str, int)):
+                s = str(val).strip()
+                if s:
+                    return s
+    try:
+        header_token = ""
+        if hasattr(headers, "get"):
+            header_token = headers.get("X-Upload-Token", "") or ""
+        if header_token and str(header_token).strip():
+            return str(header_token).strip()
+    except Exception:
+        pass
+
+    # Multipart form field fallback
+    try:
+        content_type = headers.get("Content-Type", "") if hasattr(headers, "get") else ""
+    except Exception:
+        content_type = ""
+    if content_type and "multipart/form-data" in content_type and post_data:
+        boundary_match = re.search(r'boundary=([^;]+)', content_type, re.IGNORECASE)
+        if boundary_match:
+            try:
+                boundary = boundary_match.group(1).strip('"').encode('utf-8')
+                for part in post_data.split(b'--' + boundary):
+                    if not part or part.startswith(b'--'):
+                        continue
+                    header_data, _, part_body = part.partition(b'\r\n\r\n')
+                    part_body = part_body.rstrip(b'\r\n')
+                    header_text = header_data.decode('utf-8', errors='ignore')
+                    disp_match = re.search(
+                        r'Content-Disposition:\s*form-data;\s*name="([^"]+)"',
+                        header_text, re.IGNORECASE)
+                    if disp_match and disp_match.group(1) in (
+                            "upload_token", "challenge_token", "clearance_token", "token"):
+                        candidate = part_body.decode('utf-8', errors='ignore').strip()
+                        if candidate:
+                            return candidate
+            except Exception:
+                pass
+    return ""
 
 
 
@@ -993,6 +1045,15 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             })
             return
 
+        # Route: Upload Minigame Challenge Request (public, rate-limited, variable HL2 puzzle)
+        if path in ("/api/upload-challenge/request", "/api/upload-challenge/new"):
+            if not soundboard_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
+            challenge = upload_challenge_manager.create_challenge(self._get_client_ip())
+            self._send_json(200, challenge)
+            return
+
         # Route: Stream Soundboard Raw Audio File
         if path.startswith("/api/soundboard/"):
             raw_sound_name = path.split("/api/soundboard/", 1)[-1]
@@ -1154,6 +1215,32 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
         except Exception:
             body = {}
 
+        # Route: Upload Minigame Challenge Request (Black Mesa security check, variable HL2 puzzle)
+        if path in ("/api/upload-challenge/request", "/api/upload-challenge/new"):
+            if not soundboard_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
+            challenge = upload_challenge_manager.create_challenge(self._get_client_ip())
+            self._send_json(200, challenge)
+            return
+
+        # Route: Upload Minigame Challenge Verify -> issues single-use upload token
+        if path in ("/api/upload-challenge/verify", "/api/upload-challenge/solve"):
+            if not soundboard_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
+            challenge_id = sanitize_string(body.get("challenge_id"), max_len=200)
+            solution = body.get("solution", body.get("answer", None))
+            # Allow flat answer shapes: {"answer": "..."} or {"sequence": [...]} or {"cells": [...]}
+            if solution is None:
+                solution = {k: v for k, v in body.items() if k in ("answer", "sequence", "cells")}
+            ok, result = upload_challenge_manager.verify_solution(challenge_id, solution, self._get_client_ip())
+            if ok:
+                self._send_json(200, {"success": True, **result})
+            else:
+                self._send_json(400, {"success": False, **result})
+            return
+
         # Route: Validate Twitch Token (Public/Auth tool)
         if path == "/api/auth/validate_twitch":
             if not validate_limiter.check_and_record(self._get_client_ip()):
@@ -1297,13 +1384,24 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(500, {"error": "TTS synthesis failed"})
             return
 
-        # Route: Upload New Soundboard Effect (Strict sanitization + Streamer name password check)
+        # Route: Upload New Soundboard Effect (Strict sanitization + Streamer name password check + minigame token)
         if path == "/api/soundboard/upload":
             if not soundboard_limiter.check_and_record(self._get_client_ip()):
                 self._send_json(429, {"error": "Upload rate limit exceeded. Please wait a minute before uploading another sound."})
                 return
             if not config.enable_soundboard:
                 self._send_json(400, {"error": "Soundboard is currently disabled."})
+                return
+
+            # SECURITY GATE: single-use minigame clearance token required.
+            # Client-side button gating is UX only; this server check cannot be bypassed.
+            upload_token = extract_upload_token(self.headers, post_data, body)
+            token_ok, token_err = upload_challenge_manager.peek_upload_token(upload_token, self._get_client_ip())
+            if not token_ok:
+                self._send_json(403, {
+                    "error": token_err,
+                    "minigame_required": True,
+                })
                 return
 
             file_bytes, filename, custom_sound_name, password = extract_upload_payload(self.headers, post_data, body)
@@ -1330,6 +1428,9 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 clean_filename=clean_filename,
                 file_bytes=file_bytes
             )
+
+            # Burn the single-use clearance token: each file needs a fresh minigame pass.
+            upload_challenge_manager.burn_upload_token(upload_token)
 
             broadcast_event("soundboard_updated", {
                 "action": "upload",
@@ -2047,6 +2148,15 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             })
             return
 
+        # ── Upload Minigame Challenge Request (public, rate-limited, variable HL2 puzzle) ──
+        if path in ("/api/upload-challenge/request", "/api/upload-challenge/new"):
+            if not soundboard_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
+            challenge = upload_challenge_manager.create_challenge(self._get_client_ip())
+            self._send_json(200, challenge)
+            return
+
         # ── Pieruta Targets (public) ──
         if path == "/api/pieruta":
             self._send_json(200, {"pieruta_targets": list(pieruta_targets.keys())})
@@ -2181,6 +2291,31 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             body = {}
 
         # ── Public POST routes (no auth required) ──
+
+        # Upload Minigame Challenge Request (Black Mesa security check)
+        if path in ("/api/upload-challenge/request", "/api/upload-challenge/new"):
+            if not soundboard_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
+            challenge = upload_challenge_manager.create_challenge(self._get_client_ip())
+            self._send_json(200, challenge)
+            return
+
+        # Upload Minigame Challenge Verify -> issues single-use upload token
+        if path in ("/api/upload-challenge/verify", "/api/upload-challenge/solve"):
+            if not soundboard_limiter.check_and_record(self._get_client_ip()):
+                self._send_json(429, {"error": "Rate limit exceeded. Try again later."})
+                return
+            challenge_id = sanitize_string(body.get("challenge_id"), max_len=200)
+            solution = body.get("solution", body.get("answer", None))
+            if solution is None:
+                solution = {k: v for k, v in body.items() if k in ("answer", "sequence", "cells")}
+            ok, result = upload_challenge_manager.verify_solution(challenge_id, solution, self._get_client_ip())
+            if ok:
+                self._send_json(200, {"success": True, **result})
+            else:
+                self._send_json(400, {"success": False, **result})
+            return
 
         # Validate Twitch Token
         if path == "/api/auth/validate_twitch":
@@ -2319,13 +2454,23 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(500, {"error": "TTS synthesis failed"})
             return
 
-        # Upload New Soundboard Effect (Strict sanitization + Streamer name password check)
+        # Upload New Soundboard Effect (Strict sanitization + Streamer password + minigame token)
         if path == "/api/soundboard/upload":
             if not soundboard_limiter.check_and_record(self._get_client_ip()):
                 self._send_json(429, {"error": "Upload rate limit exceeded. Please wait a minute before uploading another sound."})
                 return
             if not config.enable_soundboard:
                 self._send_json(400, {"error": "Soundboard is currently disabled."})
+                return
+
+            # SECURITY GATE: single-use minigame clearance token required.
+            upload_token = extract_upload_token(self.headers, post_data, body)
+            token_ok, token_err = upload_challenge_manager.peek_upload_token(upload_token, self._get_client_ip())
+            if not token_ok:
+                self._send_json(403, {
+                    "error": token_err,
+                    "minigame_required": True,
+                })
                 return
 
             file_bytes, filename, custom_sound_name, password = extract_upload_payload(self.headers, post_data, body)
@@ -2352,6 +2497,9 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
                 clean_filename=clean_filename,
                 file_bytes=file_bytes
             )
+
+            # Burn the single-use clearance token: each file needs a fresh minigame pass.
+            upload_challenge_manager.burn_upload_token(upload_token)
 
             broadcast_event("soundboard_updated", {
                 "action": "upload",

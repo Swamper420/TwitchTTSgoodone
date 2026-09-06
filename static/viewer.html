@@ -138,8 +138,25 @@
                                             <audio id="localFilePreviewPlayer" controls class="win95-audio-element" style="margin-top: 4px;"></audio>
                                         </div>
 
+                                        <!-- Black Mesa Security Checkpoint: HL2 minigame gate (one pass per file) -->
+                                        <fieldset class="hl2-checkpoint" id="hl2Checkpoint">
+                                            <legend class="hl2-checkpoint-legend">☢ BLACK MESA SECURITY CHECKPOINT</legend>
+                                            <div class="hl2-scanline" aria-hidden="true"></div>
+                                            <div class="hl2-status-row">
+                                                <span id="hl2StatusLight" class="hl2-light hl2-light-red" aria-hidden="true"></span>
+                                                <span id="hl2StatusText" class="hl2-status-text">LOCKDOWN: complete the challenge to unlock uploads.</span>
+                                            </div>
+                                            <p id="hl2Prompt" class="hl2-prompt">Press “Initiate Security Check” — Dr. Breen demands proof you are not a headcrab.</p>
+                                            <div id="hl2GameArea" class="hl2-game-area"></div>
+                                            <div class="hl2-btn-row">
+                                                <button type="button" id="hl2NewChallengeBtn" class="hl2-btn">◈ Initiate Security Check</button>
+                                                <button type="button" id="hl2VerifyBtn" class="hl2-btn hl2-btn-primary" disabled>✔ Submit Solution</button>
+                                            </div>
+                                            <small class="hl2-hint">Each file needs a fresh pass. Clearance tokens are single-use &amp; verified on the server — devtools trickery will not bypass it.</small>
+                                        </fieldset>
+
                                         <button type="submit" id="uploadSubmitBtn" class="win95-btn win95-btn-primary" style="width: 100%;" disabled>
-                                            💾 Upload & Register Sound
+                                            🔒 Upload Locked — Pass Security Check
                                         </button>
                                     </form>
                                 </fieldset>
