@@ -444,8 +444,8 @@ document.addEventListener('DOMContentLoaded', () => {
             hl2UploadToken = null;
             hl2ClearedFileKey = null;
             refreshUploadButton();
-            setHl2Status('lock', 'New file detected — pass a fresh security check to unlock upload.');
-            // Convenience: auto-summon a new challenge for the new file.
+            setHl2Status('lock', 'New file detected — play a fresh mission to unlock upload.');
+            // Convenience: auto-summon a new mission for the new file.
             requestHl2Challenge(true);
         };
         reader.readAsDataURL(file);
@@ -475,7 +475,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Client-side gate (UX only — the server re-verifies the token and
         // rejects the upload with 403 if it is missing, reused, or expired).
         if (!hl2UploadToken || hl2ClearedFileKey !== currentFileKey()) {
-            showToast('Complete the Black Mesa security check first — one pass per file.', 'error');
+            showToast('Complete the Black Mesa mission first — one pass per file.', 'error');
             requestHl2Challenge(true);
             return;
         }
@@ -511,15 +511,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 hl2UploadToken = null;
                 hl2ClearedFileKey = null;
                 hl2Challenge = null;
+                stopHl2Game();
                 if (hl2GameArea) hl2GameArea.innerHTML = '';
-                if (hl2Prompt) hl2Prompt.textContent = 'Clearance spent. Summon a new check for your next file, citizen.';
+                if (hl2Prompt) hl2Prompt.textContent = 'Clearance spent. Start a new mission for your next file, citizen.';
                 setHl2Status('lock', 'CLEARANCE SPENT — one pass per file. New upload needs a new check.');
                 refreshUploadButton();
                 await fetchSoundboard();
             } else {
                 if (res.status === 403 && data.minigame_required) {
-                    showToast(data.error || 'Security check required.', 'error');
-                    resetHl2Clearance('LOCKDOWN: clearance rejected — pass the check again.');
+                    showToast(data.error || 'Mission clearance required.', 'error');
+                    resetHl2Clearance('LOCKDOWN: clearance rejected — play the mission again.');
                     requestHl2Challenge(true);
                 } else {
                     showToast(data.error || 'Upload failed validation.', 'error');
@@ -532,7 +533,51 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // ── Black Mesa Security Checkpoint (HL2 minigame, server-verified) ──
+    // ── Black Mesa: HEADCRAB EXTERMINATION aim-trainer (canvas, mouse) ──
+    let hl2Game = null;
+    let hl2AudioCtx = null;
+
+    function hl2Beep(freqFrom, freqTo, dur, type, vol) {
+        try {
+            hl2AudioCtx = hl2AudioCtx || new (window.AudioContext || window.webkitAudioContext)();
+            if (hl2AudioCtx.state === 'suspended') hl2AudioCtx.resume();
+            const t0 = hl2AudioCtx.currentTime;
+            const osc = hl2AudioCtx.createOscillator();
+            const gain = hl2AudioCtx.createGain();
+            osc.type = type || 'square';
+            osc.frequency.setValueAtTime(freqFrom, t0);
+            osc.frequency.exponentialRampToValueAtTime(Math.max(1, freqTo), t0 + dur);
+            gain.gain.setValueAtTime(vol || 0.08, t0);
+            gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+            osc.connect(gain);
+            gain.connect(hl2AudioCtx.destination);
+            osc.start(t0);
+            osc.stop(t0 + dur + 0.02);
+        } catch (e) {}
+    }
+
+    function hl2Sfx(name) {
+        if (name === 'shoot') hl2Beep(720, 180, 0.07, 'square', 0.05);
+        else if (name === 'hit') hl2Beep(320, 90, 0.12, 'triangle', 0.10);
+        else if (name === 'decoy') hl2Beep(150, 70, 0.25, 'sawtooth', 0.10);
+        else if (name === 'miss') hl2Beep(240, 200, 0.05, 'square', 0.03);
+        else if (name === 'win') {
+            hl2Beep(440, 440, 0.12, 'sine', 0.09);
+            setTimeout(() => hl2Beep(554, 554, 0.12, 'sine', 0.09), 130);
+            setTimeout(() => hl2Beep(659, 659, 0.22, 'sine', 0.09), 260);
+        } else if (name === 'lose') {
+            hl2Beep(330, 330, 0.15, 'sawtooth', 0.07);
+            setTimeout(() => hl2Beep(220, 110, 0.30, 'sawtooth', 0.07), 160);
+        }
+    }
+
+    function stopHl2Game() {
+        if (hl2Game && hl2Game.raf) {
+            try { cancelAnimationFrame(hl2Game.raf); } catch (e) {}
+        }
+        hl2Game = null;
+    }
+
     function setHl2Status(mode, text) {
         if (hl2StatusText) {
             hl2StatusText.textContent = text;
@@ -545,13 +590,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function symbolMeta(id) {
-        const found = (hl2Challenge && hl2Challenge.payload && hl2Challenge.payload.symbols || [])
-            .find(s => s.id === id);
-        if (found) return found;
-        return { id, icon: '❔', label: id };
-    }
-
     function setupHl2Checkpoint() {
         if (hl2NewChallengeBtn) hl2NewChallengeBtn.addEventListener('click', () => requestHl2Challenge(false));
         if (hl2VerifyBtn) hl2VerifyBtn.addEventListener('click', verifyHl2Solution);
@@ -560,7 +598,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function requestHl2Challenge(silent) {
         if (!hl2GameArea) return;
-        setHl2Status('working', 'CONTACTING BLACK MESA… summoning randomized challenge.');
+        stopHl2Game();
+        setHl2Status('working', 'CONTACTING BLACK MESA… generating randomized mission.');
         if (hl2VerifyBtn) hl2VerifyBtn.disabled = true;
         hl2GameArea.innerHTML = '<p class="hl2-prompt">📡 Uplink… the Administrator is choosing your trial.</p>';
         try {
@@ -580,173 +619,319 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             setHl2Status('lock', 'UPLINK FAILED: network error contacting Black Mesa.');
             hl2GameArea.innerHTML = '';
-            if (!silent) showToast('Could not reach security checkpoint.', 'error');
+            if (!silent) showToast('Could not reach mission control.', 'error');
         }
     }
 
     function renderHl2Challenge() {
         if (!hl2Challenge || !hl2GameArea) return;
-        const type = hl2Challenge.challenge_type;
+        stopHl2Game();
+        if (hl2Challenge.challenge_type !== 'headcrab_aim') {
+            if (hl2Prompt) hl2Prompt.textContent = 'Unknown mission type — request a new mission.';
+            hl2GameArea.innerHTML = '';
+            return;
+        }
         if (hl2Prompt) hl2Prompt.textContent = hl2Challenge.prompt || '';
-        setHl2Status('working', `TRIAL ACTIVE: ${hl2Challenge.title || 'PROVE YOURSELF'} — solve it to earn one upload.`);
+        if (hl2VerifyBtn) hl2VerifyBtn.style.display = 'none';
+        if (hl2NewChallengeBtn) hl2NewChallengeBtn.textContent = '↻ New Mission';
+        setHl2Status('working', 'MISSION BRIEFING — press START MISSION, then shoot every headcrab.');
         hl2GameArea.innerHTML = '';
 
-        if (type === 'hev_math') {
-            const q = (hl2Challenge.payload && hl2Challenge.payload.question) || '?';
-            const wrap = document.createElement('div');
-            wrap.className = 'hl2-math-row';
-            wrap.innerHTML = `<span class="hl2-math-q">⚡ ${escapeHtml(q)} = ?</span>`;
-            const input = document.createElement('input');
-            input.id = 'hl2MathAnswer';
-            input.className = 'hl2-input';
-            input.setAttribute('inputmode', 'numeric');
-            input.setAttribute('autocomplete', 'off');
-            input.placeholder = '0';
-            input.addEventListener('keydown', (e) => { if (e.key === 'Enter') verifyHl2Solution(); });
-            wrap.appendChild(input);
-            hl2GameArea.appendChild(wrap);
-            if (hl2VerifyBtn) hl2VerifyBtn.disabled = false;
-            setTimeout(() => input.focus(), 50);
-        } else if (type === 'lambda_memory') {
-            const seq = (hl2Challenge.payload && hl2Challenge.payload.sequence) || [];
-            const info = document.createElement('p');
-            info.className = 'hl2-prompt';
-            info.textContent = `Memorize the flashing ${seq.length}-glyph transmission, then click the glyphs in order.`;
-            hl2GameArea.appendChild(info);
-            const grid = document.createElement('div');
-            grid.className = 'hl2-mem-grid';
-            const seen = [...new Set(seq)];
-            seen.forEach(id => {
-                const m = symbolMeta(id);
-                const tile = document.createElement('div');
-                tile.className = 'hl2-tile';
-                tile.dataset.symbol = id;
-                tile.innerHTML = `<span class="hl2-icon">${escapeHtml(m.icon)}</span><span class="hl2-cap">${escapeHtml(m.label)}</span>`;
-                tile.addEventListener('click', () => {
-                    window._hl2MemInput = window._hl2MemInput || [];
-                    window._hl2MemInput.push(id);
-                    tile.classList.add('picked');
-                    updateHl2MemProgress();
-                    setTimeout(() => tile.classList.remove('picked'), 350);
-                    if (window._hl2MemInput.length >= seq.length && hl2VerifyBtn) hl2VerifyBtn.disabled = false;
-                });
-                grid.appendChild(tile);
-            });
-            hl2GameArea.appendChild(grid);
-            const prog = document.createElement('div');
-            prog.id = 'hl2MemProgress';
-            prog.className = 'hl2-seq-progress';
-            hl2GameArea.appendChild(prog);
-            const replay = document.createElement('button');
-            replay.type = 'button';
-            replay.className = 'hl2-replay-btn';
-            replay.textContent = '↻ Replay transmission';
-            replay.addEventListener('click', () => flashHl2Sequence(seq));
-            hl2GameArea.appendChild(replay);
-            window._hl2MemInput = [];
-            updateHl2MemProgress();
-            if (hl2VerifyBtn) hl2VerifyBtn.disabled = true;
-            flashHl2Sequence(seq);
-        } else if (type === 'headcrab_sweep') {
-            const gridData = (hl2Challenge.payload && hl2Challenge.payload.grid) || [];
-            const targetCount = (hl2Challenge.payload && hl2Challenge.payload.target_count) || 0;
-            const grid = document.createElement('div');
-            grid.className = 'hl2-sweep-grid';
-            window._hl2SweepPicked = new Set();
-            gridData.forEach((symId, idx) => {
-                const m = symbolMeta(symId);
-                const tile = document.createElement('div');
-                tile.className = 'hl2-tile';
-                tile.dataset.idx = String(idx);
-                tile.title = `Sector ${idx + 1}`;
-                tile.innerHTML = `<span class="hl2-icon">${escapeHtml(m.icon)}</span><span class="hl2-cap">SEC ${idx + 1}</span>`;
-                tile.addEventListener('click', () => {
-                    const i = Number(tile.dataset.idx);
-                    if (window._hl2SweepPicked.has(i)) {
-                        window._hl2SweepPicked.delete(i);
-                        tile.classList.remove('picked');
-                    } else {
-                        window._hl2SweepPicked.add(i);
-                        tile.classList.add('picked');
-                    }
-                    if (hl2VerifyBtn) hl2VerifyBtn.disabled = window._hl2SweepPicked.size === 0;
-                });
-                grid.appendChild(tile);
-            });
-            hl2GameArea.appendChild(grid);
-            const note = document.createElement('div');
-            note.className = 'hl2-seq-progress';
-            note.textContent = `Tap every matching tile (${targetCount} hostiles). Tiles stay dark — trust your eyes, not the Combine.`;
-            hl2GameArea.appendChild(note);
-            if (hl2VerifyBtn) hl2VerifyBtn.disabled = true;
-        }
-    }
+        const P = hl2Challenge.payload;
+        const hud = document.createElement('div');
+        hud.className = 'hl2-hud';
+        hud.innerHTML =
+            '<span id="hl2HudHits">🎯 0/' + P.required_hits + '</span>' +
+            '<span class="hl2-timer-wrap"><span id="hl2HudTime">⏱ ' + P.time_limit_s + 's</span>' +
+            '<span class="hl2-timer-bar"><span id="hl2HudTimeBar"></span></span></span>' +
+            '<span id="hl2HudLives">❤❤❤</span>';
+        const wrap = document.createElement('div');
+        wrap.className = 'hl2-canvas-wrap';
+        const canvas = document.createElement('canvas');
+        canvas.width = P.w;
+        canvas.height = P.h;
+        canvas.className = 'hl2-game';
+        const overlay = document.createElement('div');
+        overlay.className = 'hl2-overlay';
+        overlay.innerHTML =
+            '<div class="hl2-overlay-title">☢ RAVENHOLM OVERRUN</div>' +
+            '<div class="hl2-overlay-sub">Neutralize <b>' + P.required_hits + '</b> headcrabs in ' +
+            '<b>' + P.time_limit_s + 's</b>.<br>Aim with the mouse, click to shoot.<br>' +
+            'Civilians, scanners &amp; vortigaunts are friendly — friendly fire costs a life (3 lives).</div>' +
+            '<button type="button" class="hl2-btn hl2-btn-primary hl2-start-btn">▶ Start Mission</button>';
+        wrap.appendChild(canvas);
+        wrap.appendChild(overlay);
+        hl2GameArea.appendChild(hud);
+        hl2GameArea.appendChild(wrap);
 
-    function getHl2MemInput() { return window._hl2MemInput || []; }
-
-    function updateHl2MemProgress() {
-        const el = document.getElementById('hl2MemProgress');
-        const seq = (hl2Challenge && hl2Challenge.payload && hl2Challenge.payload.sequence) || [];
-        const cur = getHl2MemInput();
-        if (el) el.textContent = cur.length ? `Input ${cur.length}/${seq.length}: ${cur.join(' → ')}` : `Awaiting input (0/${seq.length})…`;
-        const undo = document.getElementById('hl2MemUndo');
-        if (!undo && hl2GameArea) {
-            const b = document.createElement('button');
-            b.type = 'button'; b.id = 'hl2MemUndo'; b.className = 'hl2-replay-btn'; b.textContent = '⌫ Undo last';
-            b.addEventListener('click', () => { (window._hl2MemInput || []).pop(); updateHl2MemProgress(); });
-            hl2GameArea.appendChild(b);
-        }
-    }
-
-    function flashHl2Sequence(seq) {
-        window._hl2MemInput = [];
-        updateHl2MemProgress();
-        if (hl2VerifyBtn) hl2VerifyBtn.disabled = true;
-        const tiles = [...hl2GameArea.querySelectorAll('.hl2-tile')];
-        setHl2Status('working', '📡 TRANSMISSION INCOMING — watch closely…');
-        seq.forEach((id, step) => {
-            setTimeout(() => {
-                const tile = tiles.find(t => t.dataset.symbol === id);
-                if (tile) {
-                    tile.classList.add('lit');
-                    setTimeout(() => tile.classList.remove('lit'), 450);
-                }
-                if (step === seq.length - 1) {
-                    setTimeout(() => setHl2Status('working', 'TRANSMISSION ENDS — repeat the sequence.'), 500);
-                }
-            }, 650 * (step + 1));
+        const G = hl2Game = {
+            canvas: canvas, ctx: canvas.getContext('2d'), overlay: overlay, P: P,
+            state: 'ready', raf: 0, elapsed: 0, lastTs: 0,
+            mouse: { x: -99, y: -99, inside: false },
+            ents: [], particles: [],
+            hits: 0, lives: P.lives || 3, timeLeft: P.time_limit_s,
+            startPerf: 0, events: [], result: null,
+            shake: 0, flash: 0, skyline: []
+        };
+        P.targets.forEach(function (t) {
+            G.ents.push({ tid: t.tid, kind: 'target', icon: t.icon, bx: t.x, by: t.y,
+                r: t.r, amp: t.amp, speed: t.speed, phase: t.phase, alive: true, x: t.x, y: t.y });
         });
+        P.decoys.forEach(function (d) {
+            G.ents.push({ tid: d.tid, kind: 'decoy', icon: d.icon, label: d.label, bx: d.x, by: d.y,
+                r: d.r, amp: d.amp, speed: d.speed, phase: d.phase, alive: true, x: d.x, y: d.y });
+        });
+        G.ents.sort(function () { return Math.random() - 0.5; });
+        for (let i = 0; i < 14; i++) {
+            G.skyline.push({ x: (P.w / 14) * i, w: P.w / 14 - 2, h: 20 + Math.random() * 55 });
+        }
+
+        function toGame(ev) {
+            const r = canvas.getBoundingClientRect();
+            const cx = ev.touches ? ev.touches[0].clientX : ev.clientX;
+            const cy = ev.touches ? ev.touches[0].clientY : ev.clientY;
+            return { x: (cx - r.left) * canvas.width / r.width, y: (cy - r.top) * canvas.height / r.height };
+        }
+        canvas.addEventListener('mousemove', function (e) {
+            const p = toGame(e); G.mouse.x = p.x; G.mouse.y = p.y; G.mouse.inside = true;
+        });
+        canvas.addEventListener('mouseleave', function () { G.mouse.inside = false; });
+        canvas.addEventListener('mousedown', function (e) { e.preventDefault(); const p = toGame(e); hl2Shoot(p.x, p.y); });
+        canvas.addEventListener('touchstart', function (e) {
+            e.preventDefault();
+            const p = toGame(e); G.mouse.x = p.x; G.mouse.y = p.y; G.mouse.inside = true;
+            hl2Shoot(p.x, p.y);
+        }, { passive: false });
+        canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+        overlay.querySelector('.hl2-start-btn').addEventListener('click', function () {
+            hl2Sfx('shoot');
+            overlay.classList.add('hidden');
+            G.state = 'playing';
+            G.startPerf = performance.now();
+            G.lastTs = 0;
+            setHl2Status('working', '⚔ MISSION LIVE — neutralize every headcrab!');
+        });
+
+        updateHl2Hud();
+        G.raf = requestAnimationFrame(hl2Loop);
     }
 
-    // Memory tile clicks push here (delegated via render closure)
-    Object.defineProperty(window, 'hl2MemInput', {
-        get: getHl2MemInput,
-        set: (v) => { window._hl2MemInput = v; }
-    });
+    function updateHl2Hud() {
+        if (!hl2Game) return;
+        const G = hl2Game, P = G.P;
+        const hits = document.getElementById('hl2HudHits');
+        const time = document.getElementById('hl2HudTime');
+        const bar = document.getElementById('hl2HudTimeBar');
+        const lives = document.getElementById('hl2HudLives');
+        if (hits) hits.textContent = '🎯 ' + G.hits + '/' + P.required_hits;
+        if (time) time.textContent = '⏱ ' + Math.ceil(G.timeLeft) + 's';
+        if (bar) {
+            const frac = Math.max(0, G.timeLeft / P.time_limit_s);
+            bar.style.width = (frac * 100).toFixed(1) + '%';
+            bar.style.background = frac < 0.25 ? '#ff3b30' : '#ffb340';
+        }
+        if (lives) lives.textContent = '❤'.repeat(G.lives) + '🖤'.repeat(Math.max(0, (P.lives || 3) - G.lives));
+    }
+
+    function hl2Burst(x, y, color, n, spd) {
+        if (!hl2Game) return;
+        for (let i = 0; i < (n || 10); i++) {
+            const a = Math.random() * Math.PI * 2;
+            const v = (0.3 + Math.random() * 0.7) * (spd || 90);
+            hl2Game.particles.push({ x: x, y: y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 30,
+                life: 0.5 + Math.random() * 0.4, age: 0, color: color, size: 1.5 + Math.random() * 2.5 });
+        }
+    }
+
+    function hl2Shoot(x, y) {
+        const G = hl2Game;
+        if (!G || G.state !== 'playing') return;
+        hl2Sfx('shoot');
+        hl2Burst(x, y, '#ffd76a', 5, 60);
+        let best = null, bestD = Infinity;
+        for (let i = G.ents.length - 1; i >= 0; i--) {
+            const e = G.ents[i];
+            if (!e.alive) continue;
+            const d = Math.hypot(e.x - x, e.y - y);
+            if (d <= e.r && d < bestD) { best = e; bestD = d; }
+        }
+        if (!best) { hl2Sfx('miss'); return; }
+        const nowMs = performance.now() - G.startPerf;
+        if (best.kind === 'target') {
+            best.alive = false;
+            G.hits++;
+            G.events.push({ tid: best.tid, t: Math.round(nowMs) });
+            hl2Sfx('hit');
+            hl2Burst(best.x, best.y, '#7CFC00', 14, 110);
+            hl2Burst(best.x, best.y, '#ff3b30', 6, 70);
+            updateHl2Hud();
+            if (G.hits >= G.P.required_hits) hl2Win();
+        } else {
+            G.lives--;
+            G.flash = 1;
+            G.shake = 7;
+            hl2Sfx('decoy');
+            hl2Burst(best.x, best.y, '#ff3b30', 12, 90);
+            updateHl2Hud();
+            if (G.lives <= 0) hl2Lose('FRIENDLY FIRE — you harmed the innocent. The mission is scrubbed.');
+            else showToast('Friendly fire! ' + G.lives + ' ' + (G.lives === 1 ? 'life' : 'lives') + ' left.', 'error');
+        }
+    }
+
+    function hl2Win() {
+        const G = hl2Game;
+        if (!G || G.state !== 'playing') return;
+        G.state = 'won';
+        const durationMs = Math.round(performance.now() - G.startPerf);
+        G.result = {
+            hits: G.events.map(function (e) { return e.tid; }),
+            events: G.events.slice(),
+            duration_ms: durationMs
+        };
+        hl2Sfx('win');
+        setHl2Status('working', '✅ SECTOR CLEAR — transmitting after-action report…');
+        G.overlay.innerHTML = '<div class="hl2-overlay-title" style="color:#35e065">✔ SECTOR CLEAR</div>' +
+            '<div class="hl2-overlay-sub">All headcrabs neutralized in ' + (durationMs / 1000).toFixed(1) + 's.<br>Transmitting report to Overwatch…</div>';
+        G.overlay.classList.remove('hidden');
+        setTimeout(function () { verifyHl2Solution(); }, 800);
+    }
+
+    function hl2Lose(reason) {
+        const G = hl2Game;
+        if (!G || G.state !== 'playing') return;
+        G.state = 'lost';
+        hl2Sfx('lose');
+        setHl2Status('lock', '❌ MISSION FAILED — ' + reason + ' Request a new mission to retry.');
+        G.overlay.innerHTML = '<div class="hl2-overlay-title" style="color:#ff3b30">✖ MISSION FAILED</div>' +
+            '<div class="hl2-overlay-sub">' + escapeHtml(reason) + '<br>Each attempt needs a fresh, randomized mission.</div>' +
+            '<button type="button" class="hl2-btn hl2-btn-primary hl2-start-btn">↻ Retry Mission</button>';
+        G.overlay.classList.remove('hidden');
+        G.overlay.querySelector('.hl2-start-btn').addEventListener('click', function () { requestHl2Challenge(true); });
+    }
+
+    function hl2DrawBackdrop(ctx, G) {
+        const P = G.P, W = P.w, H = P.h;
+        const palettes = {
+            city17: ['#2b1a3a', '#e8722a', '#1a0f24'],
+            canals: ['#0b2b2e', '#3fb8a8', '#071a1c'],
+            citadel: ['#0d1b3d', '#7fa8ff', '#070d20']
+        };
+        const pal = palettes[P.backdrop] || palettes.city17;
+        const grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, '#050508');
+        grad.addColorStop(0.55, pal[0]);
+        grad.addColorStop(1, pal[2]);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        G.skyline.forEach(function (b) { ctx.fillRect(b.x, H - 44 - b.h, b.w, b.h); });
+        if (P.backdrop === 'citadel') {
+            ctx.fillStyle = 'rgba(127,168,255,0.25)';
+            ctx.fillRect(W / 2 - 14, 0, 28, H - 40);
+        }
+        ctx.fillStyle = 'rgba(0,0,0,0.65)';
+        ctx.fillRect(0, H - 44, W, 44);
+        ctx.fillStyle = 'rgba(255,255,255,0.06)';
+        ctx.fillRect(0, H - 44, W, 2);
+        ctx.save();
+        ctx.globalAlpha = 0.10;
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 120px serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('λ', W / 2, H / 2);
+        ctx.restore();
+    }
+
+    function hl2Loop(ts) {
+        const G = hl2Game;
+        if (!G) return;
+        if (!G.lastTs) G.lastTs = ts;
+        const dt = Math.min(0.05, Math.max(0.001, (ts - G.lastTs) / 1000));
+        G.lastTs = ts;
+        G.elapsed += dt;
+        if (G.state === 'playing') {
+            G.timeLeft -= dt;
+            if (G.timeLeft <= 0) {
+                G.timeLeft = 0;
+                updateHl2Hud();
+                hl2Lose('TIME UP — headcrabs overran the sector.');
+            } else {
+                updateHl2Hud();
+            }
+        }
+        const ctx = G.ctx, P = G.P;
+        ctx.save();
+        if (G.shake > 0.2) {
+            ctx.translate((Math.random() - 0.5) * G.shake, (Math.random() - 0.5) * G.shake);
+            G.shake *= 0.88;
+        }
+        hl2DrawBackdrop(ctx, G);
+        G.ents.forEach(function (e) {
+            e.x = e.bx + Math.cos(G.elapsed * e.speed + e.phase) * e.amp;
+            e.y = e.by + Math.sin(G.elapsed * e.speed * 1.3 + e.phase) * e.amp * 0.7;
+            if (!e.alive) return;
+            ctx.beginPath();
+            ctx.ellipse(e.x, e.y + e.r * 0.9, e.r * 0.9, e.r * 0.35, 0, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(0,0,0,0.4)';
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(e.x, e.y, e.r + 3, 0, Math.PI * 2);
+            ctx.strokeStyle = e.kind === 'target' ? 'rgba(255,80,60,0.85)' : 'rgba(120,200,255,0.7)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.font = (e.r * 2 - 4) + 'px serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(e.icon, e.x, e.y + 1);
+        });
+        G.particles = G.particles.filter(function (p) { return p.age < p.life; });
+        G.particles.forEach(function (p) {
+            p.age += dt;
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            p.vy += 160 * dt;
+            ctx.globalAlpha = Math.max(0, 1 - p.age / p.life);
+            ctx.fillStyle = p.color;
+            ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+            ctx.globalAlpha = 1;
+        });
+        if (G.mouse.inside && G.state === 'playing') {
+            const mx = G.mouse.x, my = G.mouse.y;
+            ctx.strokeStyle = '#ffb340';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.arc(mx, my, 10, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath();
+            [[-16, 0, -6, 0], [6, 0, 16, 0], [0, -16, 0, -6], [0, 6, 0, 16]].forEach(function (l) {
+                ctx.moveTo(mx + l[0], my + l[1]); ctx.lineTo(mx + l[2], my + l[3]);
+            });
+            ctx.stroke();
+            ctx.fillStyle = '#ffb340';
+            ctx.fillRect(mx - 1, my - 1, 2, 2);
+        }
+        if (G.flash > 0.02) {
+            ctx.fillStyle = 'rgba(255,40,30,' + (G.flash * 0.28).toFixed(3) + ')';
+            ctx.fillRect(-10, -10, P.w + 20, P.h + 20);
+            G.flash *= 0.9;
+        }
+        ctx.restore();
+        G.raf = requestAnimationFrame(hl2Loop);
+    }
 
     async function verifyHl2Solution() {
         if (!hl2Challenge) {
-            showToast('Initiate the security check first.', 'error');
+            showToast('Start the mission first.', 'error');
             return;
         }
-        const type = hl2Challenge.challenge_type;
-        let solution = {};
-        if (type === 'hev_math') {
-            const inp = document.getElementById('hl2MathAnswer');
-            const val = (inp && inp.value || '').trim();
-            if (!val) { showToast('Enter the power value first.', 'error'); return; }
-            solution = { answer: val };
-        } else if (type === 'lambda_memory') {
-            const cur = getHl2MemInput();
-            const need = ((hl2Challenge.payload && hl2Challenge.payload.length) || 0);
-            if (cur.length !== need) { showToast(`Repeat all ${need} glyphs before submitting.`, 'error'); return; }
-            solution = { sequence: cur };
-        } else if (type === 'headcrab_sweep') {
-            const picked = [...(window._hl2SweepPicked || [])];
-            if (!picked.length) { showToast('Select at least one sector.', 'error'); return; }
-            solution = { cells: picked };
+        if (hl2Challenge.challenge_type !== 'headcrab_aim' || !hl2Game || !hl2Game.result) {
+            showToast('Finish the mission first — neutralize every headcrab.', 'error');
+            return;
         }
-        if (hl2VerifyBtn) { hl2VerifyBtn.disabled = true; hl2VerifyBtn.textContent = '… VERIFYING …'; }
+        const solution = {
+            hits: hl2Game.result.hits,
+            events: hl2Game.result.events,
+            duration_ms: hl2Game.result.duration_ms
+        };
         setHl2Status('working', 'VERIFYING WITH OVERWATCH…');
         try {
             const res = await fetch('/api/upload-challenge/verify', {
@@ -763,10 +948,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 refreshUploadButton();
                 if (!selectedFileBytes) showToast('Clearance held — now pick your audio file.', 'error');
             } else {
-                setHl2Status('lock', '❌ ' + (data.error || 'Wrong solution.'));
-                showToast(data.error || 'Wrong solution.', 'error');
-                if (data.error && /new security check/i.test(data.error)) {
+                setHl2Status('lock', '❌ ' + (data.error || 'Report rejected.'));
+                showToast(data.error || 'Report rejected.', 'error');
+                if (data.error && /new (mission|one)/i.test(data.error)) {
                     hl2Challenge = null;
+                    stopHl2Game();
                     if (hl2GameArea) hl2GameArea.innerHTML = '';
                 }
             }
@@ -774,7 +960,6 @@ document.addEventListener('DOMContentLoaded', () => {
             setHl2Status('lock', 'VERIFY FAILED: network error.');
             showToast('Network error verifying solution.', 'error');
         } finally {
-            if (hl2VerifyBtn) { hl2VerifyBtn.disabled = false; hl2VerifyBtn.textContent = '✔ Submit Solution'; }
             refreshUploadButton();
         }
     }
