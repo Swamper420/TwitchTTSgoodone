@@ -196,8 +196,17 @@ class SoundboardManager:
     def save_uploaded_sound(self, clean_sound_name: str, clean_filename: str, file_bytes: bytes) -> Tuple[str, str]:
         """
         Saves sanitized uploaded sound file to the primary accessible soundboard directory.
+        Normalizes loudness before writing so uploads match TTS/soundboard levels.
         Returns tuple of (clean_sound_name, file_path).
         """
+        # Normalize upload loudness (best-effort; falls back to original bytes)
+        try:
+            from app.audio_norm import normalize_audio_bytes
+            ext = os.path.splitext(clean_filename)[1].lstrip(".") or "mp3"
+            file_bytes, _ = normalize_audio_bytes(file_bytes, audio_format=ext)
+        except Exception:
+            pass
+
         target_dir = self.ensure_directory()
         target_path = os.path.join(target_dir, clean_filename)
 

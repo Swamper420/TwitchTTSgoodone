@@ -39,6 +39,7 @@ from app.sanitizer import (
     verify_streamer_password,
 )
 from app.chat_commands import parse_chat_command, match_voice_preset, match_voice_action, get_commands_catalog
+from app.audio_norm import normalize_audio_bytes
 
 
 logger = logging.getLogger("Server")
@@ -434,6 +435,22 @@ def apply_8d_audio_effect(audio_bytes: bytes, audio_format: str = "wav", speed: 
             except Exception:
                 pass
 
+
+def finalize_audio(audio_bytes: bytes, audio_format: str = "wav") -> Tuple[bytes, str]:
+    """Final loudness normalization step for every played/synthesized clip.
+
+    Must be called LAST (after TTS synth, background mix and 8D effect) so
+    all voices, soundboard files and effects hit the same LUFS target.
+    Returns (audio_bytes, mime_type); falls back to input on any error.
+    """
+    try:
+        return normalize_audio_bytes(audio_bytes, audio_format=audio_format or config.tts_format)
+    except Exception as e:
+        logger.warning(f"finalize_audio skipped: {e}")
+        fmt = audio_format or "wav"
+        mime = "audio/mpeg" if fmt == "mp3" else f"audio/{fmt}"
+        return audio_bytes, mime
+
 def serve_darkcounter_lua(handler, query: dict):
     """Serve darkcounter_obs.lua script with dynamic query parameter customization."""
     lua_path = os.path.join(BASE_DIR, "darkcounter_obs.lua")
@@ -755,6 +772,9 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                     audio_format=config.tts_format
                 )
 
+            # Loudness normalization LAST so all voices/sounds match in volume
+            audio_bytes, mime_type = finalize_audio(audio_bytes, audio_format=config.tts_format)
+
             chunk_id = f"chunk_{uuid.uuid4().hex[:12]}"
             item_meta = {
                 "id": chunk_id,
@@ -985,6 +1005,10 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 try:
                     with open(file_path, "rb") as f:
                         audio_bytes = f.read()
+                    audio_bytes, mime_type = finalize_audio(
+                        audio_bytes,
+                        audio_format=os.path.splitext(file_path)[1].lstrip(".") or "mp3",
+                    )
                     self.send_response(200)
                     self.send_header("Content-Type", mime_type)
                     self.send_header("Content-Length", str(len(audio_bytes)))
@@ -1041,6 +1065,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 )
                 if has_8d_api and getattr(config, "enable_8d_audio", True):
                     audio_bytes, mime_type = apply_8d_audio_effect(audio_bytes, audio_format=fmt or config.tts_format)
+                audio_bytes, mime_type = finalize_audio(audio_bytes, audio_format=fmt or config.tts_format)
                 self.send_response(200)
                 self.send_header("Content-Type", mime_type)
                 self.send_header("Content-Length", str(len(audio_bytes)))
@@ -1255,6 +1280,7 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 )
                 if has_8d_api and getattr(config, "enable_8d_audio", True):
                     audio_bytes, mime_type = apply_8d_audio_effect(audio_bytes, audio_format=fmt or config.tts_format)
+                audio_bytes, mime_type = finalize_audio(audio_bytes, audio_format=fmt or config.tts_format)
                 if fmt == "json":
                     import base64
                     b64 = base64.b64encode(audio_bytes).decode('ascii')
@@ -1382,6 +1408,21 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             config.save()
             broadcast_event("status", self._get_status_dict())
             self._send_json(200, {"success": True, "enabled": config.enable_soundboard})
+            return
+
+        # Route: Normalize all soundboard files to same loudness (admin)
+        if path == "/api/soundboard/normalize":
+            try:
+                from app.audio_norm import normalize_all_soundboard_files
+                result = normalize_all_soundboard_files()
+                broadcast_event("soundboard_updated", {
+                    "action": "normalize",
+                    "sounds": list(soundboard_manager.get_available_sounds().keys())
+                })
+                self._send_json(200, {"success": True, **result})
+            except Exception as e:
+                logger.error(f"Soundboard normalize error: {e}")
+                self._send_json(500, {"error": "Normalization failed"})
             return
 
         # Route: Save user/control settings
@@ -1650,6 +1691,14 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                     config.kill_counter_api_token = raw_ctok
                 elif raw_ctok == "":
                     config.kill_counter_api_token = ""
+            if "enable_audio_norm" in body:
+                config.enable_audio_norm = sanitize_bool(body["enable_audio_norm"], default=config.enable_audio_norm)
+            if "audio_norm_target_i" in body:
+                config.audio_norm_target_i = sanitize_float(body["audio_norm_target_i"], default=config.audio_norm_target_i, min_val=-70.0, max_val=-5.0)
+            if "audio_norm_target_tp" in body:
+                config.audio_norm_target_tp = sanitize_float(body["audio_norm_target_tp"], default=config.audio_norm_target_tp, min_val=-9.0, max_val=0.0)
+            if "audio_norm_target_lra" in body:
+                config.audio_norm_target_lra = sanitize_float(body["audio_norm_target_lra"], default=config.audio_norm_target_lra, min_val=1.0, max_val=50.0)
             
             config.save()
             dashboard_auth_manager.update_passwords(config.admin_password, config.user_password)
@@ -1917,6 +1966,10 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
                 try:
                     with open(file_path, "rb") as f:
                         audio_bytes = f.read()
+                    audio_bytes, mime_type = finalize_audio(
+                        audio_bytes,
+                        audio_format=os.path.splitext(file_path)[1].lstrip(".") or "mp3",
+                    )
                     self.send_response(200)
                     self.send_header("Content-Type", mime_type)
                     self.send_header("Content-Length", str(len(audio_bytes)))
@@ -2032,6 +2085,7 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
                 )
                 if has_8d_api and getattr(config, "enable_8d_audio", True):
                     audio_bytes, mime_type = apply_8d_audio_effect(audio_bytes, audio_format=fmt or config.tts_format)
+                audio_bytes, mime_type = finalize_audio(audio_bytes, audio_format=fmt or config.tts_format)
                 self.send_response(200)
                 self.send_header("Content-Type", mime_type)
                 self.send_header("Content-Length", str(len(audio_bytes)))
@@ -2248,6 +2302,7 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
                 )
                 if has_8d_api and getattr(config, "enable_8d_audio", True):
                     audio_bytes, mime_type = apply_8d_audio_effect(audio_bytes, audio_format=fmt or config.tts_format)
+                audio_bytes, mime_type = finalize_audio(audio_bytes, audio_format=fmt or config.tts_format)
                 if fmt == "json":
                     import base64
                     b64 = base64.b64encode(audio_bytes).decode('ascii')

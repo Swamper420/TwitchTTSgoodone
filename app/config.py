@@ -53,6 +53,10 @@ ENV_KEYS = {
     "enable_8d_audio": "ENABLE_8D_AUDIO",
     "enable_chaos_mode": "ENABLE_CHAOS_MODE",
     "chaos_mode": "ENABLE_CHAOS_MODE",
+    "enable_audio_norm": "ENABLE_AUDIO_NORM",
+    "audio_norm_target_i": "AUDIO_NORM_TARGET_I",
+    "audio_norm_target_tp": "AUDIO_NORM_TARGET_TP",
+    "audio_norm_target_lra": "AUDIO_NORM_TARGET_LRA",
     "ignored_users": "IGNORED_USERS",
 }
 
@@ -149,6 +153,10 @@ class Config:
     effect_8d_speed: float = field(default_factory=lambda: float(os.getenv("EFFECT_8D_SPEED", "0.5")))
     enable_8d_audio: bool = field(default_factory=lambda: os.getenv("ENABLE_8D_AUDIO", "true").lower() in ("true", "1", "yes"))
     enable_chaos_mode: bool = field(default_factory=lambda: os.getenv("ENABLE_CHAOS_MODE", "false").lower() in ("true", "1", "yes"))
+    enable_audio_norm: bool = field(default_factory=lambda: os.getenv("ENABLE_AUDIO_NORM", "true").lower() in ("true", "1", "yes"))
+    audio_norm_target_i: float = field(default_factory=lambda: float(os.getenv("AUDIO_NORM_TARGET_I", "-16.0")))
+    audio_norm_target_tp: float = field(default_factory=lambda: float(os.getenv("AUDIO_NORM_TARGET_TP", "-1.5")))
+    audio_norm_target_lra: float = field(default_factory=lambda: float(os.getenv("AUDIO_NORM_TARGET_LRA", "11.0")))
     ignored_users: List[str] = field(default_factory=list)
     channel_settings: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
@@ -402,6 +410,10 @@ class Config:
             "effect_8d_speed": self.effect_8d_speed,
             "enable_8d_audio": self.enable_8d_audio,
             "enable_chaos_mode": self.enable_chaos_mode,
+            "enable_audio_norm": self.enable_audio_norm,
+            "audio_norm_target_i": self.audio_norm_target_i,
+            "audio_norm_target_tp": self.audio_norm_target_tp,
+            "audio_norm_target_lra": self.audio_norm_target_lra,
             "enable_kill_counter": self.enable_kill_counter,
             "kill_counter_file": self.kill_counter_file,
             "kill_counter_poll_interval": self.kill_counter_poll_interval,
@@ -429,6 +441,7 @@ class Config:
             "enable_soundboard": self.enable_soundboard,
             "enable_8d_audio": self.enable_8d_audio,
             "enable_chaos_mode": self.enable_chaos_mode,
+            "enable_audio_norm": self.enable_audio_norm,
             "effect_8d_speed": self.effect_8d_speed,
             "same_user_timeout": self.same_user_timeout,
             "enable_kill_counter": self.enable_kill_counter,
