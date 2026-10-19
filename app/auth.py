@@ -98,6 +98,8 @@ class TwitchTokenValidator:
         - expires_in (int) - Remaining validity in seconds
         - expires_at_iso (str) - Calculated ISO timestamp of expiration
         - error (str or None) - Error description if invalid
+        - retryable (bool) - True when failure is likely transient/network
+          and validation should be retried after connectivity returns.
         """
         raw_token = clean_oauth_token(oauth_token)
         if not raw_token:
@@ -110,6 +112,7 @@ class TwitchTokenValidator:
                 "expires_in": 0,
                 "expires_at_iso": None,
                 "error": "No OAuth token provided",
+                "retryable": False,
             }
 
         token_for_header = raw_token
@@ -146,6 +149,7 @@ class TwitchTokenValidator:
                         "expires_in": expires_in,
                         "expires_at_iso": expires_at.isoformat(),
                         "error": None,
+                        "retryable": False,
                     }
                 else:
                     logger.warning(f"Twitch token validation returned HTTP {resp.status}")
@@ -158,6 +162,7 @@ class TwitchTokenValidator:
                         "expires_in": 0,
                         "expires_at_iso": None,
                         "error": f"Twitch API returned HTTP {resp.status}",
+                        "retryable": True,
                     }
         except urllib.error.HTTPError as e:
             error_body = ""
@@ -169,6 +174,8 @@ class TwitchTokenValidator:
                 error_msg = f"HTTP {e.code}: {e.reason}"
 
             logger.warning(f"Twitch OAuth Token Validation failed: {error_msg}")
+            # 401 = bad/revoked token (do not retry blindly). 429/5xx = transient.
+            retryable = e.code in (408, 429, 500, 502, 503, 504)
             return {
                 "valid": False,
                 "login": "",
@@ -178,9 +185,11 @@ class TwitchTokenValidator:
                 "expires_in": 0,
                 "expires_at_iso": None,
                 "error": error_msg,
+                "retryable": retryable,
             }
         except Exception as e:
             logger.error(f"Error during Twitch OAuth token validation: {e}")
+            # Network/DNS/timeout/SSL errors while offline: retry after reconnect.
             return {
                 "valid": False,
                 "login": "",
@@ -190,6 +199,7 @@ class TwitchTokenValidator:
                 "expires_in": 0,
                 "expires_at_iso": None,
                 "error": str(e),
+                "retryable": True,
             }
 
 
