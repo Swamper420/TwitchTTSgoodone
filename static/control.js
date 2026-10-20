@@ -124,6 +124,11 @@ document.addEventListener("DOMContentLoaded", () => {
         prefChaosMode: document.getElementById("prefChaosMode"),
         prefCooldown: document.getElementById("prefCooldown"),
         prefCooldownVal: document.getElementById("prefCooldownVal"),
+        prefUsernameReadout: document.getElementById("prefUsernameReadout"),
+        prefDistinctVoices: document.getElementById("prefDistinctVoices"),
+        prefDistinctSpan: document.getElementById("prefDistinctSpan"),
+        prefDistinctSpanVal: document.getElementById("prefDistinctSpanVal"),
+        prefDistinctVertical: document.getElementById("prefDistinctVertical"),
         
         toastContainer: document.getElementById("toastContainer")
     };
@@ -502,6 +507,19 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (elements.prefCooldown) {
                     elements.prefCooldown.value = config.same_user_timeout !== undefined ? config.same_user_timeout : 10;
                     if (elements.prefCooldownVal) elements.prefCooldownVal.textContent = `${elements.prefCooldown.value}s`;
+                }
+                if (elements.prefUsernameReadout) {
+                    elements.prefUsernameReadout.checked = config.enable_username_readout !== false;
+                }
+                if (elements.prefDistinctVoices) {
+                    elements.prefDistinctVoices.checked = !!config.force_distinct_user_voices;
+                }
+                if (elements.prefDistinctSpan) {
+                    elements.prefDistinctSpan.value = config.distinct_voice_span_semitones !== undefined ? config.distinct_voice_span_semitones : 7;
+                    if (elements.prefDistinctSpanVal) elements.prefDistinctSpanVal.textContent = `${elements.prefDistinctSpan.value}st`;
+                }
+                if (elements.prefDistinctVertical) {
+                    elements.prefDistinctVertical.checked = config.distinct_voice_vertical !== false;
                 }
             }
         } catch (e) {
@@ -1233,7 +1251,11 @@ document.addEventListener("DOMContentLoaded", () => {
             enable_chat_responses: elements.prefChatResponses ? elements.prefChatResponses.checked : true,
             enable_kill_counter: elements.prefKillCounter ? elements.prefKillCounter.checked : true,
             enable_chaos_mode: elements.prefChaosMode ? elements.prefChaosMode.checked : false,
-            same_user_timeout: elements.prefCooldown ? parseFloat(elements.prefCooldown.value) : 10
+            same_user_timeout: elements.prefCooldown ? parseFloat(elements.prefCooldown.value) : 10,
+            enable_username_readout: elements.prefUsernameReadout ? elements.prefUsernameReadout.checked : true,
+            force_distinct_user_voices: elements.prefDistinctVoices ? elements.prefDistinctVoices.checked : false,
+            distinct_voice_span_semitones: elements.prefDistinctSpan ? parseFloat(elements.prefDistinctSpan.value) : 7,
+            distinct_voice_vertical: elements.prefDistinctVertical ? elements.prefDistinctVertical.checked : true
         };
 
         try {
@@ -1285,6 +1307,25 @@ document.addEventListener("DOMContentLoaded", () => {
             if (elements.prefCooldownVal) elements.prefCooldownVal.textContent = `${elements.prefCooldown.value}s`;
         });
         elements.prefCooldown.addEventListener("change", saveControlSettings);
+    }
+
+    if (elements.prefUsernameReadout) {
+        elements.prefUsernameReadout.addEventListener("change", saveControlSettings);
+    }
+
+    if (elements.prefDistinctVoices) {
+        elements.prefDistinctVoices.addEventListener("change", saveControlSettings);
+    }
+
+    if (elements.prefDistinctSpan) {
+        elements.prefDistinctSpan.addEventListener("input", () => {
+            if (elements.prefDistinctSpanVal) elements.prefDistinctSpanVal.textContent = `${elements.prefDistinctSpan.value}st`;
+        });
+        elements.prefDistinctSpan.addEventListener("change", saveControlSettings);
+    }
+
+    if (elements.prefDistinctVertical) {
+        elements.prefDistinctVertical.addEventListener("change", saveControlSettings);
     }
 
     // Initialize Auth & Status

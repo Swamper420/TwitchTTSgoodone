@@ -406,6 +406,26 @@
                                         <label class="win95-label">Same-User Cooldown: <span id="prefCooldownVal" class="val-highlight">10s</span></label>
                                         <input type="range" id="prefCooldown" min="0" max="60" step="1" class="form-slider" />
                                     </div>
+                                    <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 8px;">
+                                        <label class="toggle-card">
+                                            <input type="checkbox" id="prefUsernameReadout" checked />
+                                            <span>🔊 Speak username before message</span>
+                                        </label>
+                                        <label class="toggle-card">
+                                            <input type="checkbox" id="prefDistinctVoices" />
+                                            <span>🎭 Force distinct voice per user</span>
+                                        </label>
+                                    </div>
+                                    <div>
+                                        <label class="win95-label">Voice drama: <span id="prefDistinctSpanVal" class="val-highlight">7st</span></label>
+                                        <input type="range" id="prefDistinctSpan" min="1" max="12" step="0.5" class="form-slider" />
+                                    </div>
+                                    <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
+                                        <label class="toggle-card">
+                                            <input type="checkbox" id="prefDistinctVertical" checked />
+                                            <span>⬆️⬇️ Above / under placement</span>
+                                        </label>
+                                    </div>
                                 </fieldset>
 
                                 <!-- Stream Death Counter -->
