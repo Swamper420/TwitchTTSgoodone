@@ -108,6 +108,19 @@ class TwitchListener:
     IRC_PORT_SSL = 6697
     IRC_PORT_PLAIN = 6667
 
+    # Reconnect / watchdog tuning.
+    # Twitch sends PING ~every 5 min, so a healthy socket always sees data.
+    # If no bytes arrive for STALE_TIMEOUT, the socket is half-open
+    # (e.g. internet dropped without FIN) and must be recycled so that
+    # auth (PASS/NICK -> 001) is attempted again once network is back.
+    STALE_TIMEOUT = 330.0
+    # Sticky anonymous fallback (after real AUTH_FAILED) is retried after
+    # this cooldown, in case token was fixed or failure was transient.
+    AUTH_RETRY_AFTER = 300.0
+    # Best-effort token revalidation interval on reconnect attempts.
+    REVALIDATE_INTERVAL = 3600.0
+    MAX_BACKOFF = 60.0
+
     def __init__(self, on_message: Callable[[str, str], None], bot_username: str = "", oauth_token: str = ""):
         self.on_message = on_message
         self.on_message = on_message
@@ -127,6 +140,11 @@ class TwitchListener:
         self._force_reconnect: bool = False
         self._last_send_time: float = 0.0
         self._rate_limit_delay: float = 1.2  # Seconds between sent PRIVMSGs
+        # Watchdog / reauth state
+        self._reconnect_attempts: int = 0
+        self._last_data_time: float = 0.0
+        self._fallback_anon_since: float = 0.0
+        self._last_validate_time: float = 0.0
 
         if self.oauth_token:
             self._validate_and_update_token(self.bot_username, self.oauth_token)
@@ -135,6 +153,7 @@ class TwitchListener:
         info = twitch_token_validator.validate_token(oauth_token)
         with self._lock:
             self.auth_info = info
+            self._last_validate_time = time.time()
             explicit_user = bot_username.strip() if bot_username else ""
             if explicit_user:
                 self.bot_username = explicit_user
@@ -195,6 +214,7 @@ class TwitchListener:
     def get_status(self) -> Dict[str, Any]:
         """Return comprehensive status of Twitch listener."""
         with self._lock:
+            last_data_age = (time.time() - self._last_data_time) if self._last_data_time else None
             return {
                 "running": self.running,
                 "connected": bool(self.sock),
@@ -203,7 +223,9 @@ class TwitchListener:
                 "channel": self.channel,
                 "channels": list(self.channels),
                 "queue_size": self._send_queue.qsize(),
-                "auth_info": dict(self.auth_info)
+                "auth_info": dict(self.auth_info),
+                "reconnect_attempts": self._reconnect_attempts,
+                "last_data_age_s": last_data_age,
             }
 
     def start(self, channel: Optional[str] = None):
@@ -324,6 +346,48 @@ class TwitchListener:
             except Exception:
                 pass
             self.sock = None
+        # Mark unauthenticated as soon as transport is gone so status
+        # does not report stale "authenticated" during outage/backoff.
+        with self._lock:
+            self.is_authenticated = False
+
+    @staticmethod
+    def _enable_keepalive(sock: socket.socket):
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            for opt, val in (
+                (socket.TCP_KEEPIDLE, 60),
+                (socket.TCP_KEEPINTVL, 30),
+                (socket.TCP_KEEPCNT, 3),
+            ):
+                try:
+                    sock.setsockopt(socket.IPPROTO_TCP, opt, val)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _maybe_revalidate_token(self, bot_user: str, clean_tok: str):
+        """Best-effort revalidation so offline startup recovers after net returns."""
+        if not clean_tok:
+            return
+        with self._lock:
+            last = self._last_validate_time
+            info = dict(self.auth_info)
+        age = time.time() - last if last else float("inf")
+        needs = False
+        if not info:
+            needs = True
+        elif not info.get("valid") and info.get("retryable"):
+            needs = True
+        elif age >= self.REVALIDATE_INTERVAL:
+            needs = True
+        if not needs:
+            return
+        try:
+            self._validate_and_update_token(bot_user, clean_tok)
+        except Exception as e:
+            logger.warning(f"Twitch token revalidation skipped: {e}")
 
     def _run_loop(self):
         fallback_anon = False
@@ -334,19 +398,37 @@ class TwitchListener:
                 time.sleep(1.0)
                 continue
 
+            connect_error: Optional[BaseException] = None
+            fast_reconnect = False
             try:
                 with self._lock:
                     bot_user = self.bot_username.strip()
                     raw_token = self.oauth_token.strip()
                     forced_recon = self._force_reconnect
                     self._force_reconnect = False
+                    fallback_since = self._fallback_anon_since
 
                 clean_tok = clean_oauth_token(raw_token)
                 current_creds = (bot_user, clean_tok)
 
                 if current_creds != last_creds or forced_recon:
                     fallback_anon = False
+                    with self._lock:
+                        self._fallback_anon_since = 0.0
                     last_creds = current_creds
+                elif fallback_anon and fallback_since:
+                    # Retry real auth after cooldown (token may be fixed,
+                    # earlier failure may have been transient/outage).
+                    if time.time() - fallback_since >= self.AUTH_RETRY_AFTER:
+                        logger.info("Retrying Twitch bot auth after anonymous-fallback cooldown.")
+                        fallback_anon = False
+                        with self._lock:
+                            self._fallback_anon_since = 0.0
+
+                # Refresh cached validate result when stale/retryable so the
+                # dashboard auth panel recovers after internet returns.
+                if bot_user and clean_tok and not fallback_anon:
+                    self._maybe_revalidate_token(bot_user, clean_tok)
 
                 use_auth = bool(bot_user and clean_tok) and not fallback_anon
                 ch_display = ", #".join(self.channels) if self.channels else (f"#{self.channel}" if self.channel else "")
@@ -367,11 +449,14 @@ class TwitchListener:
 
                 try:
                     raw_sock = socket.create_connection((self.IRC_HOST, self.IRC_PORT_SSL), timeout=10)
+                    self._enable_keepalive(raw_sock)
                     ctx = ssl.create_default_context()
                     self.sock = ctx.wrap_socket(raw_sock, server_hostname=self.IRC_HOST)
                 except Exception as ssl_err:
                     logger.warning(f"SSL IRC connection failed ({ssl_err}). Falling back to port {self.IRC_PORT_PLAIN}...")
-                    self.sock = socket.create_connection((self.IRC_HOST, self.IRC_PORT_PLAIN), timeout=10)
+                    plain_sock = socket.create_connection((self.IRC_HOST, self.IRC_PORT_PLAIN), timeout=10)
+                    self._enable_keepalive(plain_sock)
+                    self.sock = plain_sock
 
                 # Send Twitch IRC capability requests and credentials
                 self.sock.sendall(b"CAP REQ :twitch.tv/membership twitch.tv/tags twitch.tv/commands\r\n")
@@ -384,6 +469,7 @@ class TwitchListener:
 
                 buffer = ""
                 self.sock.settimeout(2.0)
+                self._last_data_time = time.time()
 
                 while self.running and self.sock:
                     try:
@@ -392,6 +478,7 @@ class TwitchListener:
                             logger.warning("Twitch IRC socket closed by server.")
                             break
 
+                        self._last_data_time = time.time()
                         buffer += data
                         lines = buffer.split("\r\n")
                         buffer = lines.pop()
@@ -402,13 +489,26 @@ class TwitchListener:
                             if res == "AUTH_FAILED":
                                 logger.error(f"Twitch IRC authentication failed for bot '{bot_user}'. Falling back to anonymous reader mode.")
                                 fallback_anon = True
+                                with self._lock:
+                                    self._fallback_anon_since = time.time()
                                 auth_failed_in_batch = True
                                 break
 
                         if auth_failed_in_batch:
+                            fast_reconnect = True
                             break
 
                     except socket.timeout:
+                        # Half-open sockets (internet dropped without FIN) sit
+                        # here forever. Twitch PINGs ~every 5 min, so no data
+                        # for STALE_TIMEOUT means dead transport: recycle it
+                        # to force a fresh PASS/NICK reauth when net returns.
+                        if time.time() - self._last_data_time >= self.STALE_TIMEOUT:
+                            logger.warning(
+                                f"No Twitch IRC data for {self.STALE_TIMEOUT:.0f}s. "
+                                "Recycling stale connection to force reauth."
+                            )
+                            break
                         continue
                     except Exception as e:
                         if self.running:
@@ -416,12 +516,33 @@ class TwitchListener:
                         break
 
             except Exception as e:
+                connect_error = e
                 if self.running:
-                    logger.warning(f"Twitch connection error: {e}. Reconnecting in 3s...")
+                    with self._lock:
+                        self._reconnect_attempts += 1
+                        attempts = self._reconnect_attempts
+                    backoff = min(3.0 * (2 ** min(attempts - 1, 4)), self.MAX_BACKOFF)
+                    backoff += random.uniform(0, 1.0)
+                    logger.warning(f"Twitch connection error: {e}. Reconnecting in {backoff:.1f}s (attempt {attempts})...")
+                    self._next_backoff = backoff
             finally:
                 self._disconnect_socket()
                 if self.running:
-                    time.sleep(3.0)
+                    if connect_error is not None:
+                        backoff = getattr(self, "_next_backoff", 3.0)
+                    elif fast_reconnect:
+                        # Auth failed -> fall back to anonymous quickly.
+                        backoff = 1.0
+                    else:
+                        # Clean socket close / stale recycle: retry fast so
+                        # PASS/NICK reauth happens promptly when net returns.
+                        backoff = 3.0
+                    time.sleep(backoff)
+                    if hasattr(self, "_next_backoff"):
+                        try:
+                            delattr(self, "_next_backoff")
+                        except Exception:
+                            pass
 
     def _dispatch_on_message(self, user: str, text: str, channel: str):
         if not self.on_message:
@@ -477,10 +598,12 @@ class TwitchListener:
             if expected_auth:
                 with self._lock:
                     self.is_authenticated = True
+                    self._reconnect_attempts = 0
                 logger.info(f"Twitch IRC Authentication SUCCESSFUL for BOT '{self.bot_username}'. Joined chat: #{ch_display}")
             else:
                 with self._lock:
                     self.is_authenticated = False
+                    self._reconnect_attempts = 0
                 logger.info(f"Twitch IRC successfully joined chat anonymously as reader: #{ch_display}")
 
         # PRIVMSG chat messages
