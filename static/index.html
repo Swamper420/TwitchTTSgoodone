@@ -313,6 +313,37 @@
 
                     <div class="form-row">
                         <div class="form-group">
+                            <label class="toggle-switch" title="Speak the chatter's name before each message (uses Message Format Template)">
+                                <input type="checkbox" id="enableUsernameReadoutToggle" checked />
+                                <span class="slider"></span>
+                                🔊 Speak username before message <span class="hint">("user says" readout)</span>
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label class="toggle-switch" title="Force a distinct pitch key + above/below placement per chatter, even when they pick the same voice">
+                                <input type="checkbox" id="forceDistinctVoicesToggle" />
+                                <span class="slider"></span>
+                                🎭 Force distinct voice per user
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-row" id="distinctVoiceRow">
+                        <div class="form-group">
+                            <label for="distinctVoiceSpanInput">Voice drama <span class="hint">(pitch span in semitones, 1-12)</span></label>
+                            <input type="number" id="distinctVoiceSpanInput" min="1" max="12" step="0.5" placeholder="7" />
+                        </div>
+                        <div class="form-group">
+                            <label class="toggle-switch" title="Bright voices sound like they come from above, muffled ones from under">
+                                <input type="checkbox" id="distinctVoiceVerticalToggle" checked />
+                                <span class="slider"></span>
+                                ⬆️⬇️ Above / under placement
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
                             <label for="voicePresetsInput">Voice Presets <span class="hint">(comma-separated)</span></label>
                             <input type="text" id="voicePresetsInput" placeholder="mieto, alice, bob, charlie, dave" />
                         </div>

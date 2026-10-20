@@ -58,6 +58,10 @@ ENV_KEYS = {
     "audio_norm_target_tp": "AUDIO_NORM_TARGET_TP",
     "audio_norm_target_lra": "AUDIO_NORM_TARGET_LRA",
     "ignored_users": "IGNORED_USERS",
+    "enable_username_readout": "ENABLE_USERNAME_READOUT",
+    "force_distinct_user_voices": "FORCE_DISTINCT_USER_VOICES",
+    "distinct_voice_span_semitones": "DISTINCT_VOICE_SPAN_SEMITONES",
+    "distinct_voice_vertical": "DISTINCT_VOICE_VERTICAL",
 }
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -159,6 +163,10 @@ class Config:
     audio_norm_target_lra: float = field(default_factory=lambda: float(os.getenv("AUDIO_NORM_TARGET_LRA", "11.0")))
     ignored_users: List[str] = field(default_factory=list)
     channel_settings: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    enable_username_readout: bool = field(default_factory=lambda: os.getenv("ENABLE_USERNAME_READOUT", "true").lower() in ("true", "1", "yes"))
+    force_distinct_user_voices: bool = field(default_factory=lambda: os.getenv("FORCE_DISTINCT_USER_VOICES", "false").lower() in ("true", "1", "yes"))
+    distinct_voice_span_semitones: float = field(default_factory=lambda: float(os.getenv("DISTINCT_VOICE_SPAN_SEMITONES", "7.0")))
+    distinct_voice_vertical: bool = field(default_factory=lambda: os.getenv("DISTINCT_VOICE_VERTICAL", "true").lower() in ("true", "1", "yes"))
 
     def load(self, filepath: str = CONFIG_FILE):
         """Load configuration from JSON file if present, respecting environment variable overrides."""
@@ -244,6 +252,10 @@ class Config:
             "enable_kill_counter": self.enable_kill_counter,
             "enable_chaos_mode": self.enable_chaos_mode,
             "same_user_timeout": self.same_user_timeout,
+            "enable_username_readout": self.enable_username_readout,
+            "force_distinct_user_voices": self.force_distinct_user_voices,
+            "distinct_voice_span_semitones": self.distinct_voice_span_semitones,
+            "distinct_voice_vertical": self.distinct_voice_vertical,
         }
         chan = channel.strip().lstrip("#").lower() if channel else ""
         if chan and chan in self.channel_settings:
@@ -414,6 +426,10 @@ class Config:
             "audio_norm_target_i": self.audio_norm_target_i,
             "audio_norm_target_tp": self.audio_norm_target_tp,
             "audio_norm_target_lra": self.audio_norm_target_lra,
+            "enable_username_readout": self.enable_username_readout,
+            "force_distinct_user_voices": self.force_distinct_user_voices,
+            "distinct_voice_span_semitones": self.distinct_voice_span_semitones,
+            "distinct_voice_vertical": self.distinct_voice_vertical,
             "enable_kill_counter": self.enable_kill_counter,
             "kill_counter_file": self.kill_counter_file,
             "kill_counter_poll_interval": self.kill_counter_poll_interval,
@@ -444,6 +460,10 @@ class Config:
             "enable_audio_norm": self.enable_audio_norm,
             "effect_8d_speed": self.effect_8d_speed,
             "same_user_timeout": self.same_user_timeout,
+            "enable_username_readout": self.enable_username_readout,
+            "force_distinct_user_voices": self.force_distinct_user_voices,
+            "distinct_voice_span_semitones": self.distinct_voice_span_semitones,
+            "distinct_voice_vertical": self.distinct_voice_vertical,
             "enable_kill_counter": self.enable_kill_counter,
             "site_domain": self.site_domain,
             "public_domain": self.site_domain,

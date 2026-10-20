@@ -41,6 +41,12 @@ from app.sanitizer import (
 from app.chat_commands import parse_chat_command, match_voice_preset, match_voice_action, get_commands_catalog
 from app.audio_norm import normalize_audio_bytes
 from app.upload_challenge import upload_challenge_manager
+from app.voice_effects import (
+    apply_distinct_user_voice,
+    describe_user_voice,
+    user_semitone_offset,
+    user_vertical_mode,
+)
 
 
 logger = logging.getLogger("Server")
@@ -572,6 +578,16 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
 
     clean_chan = channel.strip().lstrip('#').lower() if channel else (config.channels[0] if config.channels else "")
 
+    # Effective per-channel settings (global fallback) for readout + distinct voices.
+    try:
+        _eff = config.get_channel_settings(clean_chan)
+    except Exception:
+        _eff = {}
+    _readout_enabled = _eff.get("enable_username_readout", getattr(config, "enable_username_readout", True))
+    _force_distinct = _eff.get("force_distinct_user_voices", getattr(config, "force_distinct_user_voices", False))
+    _distinct_span = _eff.get("distinct_voice_span_semitones", getattr(config, "distinct_voice_span_semitones", 7.0))
+    _distinct_vertical = _eff.get("distinct_voice_vertical", getattr(config, "distinct_voice_vertical", True))
+
     has_8d = False
     if raw_text:
         if re.search(r'\{\s*8d\s*\}', raw_text, re.IGNORECASE):
@@ -722,6 +738,10 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
     if is_soundboard_only:
         skip_user_prefix = True
 
+    # Admin toggle: disable "user says" readout entirely.
+    if not _readout_enabled:
+        skip_user_prefix = True
+
     if user and last_speaker and not is_soundboard_only:
         if user.strip().lower() == last_speaker.strip().lower():
             if config.same_user_timeout > 0 and (now - last_speaker_time) <= config.same_user_timeout:
@@ -788,6 +808,7 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
         if voice_to_use and voice_to_use.lower() in ("random", "rand", "rng", "satunnainen"):
             voice_to_use = get_random_preset_voice()
         model_to_use = override_model or config.tts_model
+        distinct_label = None
         
         try:
             if chunk.is_soundboard and chunk.sound_file and os.path.exists(chunk.sound_file):
@@ -808,6 +829,7 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                     seed=config.tts_seed
                 )
                 voice_used = voice_to_use or "default"
+                distinct_label = None
 
                 if has_fart_bg:
                     bg_match = soundboard_manager.find_sound("fartbackground")
@@ -817,6 +839,21 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                             bg_file_path=bg_match[1],
                             audio_format=config.tts_format
                         )
+
+                # Forced distinct voice per user: dramatic per-chatter pitch key
+                # + above/below placement, even when base voices collide.
+                if _force_distinct and user and not chunk.is_soundboard:
+                    audio_bytes, mime_type = apply_distinct_user_voice(
+                        audio_bytes,
+                        audio_format=config.tts_format,
+                        username=user,
+                        span=_distinct_span,
+                        vertical=_distinct_vertical,
+                    )
+                    try:
+                        distinct_label = describe_user_voice(user, _distinct_span)["label"]
+                    except Exception:
+                        distinct_label = None
             
             if has_8d and getattr(config, "enable_8d_audio", True):
                 audio_bytes, mime_type = apply_8d_audio_effect(
@@ -839,6 +876,7 @@ def process_incoming_text(user: str, raw_text: str, override_voice: Optional[str
                 "has_fart_bg": has_fart_bg,
                 "fart_bg_url": "/api/soundboard/fartbackground" if has_fart_bg else None,
                 "has_8d": has_8d,
+                "distinct_voice": distinct_label,
                 "channel": clean_chan,
                 "chunk_index": chunk.chunk_index + 1,
                 "total_chunks": chunk.total_chunks,
@@ -1543,6 +1581,14 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
             if "enable_chaos_mode" in body or "chaos_mode" in body:
                 raw_chaos = body.get("enable_chaos_mode", body.get("chaos_mode"))
                 settings_to_update["enable_chaos_mode"] = sanitize_bool(raw_chaos, default=config.enable_chaos_mode)
+            if "enable_username_readout" in body:
+                settings_to_update["enable_username_readout"] = sanitize_bool(body["enable_username_readout"], default=config.enable_username_readout)
+            if "force_distinct_user_voices" in body:
+                settings_to_update["force_distinct_user_voices"] = sanitize_bool(body["force_distinct_user_voices"], default=config.force_distinct_user_voices)
+            if "distinct_voice_span_semitones" in body:
+                settings_to_update["distinct_voice_span_semitones"] = sanitize_float(body["distinct_voice_span_semitones"], default=config.distinct_voice_span_semitones, min_val=1.0, max_val=12.0)
+            if "distinct_voice_vertical" in body:
+                settings_to_update["distinct_voice_vertical"] = sanitize_bool(body["distinct_voice_vertical"], default=config.distinct_voice_vertical)
 
             config.set_channel_settings(target_chan, settings_to_update)
             config.save()
@@ -1769,6 +1815,14 @@ class TTSRequestHandler(BaseHTTPRequestHandler):
                 config.twitch_client_id = sanitize_string(body["twitch_client_id"], max_len=200)
             if "same_user_timeout" in body:
                 config.same_user_timeout = sanitize_float(body["same_user_timeout"], default=config.same_user_timeout, min_val=0.0, max_val=300.0)
+            if "enable_username_readout" in body:
+                config.enable_username_readout = sanitize_bool(body["enable_username_readout"], default=config.enable_username_readout)
+            if "force_distinct_user_voices" in body:
+                config.force_distinct_user_voices = sanitize_bool(body["force_distinct_user_voices"], default=config.force_distinct_user_voices)
+            if "distinct_voice_span_semitones" in body:
+                config.distinct_voice_span_semitones = sanitize_float(body["distinct_voice_span_semitones"], default=config.distinct_voice_span_semitones, min_val=1.0, max_val=12.0)
+            if "distinct_voice_vertical" in body:
+                config.distinct_voice_vertical = sanitize_bool(body["distinct_voice_vertical"], default=config.distinct_voice_vertical)
             if "enable_kill_counter" in body:
                 config.enable_kill_counter = sanitize_bool(body["enable_kill_counter"], default=config.enable_kill_counter)
             if "kill_counter_file" in body:
@@ -2595,6 +2649,14 @@ class PublicRequestHandler(BaseHTTPRequestHandler):
             if "enable_chaos_mode" in body or "chaos_mode" in body:
                 raw_chaos = body.get("enable_chaos_mode", body.get("chaos_mode"))
                 settings_to_update["enable_chaos_mode"] = sanitize_bool(raw_chaos, default=config.enable_chaos_mode)
+            if "enable_username_readout" in body:
+                settings_to_update["enable_username_readout"] = sanitize_bool(body["enable_username_readout"], default=config.enable_username_readout)
+            if "force_distinct_user_voices" in body:
+                settings_to_update["force_distinct_user_voices"] = sanitize_bool(body["force_distinct_user_voices"], default=config.force_distinct_user_voices)
+            if "distinct_voice_span_semitones" in body:
+                settings_to_update["distinct_voice_span_semitones"] = sanitize_float(body["distinct_voice_span_semitones"], default=config.distinct_voice_span_semitones, min_val=1.0, max_val=12.0)
+            if "distinct_voice_vertical" in body:
+                settings_to_update["distinct_voice_vertical"] = sanitize_bool(body["distinct_voice_vertical"], default=config.distinct_voice_vertical)
 
             config.set_channel_settings(target_chan, settings_to_update)
             config.save()

@@ -39,6 +39,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const seedInput = document.getElementById('seedInput');
     const userTemplateInput = document.getElementById('userTemplateInput');
     const sameUserTimeoutInput = document.getElementById('sameUserTimeoutInput');
+    const enableUsernameReadoutToggle = document.getElementById('enableUsernameReadoutToggle');
+    const forceDistinctVoicesToggle = document.getElementById('forceDistinctVoicesToggle');
+    const distinctVoiceSpanInput = document.getElementById('distinctVoiceSpanInput');
+    const distinctVoiceVerticalToggle = document.getElementById('distinctVoiceVerticalToggle');
     const voicePresetsInput = document.getElementById('voicePresetsInput');
     const saveSettingsBtn = document.getElementById('saveSettingsBtn');
 
@@ -944,6 +948,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (seedInput) seedInput.value = data.config.tts_seed !== undefined ? data.config.tts_seed : 42;
             if (userTemplateInput) userTemplateInput.value = data.config.user_template || '';
             if (sameUserTimeoutInput) sameUserTimeoutInput.value = data.config.same_user_timeout !== undefined ? data.config.same_user_timeout : 10;
+            if (enableUsernameReadoutToggle) enableUsernameReadoutToggle.checked = data.config.enable_username_readout !== false;
+            if (forceDistinctVoicesToggle) forceDistinctVoicesToggle.checked = !!data.config.force_distinct_user_voices;
+            if (distinctVoiceSpanInput) distinctVoiceSpanInput.value = data.config.distinct_voice_span_semitones !== undefined ? data.config.distinct_voice_span_semitones : 7;
+            if (distinctVoiceVerticalToggle) distinctVoiceVerticalToggle.checked = data.config.distinct_voice_vertical !== false;
             if (voicePresetsInput) voicePresetsInput.value = data.config.voice_presets || '';
             const effect8dSpeedInput = document.getElementById('effect8dSpeedInput');
             if (effect8dSpeedInput) effect8dSpeedInput.value = data.config.effect_8d_speed !== undefined ? data.config.effect_8d_speed : 0.15;
@@ -1313,6 +1321,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     tts_guidance_scale: guidanceScaleInput ? (parseFloat(guidanceScaleInput.value) || 2.0) : 2.0,
                     tts_seed: seedInput ? (parseInt(seedInput.value, 10) || 42) : 42,
                     user_template: userTemplateInput ? userTemplateInput.value.trim() : '',
+                    enable_username_readout: enableUsernameReadoutToggle ? enableUsernameReadoutToggle.checked : true,
+                    force_distinct_user_voices: forceDistinctVoicesToggle ? forceDistinctVoicesToggle.checked : false,
+                    distinct_voice_span_semitones: distinctVoiceSpanInput ? (parseFloat(distinctVoiceSpanInput.value) || 7) : 7,
+                    distinct_voice_vertical: distinctVoiceVerticalToggle ? distinctVoiceVerticalToggle.checked : true,
                     voice_presets: voicePresetsInput ? voicePresetsInput.value.trim() : '',
                     effect_8d_speed: effect8dSpeedInput ? (parseFloat(effect8dSpeedInput.value) || 0.15) : 0.15,
                     twitch_bot_username: botUsernameInput ? botUsernameInput.value.trim() : '',
